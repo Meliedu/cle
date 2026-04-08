@@ -1,0 +1,48 @@
+import uuid
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, JSON, String, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
+
+
+class Course(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
+    __tablename__ = "courses"
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    code: Mapped[str | None] = mapped_column(String(50))
+    description: Mapped[str | None] = mapped_column(String)
+    language: Mapped[str] = mapped_column(String(50), nullable=False)
+    semester: Mapped[str | None] = mapped_column(String(20))
+    instructor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    settings: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    instructor: Mapped["User"] = relationship("User", lazy="selectin")
+    enrollments: Mapped[list["Enrollment"]] = relationship(
+        back_populates="course", cascade="all, delete-orphan"
+    )
+
+
+class Enrollment(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "enrollments"
+    __table_args__ = (
+        UniqueConstraint("course_id", "user_id"),
+    )
+
+    course_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    enrolled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    course: Mapped["Course"] = relationship(back_populates="enrollments")
+    user: Mapped["User"] = relationship("User", lazy="selectin")
