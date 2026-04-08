@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+import logging
+import uuid
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.chunk import Chunk
+from app.models.document import Document
+from app.services.chunker import chunk_text
+from app.services.embedder import embed_texts
+from app.services.parser import parse_document
+from app.services.storage import download_file
+
+logger = logging.getLogger(__name__)
+
+
+async def process_document_pipeline(
+    session: AsyncSession, document_id: str
+) -> bool:
+    doc_uuid = uuid.UUID(document_id)
+
+    result = await session.execute(
+        select(Document).where(Document.id == doc_uuid)
+    )
+    document = result.scalar_one_or_none()
+    if not document:
+        raise ValueError(f"Document not found: {document_id}")
+
+    document.status = "processing"
+    await session.commit()
+
+    try:
+        # 1. Download from R2
+        logger.info(f"Downloading {document.r2_key}")
+        file_data = download_file(document.r2_key)
+
+        # 2. Parse
+        logger.info(f"Parsing {document.filename} (type={document.file_type})")
+        parse_result = await parse_document(
+            file_data, document.file_type, document.filename
+        )
+
+        # 3. Chunk
+        logger.info(f"Chunking {parse_result.word_count} words")
+        chunks = chunk_text(parse_result.text, pages=parse_result.pages)
+        logger.info(f"Created {len(chunks)} chunks")
+
+        if not chunks:
+            document.status = "ready"
+            document.page_count = parse_result.page_count
+            document.word_count = parse_result.word_count
+            await session.commit()
+            return True
+
+        # 4. Embed
+        logger.info(f"Embedding {len(chunks)} chunks")
+        embeddings = await embed_texts([c.content for c in chunks])
+
+        # 5. Store chunks
+        for chunk_data, embedding in zip(chunks, embeddings):
+            chunk = Chunk(
+                document_id=document.id,
+                course_id=document.course_id,
+                content=chunk_data.content,
+                chunk_index=chunk_data.chunk_index,
+                page_number=chunk_data.page_number,
+                token_count=chunk_data.token_count,
+                embedding=embedding,
+            )
+            session.add(chunk)
+
+        # 6. Update document metadata
+        document.status = "ready"
+        document.page_count = parse_result.page_count
+        document.word_count = parse_result.word_count
+        await session.commit()
+
+        logger.info(f"Document {document_id} processed: {len(chunks)} chunks stored")
+        return True
+
+    except Exception:
+        document.status = "failed"
+        await session.commit()
+        raise
