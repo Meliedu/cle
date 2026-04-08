@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+backend/.venv/
+
+# Environment
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# Next.js
+frontend/.next/
+frontend/out/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+pgdata/
+
+# Clerk
+.clerk/
+
+# Build
+dist/
+build/
