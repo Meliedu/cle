@@ -140,6 +140,7 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
           <TabsTrigger value="materials">Materials</TabsTrigger>
           <TabsTrigger value="quizzes">Quizzes</TabsTrigger>
           <TabsTrigger value="flashcards">Flashcards</TabsTrigger>
+          <TabsTrigger value="revision">Revision</TabsTrigger>
           <TabsTrigger value="pronunciation">Pronunciation</TabsTrigger>
           <TabsTrigger value="live">Live Quiz</TabsTrigger>
           <TabsTrigger value="progress">Progress</TabsTrigger>
@@ -314,6 +315,26 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
         {/* Flashcards tab */}
         <TabsContent value="flashcards" className="pt-4">
           <FlashcardList courseId={courseId} />
+        </TabsContent>
+
+        {/* Revision tab */}
+        <TabsContent value="revision" className="space-y-4 pt-4">
+          <Card>
+            <CardContent className="flex flex-col items-center gap-4 py-8">
+              <div className="flex size-12 items-center justify-center rounded-full bg-[var(--color-primary-light)] text-[var(--color-primary)]">
+                <Sparkles className="size-6" />
+              </div>
+              <div className="text-center">
+                <h3 className="text-lg font-semibold text-[var(--color-text)]">Adaptive Revision</h3>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                  Practice with AI-generated questions that adapt to your level
+                </p>
+              </div>
+              <Link href={`/dashboard/courses/${courseId}/revision`}>
+                <Button>Start Revision</Button>
+              </Link>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Pronunciation tab */}
