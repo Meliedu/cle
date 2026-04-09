@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { Menu, ChevronRight } from "lucide-react";
+import { LanguageToggle } from "@/components/layout/language-toggle";
 
 interface NavbarProps {
   readonly onMenuClick?: () => void;
@@ -73,8 +74,9 @@ export function Navbar({ onMenuClick }: NavbarProps) {
         </nav>
       </div>
 
-      {/* User button */}
-      <div className="flex items-center">
+      {/* Language toggle + User button */}
+      <div className="flex items-center gap-2">
+        <LanguageToggle />
         <UserButton
           appearance={{
             elements: {
