@@ -247,3 +247,200 @@ async def generate_flashcards(
         GeneratedFlashcard(front=item["front"], back=item["back"])
         for item in items
     ]
+
+
+# ---------------------------------------------------------------------------
+# Dataclass — Speaking Target
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GeneratedSpeakingTarget:
+    target_text: str
+
+
+# ---------------------------------------------------------------------------
+# Difficulty-Aware Revision: Quiz
+# ---------------------------------------------------------------------------
+
+_REVISION_QUIZ_SYSTEM_PROMPT = """\
+You are an educational quiz generator that adapts question difficulty.
+Given source material and a difficulty level, create quiz questions.
+Return ONLY a JSON array of question objects. No extra text.
+
+Difficulty levels:
+- easy: recall-based questions — identify facts, definitions, and terms directly from the material
+- medium: application-based questions — apply concepts to new scenarios or examples
+- hard: analysis/synthesis questions — compare, evaluate, combine ideas, or draw inferences
+
+Each object must have:
+- "question_text": the question string
+- "options": an object with keys "A", "B", "C", "D" and string values
+- "correct_answer": one of "A", "B", "C", "D"
+- "explanation": a brief explanation of why the answer is correct
+"""
+
+
+async def generate_revision_quiz(
+    chunks: list[RetrievedChunk],
+    difficulty: str,
+    num_questions: int = 7,
+    language: str = "english",
+) -> list[GeneratedQuestion]:
+    """Generate difficulty-aware quiz questions from retrieved chunks.
+
+    Tries the primary model first. On JSON parse failure, falls back to the
+    secondary model. Raises ``ValueError`` if both attempts fail.
+    """
+    context = _build_context(chunks)
+    user_prompt = (
+        f"Create {num_questions} multiple-choice questions at **{difficulty}** "
+        f"difficulty in {language} based on the following material:\n\n{context}"
+    )
+
+    try:
+        raw = await _call_llm(_REVISION_QUIZ_SYSTEM_PROMPT, user_prompt)
+        items = _parse_json_response(raw)
+    except (ValueError, json.JSONDecodeError) as exc:
+        logger.warning("Primary model JSON parse failed: %s — trying fallback", exc)
+        try:
+            raw = await _call_llm(
+                _REVISION_QUIZ_SYSTEM_PROMPT,
+                user_prompt,
+                model=settings.openrouter_fallback_model,
+            )
+            items = _parse_json_response(raw)
+        except (ValueError, json.JSONDecodeError) as fallback_exc:
+            raise ValueError(
+                "Both primary and fallback models failed to produce valid revision quiz JSON"
+            ) from fallback_exc
+
+    return [
+        GeneratedQuestion(
+            question_text=item["question_text"],
+            options=item["options"],
+            correct_answer=item["correct_answer"],
+            explanation=item["explanation"],
+        )
+        for item in items
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Difficulty-Aware Revision: Flashcards
+# ---------------------------------------------------------------------------
+
+_REVISION_FLASHCARD_SYSTEM_PROMPT = """\
+You are an educational flashcard generator that adapts card difficulty.
+Given source material and a difficulty level, create flashcards for spaced-repetition study.
+Return ONLY a JSON array of flashcard objects. No extra text.
+
+Difficulty levels:
+- easy: term/definition pairs — straightforward vocabulary and key facts
+- medium: conceptual cards — explain relationships, processes, or cause-and-effect
+- hard: nuanced/edge-case cards — subtle distinctions, exceptions, and advanced implications
+
+Each object must have:
+- "front": the question or prompt for the front of the card
+- "back": the answer or explanation for the back of the card
+"""
+
+
+async def generate_revision_flashcards(
+    chunks: list[RetrievedChunk],
+    difficulty: str,
+    num_cards: int = 7,
+    language: str = "english",
+) -> list[GeneratedFlashcard]:
+    """Generate difficulty-aware flashcards from retrieved chunks.
+
+    Tries the primary model first. On JSON parse failure, falls back to the
+    secondary model. Raises ``ValueError`` if both attempts fail.
+    """
+    context = _build_context(chunks)
+    user_prompt = (
+        f"Create {num_cards} flashcards at **{difficulty}** difficulty in {language} "
+        f"based on the following material:\n\n{context}"
+    )
+
+    try:
+        raw = await _call_llm(_REVISION_FLASHCARD_SYSTEM_PROMPT, user_prompt)
+        items = _parse_json_response(raw)
+    except (ValueError, json.JSONDecodeError) as exc:
+        logger.warning("Primary model JSON parse failed: %s — trying fallback", exc)
+        try:
+            raw = await _call_llm(
+                _REVISION_FLASHCARD_SYSTEM_PROMPT,
+                user_prompt,
+                model=settings.openrouter_fallback_model,
+            )
+            items = _parse_json_response(raw)
+        except (ValueError, json.JSONDecodeError) as fallback_exc:
+            raise ValueError(
+                "Both primary and fallback models failed to produce valid revision flashcard JSON"
+            ) from fallback_exc
+
+    return [
+        GeneratedFlashcard(front=item["front"], back=item["back"])
+        for item in items
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Difficulty-Aware Revision: Speaking
+# ---------------------------------------------------------------------------
+
+_REVISION_SPEAKING_SYSTEM_PROMPT = """\
+You are a language-learning speaking exercise generator that adapts to difficulty.
+Given source material and a difficulty level, create target sentences or passages
+for the student to practise speaking aloud.
+Return ONLY a JSON array of speaking-target objects. No extra text.
+
+Difficulty levels:
+- easy: short, simple sentences using basic vocabulary from the material
+- medium: compound sentences that combine two or more ideas from the material
+- hard: complex paragraphs with subordinate clauses, transitions, and nuanced phrasing
+
+Each object must have:
+- "target_text": the sentence or passage the student should read/speak aloud
+"""
+
+
+async def generate_revision_speaking(
+    chunks: list[RetrievedChunk],
+    difficulty: str,
+    num_items: int = 6,
+    language: str = "english",
+) -> list[GeneratedSpeakingTarget]:
+    """Generate difficulty-aware speaking targets from retrieved chunks.
+
+    Tries the primary model first. On JSON parse failure, falls back to the
+    secondary model. Raises ``ValueError`` if both attempts fail.
+    """
+    context = _build_context(chunks)
+    user_prompt = (
+        f"Create {num_items} speaking practice targets at **{difficulty}** "
+        f"difficulty in {language} based on the following material:\n\n{context}"
+    )
+
+    try:
+        raw = await _call_llm(_REVISION_SPEAKING_SYSTEM_PROMPT, user_prompt)
+        items = _parse_json_response(raw)
+    except (ValueError, json.JSONDecodeError) as exc:
+        logger.warning("Primary model JSON parse failed: %s — trying fallback", exc)
+        try:
+            raw = await _call_llm(
+                _REVISION_SPEAKING_SYSTEM_PROMPT,
+                user_prompt,
+                model=settings.openrouter_fallback_model,
+            )
+            items = _parse_json_response(raw)
+        except (ValueError, json.JSONDecodeError) as fallback_exc:
+            raise ValueError(
+                "Both primary and fallback models failed to produce valid revision speaking JSON"
+            ) from fallback_exc
+
+    return [
+        GeneratedSpeakingTarget(target_text=item["target_text"])
+        for item in items
+    ]
