@@ -26,7 +26,7 @@ def upgrade() -> None:
 
     # 2. GIN index for fast full-text search
     op.execute("""
-        CREATE INDEX idx_chunks_tsvector ON chunks USING GIN (tsvector_content)
+        CREATE INDEX IF NOT EXISTS idx_chunks_tsvector ON chunks USING GIN (tsvector_content)
     """)
 
     # 3. Create trigger function that auto-populates tsvector_content
@@ -42,7 +42,7 @@ def upgrade() -> None:
 
     # 4. Create trigger on chunks table
     op.execute("""
-        CREATE TRIGGER tsvector_update
+        CREATE OR REPLACE TRIGGER tsvector_update
         BEFORE INSERT OR UPDATE OF content ON chunks
         FOR EACH ROW
         EXECUTE FUNCTION chunks_tsvector_trigger()
