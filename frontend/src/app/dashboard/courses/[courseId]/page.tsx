@@ -12,6 +12,7 @@ import {
   Upload as UploadIcon,
   Sparkles,
   Mic,
+  Radio,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -140,6 +141,7 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
           <TabsTrigger value="quizzes">Quizzes</TabsTrigger>
           <TabsTrigger value="flashcards">Flashcards</TabsTrigger>
           <TabsTrigger value="pronunciation">Pronunciation</TabsTrigger>
+          <TabsTrigger value="live">Live Quiz</TabsTrigger>
           <TabsTrigger value="progress">Progress</TabsTrigger>
           <TabsTrigger value="leaderboard">Leaderboard</TabsTrigger>
           <TabsTrigger value="students">Students</TabsTrigger>
@@ -331,6 +333,31 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
                 <Button className="mt-4">
                   <Mic className="size-4" />
                   Start Practice
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Live Quiz tab */}
+        <TabsContent value="live" className="pt-4">
+          <Card>
+            <CardContent className="flex flex-col items-center py-12 text-center">
+              <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-success-light)]">
+                <Radio className="size-6 text-[var(--color-success)]" />
+              </div>
+              <h3 className="font-semibold text-[var(--color-text)]">
+                Live Quiz Sessions
+              </h3>
+              <p className="mt-1 max-w-sm text-sm text-[var(--color-text-muted)]">
+                {isInstructor
+                  ? "Host real-time quiz sessions and engage your students with live competition."
+                  : "Join live quiz sessions hosted by your instructor."}
+              </p>
+              <Link href={`/dashboard/courses/${courseId}/live`}>
+                <Button className="mt-4">
+                  <Radio className="size-4" />
+                  {isInstructor ? "Manage Live Sessions" : "Join Live Session"}
                 </Button>
               </Link>
             </CardContent>
