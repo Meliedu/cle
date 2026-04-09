@@ -29,5 +29,8 @@ docling==2.31.0
 pytest==8.3.5
 pytest-asyncio==0.26.0
 
+# Speech
+azure-cognitiveservices-speech==1.42.0
+
 # Utilities
 python-multipart==0.0.20

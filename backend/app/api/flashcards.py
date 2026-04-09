@@ -12,6 +12,7 @@ from app.models.course import Enrollment
 from app.models.flashcard import FlashcardCard, FlashcardProgress, FlashcardSet
 from app.models.user import User
 from app.schemas.common import APIResponse
+from app.services.gamification import award_xp
 from app.schemas.flashcard import (
     FlashcardCardResponse,
     FlashcardProgressResponse,
@@ -216,6 +217,16 @@ async def update_progress(
 
     await db.commit()
     await db.refresh(progress)
+
+    # Award XP for flashcard review
+    await award_xp(
+        db,
+        user_id=user.id,
+        course_id=fc_set.course_id,
+        xp=50,
+        activity="flashcard",
+    )
+    await db.commit()
 
     return APIResponse(
         success=True,

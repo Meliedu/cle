@@ -1,0 +1,60 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "Something went wrong",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "search": "Search..."
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "courses": "Courses",
+    "quizzes": "Quizzes",
+    "flashcards": "Flashcards",
+    "pronunciation": "Pronunciation",
+    "liveQuiz": "Live Quiz",
+    "signOut": "Sign Out"
+  },
+  "dashboard": {
+    "welcome": "Welcome back",
+    "recentCourses": "Recent Courses",
+    "yourProgress": "Your Progress"
+  },
+  "course": {
+    "create": "Create Course",
+    "materials": "Materials",
+    "students": "Students",
+    "leaderboard": "Leaderboard",
+    "enrolledStudents": "{count} students"
+  },
+  "quiz": {
+    "startQuiz": "Start Quiz",
+    "submitAnswers": "Submit Answers",
+    "question": "Question {current} of {total}",
+    "score": "Your Score: {score}%",
+    "generateQuiz": "Generate Quiz"
+  },
+  "flashcard": {
+    "flip": "Flip",
+    "again": "Again",
+    "hard": "Hard",
+    "good": "Good",
+    "easy": "Easy",
+    "cardsRemaining": "{count} cards remaining"
+  },
+  "gamification": {
+    "xpPoints": "{xp} XP",
+    "streakDays": "{days} day streak",
+    "badges": "Badges",
+    "leaderboard": "Leaderboard"
+  },
+  "pronunciation": {
+    "record": "Record",
+    "stop": "Stop Recording",
+    "grading": "Grading your pronunciation...",
+    "overallScore": "Overall Score",
+    "accuracy": "Accuracy",
+    "fluency": "Fluency"
+  }
+}

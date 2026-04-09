@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chunk import Chunk
@@ -65,3 +65,105 @@ async def retrieve_chunks(
         )
         for chunk, similarity in rows
     ]
+
+
+async def fulltext_retrieve(
+    db: AsyncSession,
+    course_id: uuid.UUID,
+    query: str,
+    top_k: int = 10,
+    document_ids: list[uuid.UUID] | None = None,
+) -> list[RetrievedChunk]:
+    """Full-text search using tsvector + ts_rank."""
+    tsquery = func.plainto_tsquery("english", query)
+    stmt = (
+        select(
+            Chunk.id,
+            Chunk.content,
+            Chunk.document_id,
+            Chunk.page_number,
+            func.ts_rank(Chunk.tsvector_content, tsquery).label("rank"),
+        )
+        .where(
+            Chunk.course_id == course_id,
+            Chunk.tsvector_content.op("@@")(tsquery),
+        )
+        .order_by(text("rank DESC"))
+        .limit(top_k)
+    )
+    if document_ids:
+        stmt = stmt.where(Chunk.document_id.in_(document_ids))
+    result = await db.execute(stmt)
+    rows = result.all()
+    return [
+        RetrievedChunk(
+            chunk_id=row.id,
+            content=row.content,
+            document_id=row.document_id,
+            page_number=row.page_number,
+            similarity_score=float(row.rank),
+        )
+        for row in rows
+    ]
+
+
+def rrf_merge(
+    vector_results: list[RetrievedChunk],
+    text_results: list[RetrievedChunk],
+    k: int = 60,
+    top_k: int = 10,
+) -> list[RetrievedChunk]:
+    """Reciprocal Rank Fusion: merge two ranked lists."""
+    scores: dict[uuid.UUID, float] = {}
+    chunk_map: dict[uuid.UUID, RetrievedChunk] = {}
+    for rank, chunk in enumerate(vector_results):
+        scores[chunk.chunk_id] = scores.get(chunk.chunk_id, 0) + 1.0 / (k + rank + 1)
+        chunk_map[chunk.chunk_id] = chunk
+    for rank, chunk in enumerate(text_results):
+        scores[chunk.chunk_id] = scores.get(chunk.chunk_id, 0) + 1.0 / (k + rank + 1)
+        if chunk.chunk_id not in chunk_map:
+            chunk_map[chunk.chunk_id] = chunk
+    sorted_ids = sorted(scores, key=lambda cid: scores[cid], reverse=True)[:top_k]
+    return [
+        RetrievedChunk(
+            chunk_id=chunk_map[cid].chunk_id,
+            content=chunk_map[cid].content,
+            document_id=chunk_map[cid].document_id,
+            page_number=chunk_map[cid].page_number,
+            similarity_score=scores[cid],
+        )
+        for cid in sorted_ids
+    ]
+
+
+async def hybrid_retrieve(
+    db: AsyncSession,
+    course_id: uuid.UUID,
+    query: str,
+    query_embedding: list[float],
+    top_k: int = 10,
+    document_ids: list[uuid.UUID] | None = None,
+) -> list[RetrievedChunk]:
+    """Run vector + fulltext in parallel, merge via RRF."""
+    import asyncio
+
+    vector_task = asyncio.create_task(
+        retrieve_chunks(
+            db,
+            course_id,
+            query_embedding,
+            top_k=top_k * 2,
+            document_ids=document_ids,
+        )
+    )
+    text_task = asyncio.create_task(
+        fulltext_retrieve(
+            db,
+            course_id,
+            query,
+            top_k=top_k * 2,
+            document_ids=document_ids,
+        )
+    )
+    vector_results, text_results = await asyncio.gather(vector_task, text_task)
+    return rrf_merge(vector_results, text_results, k=60, top_k=top_k)

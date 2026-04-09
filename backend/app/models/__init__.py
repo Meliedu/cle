@@ -7,6 +7,7 @@ from app.models.document import Document
 from app.models.flashcard import FlashcardCard, FlashcardProgress, FlashcardSet, FlashcardSetDocument
 from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument
 from app.models.score import PronunciationScore, StudentProgress
+from app.models.live_answer import LiveAnswer
 from app.models.session import LiveSession, SessionSummary
 from app.models.task import Task
 from app.models.user import User
@@ -29,6 +30,7 @@ __all__ = [
     "PronunciationScore",
     "StudentProgress",
     "SessionSummary",
+    "LiveAnswer",
     "LiveSession",
     "Task",
     "ApiUsage",

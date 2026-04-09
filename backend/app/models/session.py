@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, JSON, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, UUIDPrimaryKeyMixin
@@ -37,9 +37,12 @@ class LiveSession(UUIDPrimaryKeyMixin, Base):
     host_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
+    join_code: Mapped[str | None] = mapped_column(String(6), unique=True)
     status: Mapped[str] = mapped_column(String(20), default="waiting")
     current_question_index: Mapped[int] = mapped_column(Integer, default=0)
     participant_count: Mapped[int] = mapped_column(Integer, default=0)
+    time_limit_seconds: Mapped[int] = mapped_column(Integer, default=30)
+    settings: Mapped[dict] = mapped_column(JSONB, server_default="{}")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(

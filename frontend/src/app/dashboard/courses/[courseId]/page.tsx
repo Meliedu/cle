@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useState } from "react";
+import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import {
   BookOpen,
@@ -10,6 +11,8 @@ import {
   Clock,
   Upload as UploadIcon,
   Sparkles,
+  Mic,
+  Radio,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,9 +23,13 @@ import { Separator } from "@/components/ui/separator";
 import { UploadZone } from "@/components/documents/upload-zone";
 import { QuizList } from "@/components/quiz/quiz-list";
 import { FlashcardList } from "@/components/flashcard/flashcard-list";
+import { ProgressCard } from "@/components/gamification/progress-card";
+import { Leaderboard } from "@/components/gamification/leaderboard";
+import { BadgeDisplay } from "@/components/gamification/badge-display";
 import { GenerateSummaryDialog } from "@/components/summary/generate-summary-dialog";
 import { useCourse } from "@/hooks/use-courses";
 import { useDocuments, type DocumentResponse } from "@/hooks/use-documents";
+import { useProgress } from "@/hooks/use-progress";
 import {
   formatFileSize,
   formatRelativeTime,
@@ -71,6 +78,7 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
   const { user, isLoaded: userLoaded } = useUser();
   const { data: course, isLoading: courseLoading } = useCourse(courseId);
   const { data: documents, isLoading: docsLoading } = useDocuments(courseId);
+  const { data: progress, isLoading: progressLoading } = useProgress(courseId);
   const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
 
   const isLoaded = userLoaded && !courseLoading;
@@ -132,6 +140,10 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
           <TabsTrigger value="materials">Materials</TabsTrigger>
           <TabsTrigger value="quizzes">Quizzes</TabsTrigger>
           <TabsTrigger value="flashcards">Flashcards</TabsTrigger>
+          <TabsTrigger value="pronunciation">Pronunciation</TabsTrigger>
+          <TabsTrigger value="live">Live Quiz</TabsTrigger>
+          <TabsTrigger value="progress">Progress</TabsTrigger>
+          <TabsTrigger value="leaderboard">Leaderboard</TabsTrigger>
           <TabsTrigger value="students">Students</TabsTrigger>
         </TabsList>
 
@@ -302,6 +314,65 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
         {/* Flashcards tab */}
         <TabsContent value="flashcards" className="pt-4">
           <FlashcardList courseId={courseId} />
+        </TabsContent>
+
+        {/* Pronunciation tab */}
+        <TabsContent value="pronunciation" className="pt-4">
+          <Card>
+            <CardContent className="flex flex-col items-center py-12 text-center">
+              <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-success-light)]">
+                <Mic className="size-6 text-[var(--color-success)]" />
+              </div>
+              <h3 className="font-semibold text-[var(--color-text)]">
+                Pronunciation Practice
+              </h3>
+              <p className="mt-1 max-w-sm text-sm text-[var(--color-text-muted)]">
+                Practice your pronunciation and get AI-powered feedback on accuracy, fluency, and completeness.
+              </p>
+              <Link href={`/dashboard/courses/${courseId}/pronunciation`}>
+                <Button className="mt-4">
+                  <Mic className="size-4" />
+                  Start Practice
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Live Quiz tab */}
+        <TabsContent value="live" className="pt-4">
+          <Card>
+            <CardContent className="flex flex-col items-center py-12 text-center">
+              <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-success-light)]">
+                <Radio className="size-6 text-[var(--color-success)]" />
+              </div>
+              <h3 className="font-semibold text-[var(--color-text)]">
+                Live Quiz Sessions
+              </h3>
+              <p className="mt-1 max-w-sm text-sm text-[var(--color-text-muted)]">
+                {isInstructor
+                  ? "Host real-time quiz sessions and engage your students with live competition."
+                  : "Join live quiz sessions hosted by your instructor."}
+              </p>
+              <Link href={`/dashboard/courses/${courseId}/live`}>
+                <Button className="mt-4">
+                  <Radio className="size-4" />
+                  {isInstructor ? "Manage Live Sessions" : "Join Live Session"}
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Progress tab */}
+        <TabsContent value="progress" className="space-y-6 pt-4">
+          <ProgressCard progress={progress} isLoading={progressLoading} />
+          <BadgeDisplay badges={progress?.badges ?? []} />
+        </TabsContent>
+
+        {/* Leaderboard tab */}
+        <TabsContent value="leaderboard" className="pt-4">
+          <Leaderboard courseId={courseId} />
         </TabsContent>
 
         {/* Students tab */}
