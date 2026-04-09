@@ -87,21 +87,21 @@ export function ProgressCard({ progress, isLoading }: ProgressCardProps) {
           <StatTile
             icon={<BookOpen className="size-4" />}
             label="Quizzes"
-            value={String(progress.quizzes_completed)}
+            value={`${progress.quizzes_completed}`}
             colorClass="text-[var(--color-primary)]"
             bgClass="bg-[var(--color-primary-light)]"
           />
           <StatTile
             icon={<Brain className="size-4" />}
             label="Flashcards"
-            value={String(progress.flashcards_reviewed)}
+            value={`${progress.flashcards_reviewed}`}
             colorClass="text-[var(--color-accent)]"
             bgClass="bg-[var(--color-accent-light)]"
           />
           <StatTile
             icon={<Mic className="size-4" />}
             label="Speaking"
-            value={String(progress.speaking_sessions)}
+            value={`${progress.speaking_sessions}`}
             colorClass="text-[var(--color-success)]"
             bgClass="bg-[var(--color-success-light)]"
           />

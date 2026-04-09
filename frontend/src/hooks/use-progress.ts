@@ -52,7 +52,7 @@ export function useProgress(courseId: string) {
       return response.data;
     },
     enabled: isSignedIn === true && !!courseId,
-    retry: (count, error) => {
+    retry: (count: number, error: Error) => {
       if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
       return count < 3;
     },
@@ -74,7 +74,7 @@ export function useLeaderboard(courseId: string, page = 1) {
       return response;
     },
     enabled: isSignedIn === true && !!courseId,
-    retry: (count, error) => {
+    retry: (count: number, error: Error) => {
       if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
       return count < 3;
     },
