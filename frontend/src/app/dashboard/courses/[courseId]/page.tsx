@@ -20,9 +20,13 @@ import { Separator } from "@/components/ui/separator";
 import { UploadZone } from "@/components/documents/upload-zone";
 import { QuizList } from "@/components/quiz/quiz-list";
 import { FlashcardList } from "@/components/flashcard/flashcard-list";
+import { ProgressCard } from "@/components/gamification/progress-card";
+import { Leaderboard } from "@/components/gamification/leaderboard";
+import { BadgeDisplay } from "@/components/gamification/badge-display";
 import { GenerateSummaryDialog } from "@/components/summary/generate-summary-dialog";
 import { useCourse } from "@/hooks/use-courses";
 import { useDocuments, type DocumentResponse } from "@/hooks/use-documents";
+import { useProgress } from "@/hooks/use-progress";
 import {
   formatFileSize,
   formatRelativeTime,
@@ -71,6 +75,7 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
   const { user, isLoaded: userLoaded } = useUser();
   const { data: course, isLoading: courseLoading } = useCourse(courseId);
   const { data: documents, isLoading: docsLoading } = useDocuments(courseId);
+  const { data: progress, isLoading: progressLoading } = useProgress(courseId);
   const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
 
   const isLoaded = userLoaded && !courseLoading;
@@ -132,6 +137,8 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
           <TabsTrigger value="materials">Materials</TabsTrigger>
           <TabsTrigger value="quizzes">Quizzes</TabsTrigger>
           <TabsTrigger value="flashcards">Flashcards</TabsTrigger>
+          <TabsTrigger value="progress">Progress</TabsTrigger>
+          <TabsTrigger value="leaderboard">Leaderboard</TabsTrigger>
           <TabsTrigger value="students">Students</TabsTrigger>
         </TabsList>
 
@@ -302,6 +309,17 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
         {/* Flashcards tab */}
         <TabsContent value="flashcards" className="pt-4">
           <FlashcardList courseId={courseId} />
+        </TabsContent>
+
+        {/* Progress tab */}
+        <TabsContent value="progress" className="space-y-6 pt-4">
+          <ProgressCard progress={progress} isLoading={progressLoading} />
+          <BadgeDisplay badges={progress?.badges ?? []} />
+        </TabsContent>
+
+        {/* Leaderboard tab */}
+        <TabsContent value="leaderboard" className="pt-4">
+          <Leaderboard courseId={courseId} />
         </TabsContent>
 
         {/* Students tab */}
