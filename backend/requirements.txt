@@ -32,5 +32,9 @@ pytest-asyncio==0.26.0
 # Speech
 azure-cognitiveservices-speech==1.42.0
 
+# ML — Difficulty adapter (contextual bandit)
+numpy==2.2.5
+torch==2.7.0+cpu
+
 # Utilities
 python-multipart==0.0.20
