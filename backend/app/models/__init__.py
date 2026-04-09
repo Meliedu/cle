@@ -10,6 +10,13 @@ from app.models.score import PronunciationScore, StudentProgress
 from app.models.live_answer import LiveAnswer
 from app.models.session import LiveSession, SessionSummary
 from app.models.task import Task
+from app.models.revision import (
+    BanditModel,
+    RevisionAttempt,
+    RevisionItemServed,
+    RevisionPoolItem,
+    RevisionSession,
+)
 from app.models.user import User
 
 __all__ = [
@@ -35,4 +42,9 @@ __all__ = [
     "Task",
     "ApiUsage",
     "CanvasIntegration",
+    "RevisionSession",
+    "RevisionPoolItem",
+    "RevisionAttempt",
+    "RevisionItemServed",
+    "BanditModel",
 ]
