@@ -24,7 +24,12 @@ def upgrade() -> None:
         WHERE tsvector_content IS NULL
     """)
 
-    # 2. Create trigger function that auto-populates tsvector_content
+    # 2. GIN index for fast full-text search
+    op.execute("""
+        CREATE INDEX idx_chunks_tsvector ON chunks USING GIN (tsvector_content)
+    """)
+
+    # 3. Create trigger function that auto-populates tsvector_content
     op.execute("""
         CREATE OR REPLACE FUNCTION chunks_tsvector_trigger()
         RETURNS trigger AS $$
@@ -35,7 +40,7 @@ def upgrade() -> None:
         $$ LANGUAGE plpgsql
     """)
 
-    # 3. Create trigger on chunks table
+    # 4. Create trigger on chunks table
     op.execute("""
         CREATE TRIGGER tsvector_update
         BEFORE INSERT OR UPDATE OF content ON chunks
@@ -47,4 +52,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute("DROP TRIGGER IF EXISTS tsvector_update ON chunks")
     op.execute("DROP FUNCTION IF EXISTS chunks_tsvector_trigger()")
+    op.execute("DROP INDEX IF EXISTS idx_chunks_tsvector")
     op.execute("UPDATE chunks SET tsvector_content = NULL")
