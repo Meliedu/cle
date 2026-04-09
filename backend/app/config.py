@@ -25,6 +25,15 @@ class Settings(BaseSettings):
     openrouter_primary_model: str = "qwen/qwen3.6-plus:free"
     openrouter_fallback_model: str = "google/gemini-2.5-flash-lite"
 
+    # Azure Speech (pronunciation assessment)
+    azure_speech_key: str = ""
+    azure_speech_region: str = "eastasia"
+
+    # iFlytek (Chinese pronunciation assessment)
+    iflytek_app_id: str = ""
+    iflytek_api_key: str = ""
+    iflytek_api_secret: str = ""
+
     # App
     backend_url: str = "http://localhost:8000"
     frontend_url: str = "http://localhost:3000"
