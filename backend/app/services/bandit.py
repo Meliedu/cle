@@ -30,6 +30,7 @@ REWARD_DECAY = 0.99
 
 DIFFICULTIES: list[str] = ["easy", "medium", "hard"]
 _DIFF_INDEX = {d: i for i, d in enumerate(DIFFICULTIES)}
+DIFFICULTY_TO_IDX = _DIFF_INDEX  # Public alias for use in API layer
 
 
 # ---------------------------------------------------------------------------
