@@ -12,6 +12,7 @@ from app.models.course import Enrollment
 from app.models.quiz import Question, Quiz, QuizAttempt
 from app.models.user import User
 from app.schemas.common import APIResponse
+from app.services.gamification import award_xp
 from app.schemas.quiz import (
     QuestionResponse,
     QuizAttemptCreate,
@@ -341,6 +342,19 @@ async def submit_attempt(
     db.add(attempt)
     await db.commit()
     await db.refresh(attempt)
+
+    # Award XP for quiz attempt
+    xp = int(attempt.score * 10)
+    await award_xp(
+        db,
+        user_id=user.id,
+        course_id=quiz.course_id,
+        xp=xp,
+        activity="quiz",
+        quiz_score=float(attempt.score),
+        quiz_time_seconds=attempt.time_taken_seconds,
+    )
+    await db.commit()
 
     return APIResponse(
         success=True,
