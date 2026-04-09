@@ -22,7 +22,7 @@ from app.schemas.rag import (
 )
 from app.services.embedder import embed_query
 from app.services.generator import generate_flashcards, generate_quiz, generate_summary
-from app.services.retriever import retrieve_chunks
+from app.services.retriever import fulltext_retrieve, hybrid_retrieve, retrieve_chunks
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 
@@ -68,13 +68,33 @@ async def rag_query(
 ):
     await _verify_enrollment(db, body.course_id, user.id)
 
-    query_embedding = await embed_query(body.query)
-    chunks = await retrieve_chunks(
-        db,
-        course_id=body.course_id,
-        query_embedding=query_embedding,
-        top_k=body.top_k,
-    )
+    if body.search_mode == "fulltext":
+        chunks = await fulltext_retrieve(
+            db,
+            course_id=body.course_id,
+            query=body.query,
+            top_k=body.top_k,
+            document_ids=body.document_ids,
+        )
+    elif body.search_mode == "vector":
+        query_embedding = await embed_query(body.query)
+        chunks = await retrieve_chunks(
+            db,
+            course_id=body.course_id,
+            query_embedding=query_embedding,
+            top_k=body.top_k,
+            document_ids=body.document_ids,
+        )
+    else:  # hybrid (default)
+        query_embedding = await embed_query(body.query)
+        chunks = await hybrid_retrieve(
+            db,
+            course_id=body.course_id,
+            query=body.query,
+            query_embedding=query_embedding,
+            top_k=body.top_k,
+            document_ids=body.document_ids,
+        )
 
     chunk_results = [
         ChunkResult(

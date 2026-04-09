@@ -1,4 +1,5 @@
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -7,6 +8,8 @@ class RAGQueryRequest(BaseModel):
     course_id: uuid.UUID
     query: str
     top_k: int = Field(default=10, ge=1, le=50)
+    search_mode: Literal["vector", "fulltext", "hybrid"] = "hybrid"
+    document_ids: list[uuid.UUID] | None = None
 
 
 class ChunkResult(BaseModel):
