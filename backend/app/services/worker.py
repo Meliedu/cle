@@ -50,6 +50,9 @@ async def process_task(session: AsyncSession, task: Task) -> None:
         if not document_id:
             raise ValueError("Missing document_id in task payload")
         await process_document_pipeline(session, document_id)
+    elif task.task_type == "revision_pool_replenish":
+        from app.services.pool import replenish_pool
+        await replenish_pool(session, task.payload)
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
 
