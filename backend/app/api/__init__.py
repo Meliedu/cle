@@ -8,6 +8,7 @@ from app.api.flashcards import router as flashcards_router
 from app.api.progress import router as progress_router
 from app.api.quizzes import router as quizzes_router
 from app.api.rag import router as rag_router
+from app.api.speech import router as speech_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(auth_router)
@@ -18,3 +19,4 @@ api_router.include_router(rag_router)
 api_router.include_router(quizzes_router)
 api_router.include_router(flashcards_router)
 api_router.include_router(progress_router)
+api_router.include_router(speech_router)
