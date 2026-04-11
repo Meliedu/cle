@@ -23,7 +23,7 @@ DIFFICULTY_ORDER: dict[str, int] = {"easy": 0, "medium": 1, "hard": 2}
 
 DIRICHLET_PRIOR_STRONG: float = 10.0
 DIRICHLET_PRIOR_WEAK: float = 1.0
-EQUIVALENT_SAMPLE_SIZE: float = 0.05
+EQUIVALENT_SAMPLE_SIZE: float = 5.0
 
 MIN_ATTEMPTS_FOR_LAYER1: int = 5
 DOWNGRADE_THRESHOLD: float = 0.90

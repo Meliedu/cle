@@ -35,8 +35,22 @@ def _make_stats(
 
 class TestRunRecalibrationPure:
     def test_relabels_easy_item(self):
-        """A 'medium' item with 18/20 correct should be relabeled 'easy'."""
-        stats = [_make_stats(llm_difficulty="medium", attempt_count=20, correct_count=18, hard_count=0, score_sum=17.5)]
+        """A 'medium' item with 45/50 correct should be relabeled 'easy'.
+
+        With k=5 (EQUIVALENT_SAMPLE_SIZE) and a neutral Dirichlet prior,
+        a single item needs ~50 attempts for the posterior to cross the 0.90
+        downgrade threshold.  After the item's own Dirichlet update:
+          transition["medium"]["easy"] ≈ 2/13 ≈ 0.154
+          α_easy = 0.154*5 + 45 = 45.77,  β_easy = 0.846*5 + 0 = 4.23
+          posterior_easy ≈ 0.915 → crosses 0.90
+        """
+        stats = [_make_stats(
+            llm_difficulty="medium",
+            attempt_count=50,
+            correct_count=45,
+            hard_count=0,
+            score_sum=44.0,  # mean 0.88 → classified as "easy"
+        )]
         dirichlet = build_initial_dirichlet()
         new_dirichlet, relabels, reverts = run_recalibration_pure(stats, dirichlet)
         assert len(relabels) == 1
@@ -58,13 +72,20 @@ class TestRunRecalibrationPure:
         assert len(relabels) == 0
 
     def test_upgrade_hard_item(self):
-        """An 'easy' item that most students get wrong should be upgraded."""
+        """An 'easy' item that most students get wrong should be upgraded.
+
+        Upgrade threshold is 0.95 (stricter than downgrade's 0.90), so we
+        need ~100 attempts with overwhelming hard signals.  After Dirichlet:
+          transition["easy"]["hard"] ≈ 2/13 ≈ 0.154
+          α_hard = 0.154*5 + 95 = 95.77,  β_hard = 0.846*5 + 0 = 4.23
+          posterior_hard ≈ 0.958 → crosses 0.95
+        """
         stats = [_make_stats(
             llm_difficulty="easy",
-            attempt_count=25,
-            correct_count=1,
-            hard_count=20,
-            score_sum=5.0,
+            attempt_count=100,
+            correct_count=0,
+            hard_count=95,
+            score_sum=5.0,  # mean 0.05 → classified as "hard"
         )]
         dirichlet = build_initial_dirichlet()
         _, relabels, _ = run_recalibration_pure(stats, dirichlet)
@@ -85,9 +106,21 @@ class TestRunRecalibrationPure:
 
     def test_items_below_min_attempts_still_get_posteriors(self):
         """Items with < MIN_ATTEMPTS_FOR_LAYER1 don't contribute to Dirichlet
-        but still get item-level posteriors computed."""
+        but still get item-level posteriors computed.
+
+        The qualifying item (50 attempts, 45 correct) relabels to 'easy';
+        the low-data item (3 attempts) doesn't contribute to the Dirichlet
+        but still receives a posterior (lands in reverts since 3 attempts
+        can't overcome the prior).
+        """
         stats = [
-            _make_stats(llm_difficulty="medium", attempt_count=20, correct_count=18, hard_count=0, score_sum=17.5),
+            _make_stats(
+                llm_difficulty="medium",
+                attempt_count=50,
+                correct_count=45,
+                hard_count=0,
+                score_sum=44.0,  # mean 0.88 → "easy"
+            ),
             _make_stats(
                 pool_item_id="low-data-item",
                 llm_difficulty="medium",
