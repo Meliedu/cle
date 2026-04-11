@@ -29,6 +29,7 @@ import { Leaderboard } from "@/components/gamification/leaderboard";
 import { BadgeDisplay } from "@/components/gamification/badge-display";
 import { GenerateSummaryDialog } from "@/components/summary/generate-summary-dialog";
 import { CourseAnalytics } from "@/components/analytics/course-analytics";
+import { RecalibrationOverview } from "@/components/recalibration/overview";
 import { useCourse } from "@/hooks/use-courses";
 import { useDocuments, useDeleteDocument, type DocumentResponse } from "@/hooks/use-documents";
 import { useProgress } from "@/hooks/use-progress";
@@ -408,6 +409,10 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
 
       {activeTab === "students" && (
         <CourseAnalytics courseId={courseId} />
+      )}
+
+      {activeTab === "recalibration" && isInstructor && (
+        <RecalibrationOverview courseId={courseId} />
       )}
 
       <GenerateSummaryDialog
