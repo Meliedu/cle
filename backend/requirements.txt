@@ -22,8 +22,16 @@ boto3==1.38.12
 # AI — OpenRouter (OpenAI-compatible API)
 openai==1.82.0
 
-# Document parsing (Phase 1b)
-docling==2.31.0
+# Document parsing
+pymupdf4llm==0.0.17
+python-docx==1.1.2
+python-pptx==1.0.2
+
+# Chunking
+tiktoken==0.9.0
+
+# Reranking
+flashrank==0.2.9
 
 # Testing
 pytest==8.3.5

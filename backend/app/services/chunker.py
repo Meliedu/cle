@@ -5,6 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+import tiktoken
+
+_enc = tiktoken.get_encoding("cl100k_base")
+
 
 @dataclass(frozen=True)
 class PageContent:
@@ -23,12 +27,12 @@ class ChunkData:
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[.?!])\s+|\n{2,}")
 
 TARGET_TOKENS = 500
-OVERLAP_TOKENS = 50
+OVERLAP_TOKENS = 75
 MAX_TOKENS = 550
 
 
 def _count_tokens(text: str) -> int:
-    return len(text.split())
+    return len(_enc.encode(text, disallowed_special=()))
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -62,7 +66,7 @@ def chunk_text(
     text: str,
     pages: list[PageContent] | None = None,
 ) -> list[ChunkData]:
-    """Split *text* into ~500-token chunks with 50-token overlap on sentence boundaries.
+    """Split *text* into ~500-token chunks with 75-token overlap on sentence boundaries.
 
     When *pages* is provided the function concatenates page texts itself and
     resolves a page number for each chunk based on where its first character falls.
