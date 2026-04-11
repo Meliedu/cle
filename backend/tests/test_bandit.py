@@ -263,3 +263,36 @@ class TestUpdatePolicy:
         assert new_mean != 0.5
         assert isinstance(new_mean, float)
         assert isinstance(new_var, float)
+
+
+class TestCorrectedDifficulty:
+    def test_state_vector_uses_corrected_difficulty(self):
+        """When corrected_difficulty is set, state vector should group by it."""
+        now = datetime.now(timezone.utc)
+        attempts = [
+            SimpleNamespace(
+                difficulty="medium",
+                corrected_difficulty="easy",
+                score=1.0,
+                created_at=now,
+            ),
+        ] * 10
+
+        vec = compute_state_vector(attempts, current_session_count=10)
+        assert vec[0] == pytest.approx(1.0)  # avg_score_easy
+        assert vec[1] == pytest.approx(0.5)  # avg_score_medium (default)
+
+    def test_state_vector_falls_back_to_difficulty(self):
+        """When corrected_difficulty is None, use original difficulty."""
+        now = datetime.now(timezone.utc)
+        attempts = [
+            SimpleNamespace(
+                difficulty="medium",
+                corrected_difficulty=None,
+                score=0.7,
+                created_at=now,
+            ),
+        ] * 10
+
+        vec = compute_state_vector(attempts, current_session_count=10)
+        assert vec[1] == pytest.approx(0.7)  # avg_score_medium

@@ -135,7 +135,7 @@ async def _pick_item(
         .where(
             RevisionPoolItem.course_id == course_id,
             RevisionPoolItem.content_type == content_type,
-            RevisionPoolItem.difficulty == difficulty,
+            func.coalesce(RevisionPoolItem.recalibrated_difficulty, RevisionPoolItem.difficulty) == difficulty,
             RevisionItemServed.user_id.is_(None),
         )
         .order_by(func.random())
