@@ -12,6 +12,7 @@ and return results.
 from __future__ import annotations
 
 import copy
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -22,7 +23,7 @@ DIFFICULTY_ORDER: dict[str, int] = {"easy": 0, "medium": 1, "hard": 2}
 
 DIRICHLET_PRIOR_STRONG: float = 10.0
 DIRICHLET_PRIOR_WEAK: float = 1.0
-EQUIVALENT_SAMPLE_SIZE: float = 5.0
+EQUIVALENT_SAMPLE_SIZE: float = 0.05
 
 MIN_ATTEMPTS_FOR_LAYER1: int = 5
 DOWNGRADE_THRESHOLD: float = 0.90
@@ -200,3 +201,79 @@ def make_relabel_decision(
         return (best, confidence)
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Batch recalibration pipeline
+# ---------------------------------------------------------------------------
+
+
+def run_recalibration_pure(
+    stats_list: list[Any],
+    dirichlet_params: dict[str, dict[str, float]],
+) -> tuple[
+    dict[str, dict[str, float]],        # updated dirichlet
+    list[tuple[str, str, float]],        # relabels: (pool_item_id, new_diff, confidence)
+    list[str],                           # reverts: pool_item_ids to revert
+]:
+    """Orchestrate Layer 1 + Layer 2 recalibration over a list of item stats.
+
+    Parameters
+    ----------
+    stats_list : list
+        Each element must expose: pool_item_id, llm_difficulty, attempt_count,
+        correct_count, hard_count, score_sum, instructor_override.
+    dirichlet_params : dict
+        Starting Dirichlet parameters (typically from build_initial_dirichlet()).
+        This function always resets to initial priors for idempotency, so the
+        caller's value is used only to determine the prior shape.
+
+    Returns
+    -------
+    updated_dirichlet : dict
+        Dirichlet params after accumulating qualifying observations.
+    relabels : list of (pool_item_id, new_difficulty, confidence)
+        Items whose label should change.
+    reverts : list of pool_item_id
+        Items whose label should revert to the LLM original (no relabel warranted).
+    """
+    # Step 1 — reset to initial priors for idempotency
+    updated_dirichlet = build_initial_dirichlet()
+
+    # Step 2 — accumulate qualifying observations into Dirichlet
+    for stats in stats_list:
+        if stats.instructor_override:
+            continue
+        if stats.attempt_count < MIN_ATTEMPTS_FOR_LAYER1:
+            continue
+        mean_score = stats.score_sum / stats.attempt_count
+        observed = classify_observed_difficulty(mean_score)
+        updated_dirichlet = update_dirichlet(
+            updated_dirichlet, stats.llm_difficulty, observed
+        )
+
+    # Step 3 — derive transition matrix from updated Dirichlet
+    transition_matrix = compute_transition_matrix(updated_dirichlet)
+
+    # Step 4 — item-level posterior and relabel decisions
+    relabels: list[tuple[str, str, float]] = []
+    reverts: list[str] = []
+
+    for stats in stats_list:
+        if stats.instructor_override:
+            continue
+        posterior = compute_item_posterior(
+            stats.llm_difficulty,
+            transition_matrix,
+            stats.correct_count,
+            stats.hard_count,
+            stats.attempt_count,
+        )
+        decision = make_relabel_decision(stats.llm_difficulty, posterior)
+        if decision is not None:
+            new_diff, confidence = decision
+            relabels.append((stats.pool_item_id, new_diff, confidence))
+        else:
+            reverts.append(stats.pool_item_id)
+
+    return updated_dirichlet, relabels, reverts
