@@ -194,25 +194,113 @@ A database trigger auto-populates the `tsvector_content` column on chunk insert/
 
 ### Adaptive Revision Mode (Contextual Bandit)
 
-Infinite practice sessions where difficulty adapts to the student in real time.
+Infinite practice sessions where difficulty adapts to the student in real time using a **contextual bandit** trained with the REINFORCE policy gradient algorithm.
 
-| Component | Details |
-|-----------|---------|
-| **Policy network** | MLP (10 -> 32 -> 3) trained with REINFORCE policy gradients |
-| **State vector** | 10-dim features: recent scores, rolling accuracy, score variance, session count, time stats |
-| **Cold start** | First 20 attempts use rule-based difficulty (start easy, ramp up) |
-| **Online learning** | Policy updated after every single answer |
-| **Persistence** | Weights serialized to `bandit_models` table per (user, course, content_type) |
-| **Pool management** | Background worker auto-generates items when pool drops below threshold |
-| **Item dedup** | `revision_item_served` table prevents serving the same item twice |
+#### How it works
+
+Each student gets their own per-(course, content_type) policy network stored in the database. On every answer, the system:
+
+1. **Builds a state vector** (NumPy, 10 dimensions) from the student's attempt history
+2. **Selects difficulty** by forward-passing the state through the policy (PyTorch)
+3. **Serves an item** from a pre-generated pool at that difficulty
+4. **Observes the reward** (score) and runs a single REINFORCE gradient step to update the policy
 
 ```
-Student answers -> compute reward -> REINFORCE update -> select next difficulty
-                                                              |
-                                                     easy / medium / hard
-                                                              |
-                                                     serve from pool
+                        +------------------+
+                        |  Attempt History  |
+                        |  (last 50 rows)   |
+                        +--------+---------+
+                                 |
+                        compute_state_vector()         (NumPy)
+                                 |
+                    +------------v-----------+
+                    |  10-dim state vector    |
+                    |                        |
+                    |  [0-2] avg score/diff   |
+                    |  [3-5] EMA score/diff   |
+                    |  [6]   attempt count    |
+                    |  [7]   correct streak   |
+                    |  [8]   days since last  |
+                    |  [9]   session progress |
+                    +------------+-----------+
+                                 |
+                    select_difficulty()                 (PyTorch)
+                                 |
+                    +------------v-----------+
+                    |  DifficultyPolicy MLP  |
+                    |  Linear(10, 32) + ReLU  |
+                    |  Linear(32, 3) + Softmax |
+                    +------------+-----------+
+                                 |
+                        Categorical.sample()
+                                 |
+                     +-----------v----------+
+                     |  easy / medium / hard |
+                     +-----------+----------+
+                                 |
+                          serve item from pool
+                                 |
+                         student answers
+                                 |
+                    +------------v-----------+
+                    |  update_policy()        |          (PyTorch)
+                    |                        |
+                    |  reward = score         |
+                    |  advantage = (r - mu)   |
+                    |       / sqrt(var)       |
+                    |  loss = -log_prob * adv  |
+                    |       - 0.01 * entropy  |
+                    |  SGD step (lr=0.01)     |
+                    |  grad clip (norm=1.0)   |
+                    +------------------------+
+                                 |
+                    serialize weights -> DB
 ```
+
+#### Policy network (PyTorch)
+
+The `DifficultyPolicy` is a two-layer MLP (`nn.Module`) with Xavier-uniform initialization scaled to 0.01 so initial outputs are near-uniform across the three actions. Weights are serialized to bytes via `torch.save()` and stored in the `bandit_models.weights` column (`LargeBinary`). Each forward pass and gradient update deserializes, operates, and re-serializes — no GPU needed, the network is tiny (~400 parameters).
+
+#### State vector (NumPy)
+
+`compute_state_vector()` builds a 10-dimensional `np.ndarray` from the student's recent attempts:
+
+| Index | Feature | Computation |
+|-------|---------|-------------|
+| 0-2 | Avg score per difficulty | Mean of last 50 attempts, grouped by easy/medium/hard |
+| 3-5 | EMA score per difficulty | Exponentially weighted (decay=0.9) over last 20 attempts |
+| 6 | Attempt volume | `min(total_attempts / 100, 1.0)` |
+| 7 | Correct streak | Consecutive scores >= 0.8 from most recent, `/10` |
+| 8 | Session gap | Days since last attempt, `/30` |
+| 9 | Session progress | Current session item count, `/20` |
+
+All features are normalized to [0, 1]. Defaults to 0.5 for score features when no data exists.
+
+#### REINFORCE update
+
+After each answer, `update_policy()` runs a single gradient step:
+
+- **Reward**: raw score (0.0-1.0) from the answer
+- **Baseline**: exponential moving average (decay=0.99) of past rewards, tracked per bandit model
+- **Advantage**: `(reward - mean) / sqrt(variance)` — normalized to reduce gradient variance
+- **Loss**: `-log_prob(chosen_action) * advantage - 0.01 * entropy` — entropy bonus prevents collapse to a single difficulty
+- **Optimizer**: SGD with lr=0.01, gradient clipping at norm=1.0
+- **Degeneracy guard**: if the last 5 selections are all the same difficulty, 50% uniform noise is mixed into the action probabilities
+
+#### Cold start
+
+Students with fewer than 20 attempts use `cold_start_select()` — a rule-based fallback:
+
+- No history: start at **medium**
+- Last score < 0.5: step **down** one level
+- Two consecutive scores >= 0.8 at same level: step **up**
+- Otherwise: **stay**
+
+After 20 attempts, the `strategy` field transitions from `"rules"` to `"bandit"` and the policy network takes over.
+
+#### Pool management
+
+Items are pre-generated at easy/medium/hard difficulty via the background task worker. When unserved items for any difficulty drop below 5, a `revision_pool_replenish` task is enqueued (7 easy, 7 medium, 6 hard). The `revision_item_served` junction table ensures no student sees the same item twice.
 
 ### Live Quiz (Kahoot-style)
 
