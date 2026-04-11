@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass
 
@@ -136,6 +137,59 @@ def rrf_merge(
     ]
 
 
+# ---------------------------------------------------------------------------
+# FlashRank reranker
+# ---------------------------------------------------------------------------
+
+_ranker = None
+
+
+def _get_ranker():
+    global _ranker
+    if _ranker is None:
+        from flashrank import Ranker
+
+        _ranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2", cache_dir="/tmp/flashrank")
+    return _ranker
+
+
+def _rerank_sync(
+    query: str, chunks: list[RetrievedChunk], top_k: int
+) -> list[RetrievedChunk]:
+    from flashrank import RerankRequest
+
+    ranker = _get_ranker()
+    passages = [{"id": str(c.chunk_id), "text": c.content} for c in chunks]
+    results = ranker.rerank(RerankRequest(query=query, passages=passages))
+
+    chunk_map = {str(c.chunk_id): c for c in chunks}
+    reranked: list[RetrievedChunk] = []
+    for r in results[:top_k]:
+        cid = r.get("id") if isinstance(r, dict) else getattr(r, "id", None)
+        score = r.get("score") if isinstance(r, dict) else getattr(r, "score", 0.0)
+        if cid and cid in chunk_map:
+            c = chunk_map[cid]
+            reranked.append(
+                RetrievedChunk(
+                    chunk_id=c.chunk_id,
+                    content=c.content,
+                    document_id=c.document_id,
+                    page_number=c.page_number,
+                    similarity_score=float(score),
+                )
+            )
+    return reranked
+
+
+async def rerank_chunks(
+    query: str, chunks: list[RetrievedChunk], top_k: int
+) -> list[RetrievedChunk]:
+    """Rerank chunks using FlashRank cross-encoder (runs in thread)."""
+    if not chunks:
+        return []
+    return await asyncio.to_thread(_rerank_sync, query, chunks, top_k)
+
+
 async def hybrid_retrieve(
     db: AsyncSession,
     course_id: uuid.UUID,
@@ -144,9 +198,7 @@ async def hybrid_retrieve(
     top_k: int = 10,
     document_ids: list[uuid.UUID] | None = None,
 ) -> list[RetrievedChunk]:
-    """Run vector + fulltext in parallel, merge via RRF."""
-    import asyncio
-
+    """Run vector + fulltext in parallel, merge via RRF, rerank with FlashRank."""
     vector_task = asyncio.create_task(
         retrieve_chunks(
             db,
@@ -166,4 +218,9 @@ async def hybrid_retrieve(
         )
     )
     vector_results, text_results = await asyncio.gather(vector_task, text_task)
-    return rrf_merge(vector_results, text_results, k=60, top_k=top_k)
+
+    # RRF merge — fetch extra candidates for the reranker to pick from
+    merged = rrf_merge(vector_results, text_results, k=60, top_k=top_k * 2)
+
+    # Rerank the merged candidates down to final top_k
+    return await rerank_chunks(query, merged, top_k)

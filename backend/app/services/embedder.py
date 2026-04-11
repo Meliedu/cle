@@ -2,7 +2,8 @@ import openai
 
 from app.config import settings
 
-EMBEDDING_MODEL = "text-embedding-3-large"
+EMBEDDING_MODEL = "openai/text-embedding-3-small"
+EMBEDDING_DIMENSIONS = 1536
 BATCH_SIZE = 100
 
 _client: openai.AsyncOpenAI | None = None
@@ -11,7 +12,10 @@ _client: openai.AsyncOpenAI | None = None
 def _get_client() -> openai.AsyncOpenAI:
     global _client
     if _client is None:
-        _client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+        _client = openai.AsyncOpenAI(
+            api_key=settings.openrouter_api_key,
+            base_url=settings.openrouter_base_url,
+        )
     return _client
 
 
@@ -27,6 +31,7 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
         response = await client.embeddings.create(
             model=EMBEDDING_MODEL,
             input=batch,
+            dimensions=EMBEDDING_DIMENSIONS,
         )
         embeddings.extend([item.embedding for item in response.data])
 

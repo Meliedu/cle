@@ -38,8 +38,21 @@ async def complete_task(session: AsyncSession, task: Task) -> None:
 
 
 async def fail_task(session: AsyncSession, task: Task, error: str) -> None:
-    task.status = "failed" if task.attempts >= task.max_attempts else "pending"
+    permanently_failed = task.attempts >= task.max_attempts
+    task.status = "failed" if permanently_failed else "pending"
     task.error_message = error
+
+    if permanently_failed and task.task_type == "process_document":
+        document_id = task.payload.get("document_id")
+        if document_id:
+            from app.models.document import Document
+            result = await session.execute(
+                select(Document).where(Document.id == document_id)
+            )
+            doc = result.scalar_one_or_none()
+            if doc:
+                doc.status = "failed"
+
     await session.commit()
 
 

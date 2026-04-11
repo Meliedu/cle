@@ -138,8 +138,9 @@ async def generate_quiz(
     """
     context = _build_context(chunks)
     user_prompt = (
-        f"Create {num_questions} {quiz_type} questions in {language} "
-        f"based on the following material:\n\n{context}"
+        f"Create {num_questions} {quiz_type} questions about the following {language} language learning material. "
+        f"Write question text and explanations in English. "
+        f"Options may include {language} vocabulary/phrases where relevant.\n\n{context}"
     )
 
     # Attempt primary model
@@ -189,7 +190,8 @@ async def generate_summary(
     """Generate a markdown summary from retrieved chunks."""
     context = _build_context(chunks)
     user_prompt = (
-        f"Summarize the following material in {language}:\n\n{context}"
+        f"Summarize the following {language} language learning material. "
+        f"Write the summary in English.\n\n{context}"
     )
     return await _call_llm(_SUMMARY_SYSTEM_PROMPT, user_prompt)
 
@@ -221,8 +223,8 @@ async def generate_flashcards(
     """
     context = _build_context(chunks)
     user_prompt = (
-        f"Create {num_cards} flashcards in {language} "
-        f"based on the following material:\n\n{context}"
+        f"Create {num_cards} flashcards about the following {language} language learning material. "
+        f"Write prompts (front) in English. Answers (back) may include {language} vocabulary/phrases where relevant.\n\n{context}"
     )
 
     # Attempt primary model
@@ -294,8 +296,10 @@ async def generate_revision_quiz(
     """
     context = _build_context(chunks)
     user_prompt = (
-        f"Create {num_questions} multiple-choice questions at **{difficulty}** "
-        f"difficulty in {language} based on the following material:\n\n{context}"
+        f"Create {num_questions} multiple-choice questions at **{difficulty}** difficulty "
+        f"about the following {language} language learning material. "
+        f"Write question text and explanations in English. "
+        f"Options may include {language} vocabulary/phrases where relevant.\n\n{context}"
     )
 
     try:
@@ -359,8 +363,9 @@ async def generate_revision_flashcards(
     """
     context = _build_context(chunks)
     user_prompt = (
-        f"Create {num_cards} flashcards at **{difficulty}** difficulty in {language} "
-        f"based on the following material:\n\n{context}"
+        f"Create {num_cards} flashcards at **{difficulty}** difficulty "
+        f"about the following {language} language learning material. "
+        f"Write prompts (front) in English. Answers (back) may include {language} vocabulary/phrases where relevant.\n\n{context}"
     )
 
     try:
@@ -419,8 +424,9 @@ async def generate_revision_speaking(
     """
     context = _build_context(chunks)
     user_prompt = (
-        f"Create {num_items} speaking practice targets at **{difficulty}** "
-        f"difficulty in {language} based on the following material:\n\n{context}"
+        f"Create {num_items} speaking practice targets at **{difficulty}** difficulty "
+        f"in {language} based on the following material. "
+        f"The target_text should be in {language} since the student needs to practice speaking it.\n\n{context}"
     )
 
     try:
