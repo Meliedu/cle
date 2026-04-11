@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # OpenRouter (LLM — quiz/summary/flashcard generation)
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_primary_model: str = "qwen/qwen3.6-plus:free"
+    openrouter_primary_model: str = "deepseek/deepseek-v3.2"
     openrouter_fallback_model: str = "google/gemini-2.5-flash-lite"
 
     # Azure Speech (pronunciation assessment)

@@ -116,10 +116,16 @@ async def rag_generate_quiz(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
+    import logging
+    log = logging.getLogger(__name__)
+
     await _verify_enrollment(db, body.course_id, user.id)
     language = await _get_course_language(db, body.course_id)
 
+    log.info("generate-quiz: embedding query '%s'", body.title)
     query_embedding = await embed_query(body.title)
+
+    log.info("generate-quiz: retrieving chunks (doc_ids=%s)", body.document_ids)
     chunks = await retrieve_chunks(
         db,
         course_id=body.course_id,
@@ -127,12 +133,15 @@ async def rag_generate_quiz(
         top_k=20,
         document_ids=body.document_ids,
     )
+    log.info("generate-quiz: got %d chunks", len(chunks))
 
+    log.info("generate-quiz: calling LLM for %d questions", body.num_questions)
     generated = await generate_quiz(
         chunks,
         num_questions=body.num_questions,
         language=language,
     )
+    log.info("generate-quiz: LLM returned %d questions", len(generated))
 
     quiz = Quiz(
         course_id=body.course_id,
@@ -196,7 +205,7 @@ async def rag_generate_quiz(
 async def rag_generate_summary(
     body: GenerateSummaryRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_instructor),
 ):
     await _verify_enrollment(db, body.course_id, user.id)
     language = await _get_course_language(db, body.course_id)
@@ -221,7 +230,7 @@ async def rag_generate_summary(
 async def rag_generate_flashcards(
     body: GenerateFlashcardsRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_instructor),
 ):
     await _verify_enrollment(db, body.course_id, user.id)
     language = await _get_course_language(db, body.course_id)
@@ -245,6 +254,7 @@ async def rag_generate_flashcards(
         course_id=body.course_id,
         created_by=user.id,
         title=body.title,
+        is_published=False,
     )
     db.add(fc_set)
     await db.flush()
@@ -284,6 +294,7 @@ async def rag_generate_flashcards(
             id=fc_set.id,
             course_id=fc_set.course_id,
             title=fc_set.title,
+            is_published=fc_set.is_published,
             cards=card_responses,
             created_at=fc_set.created_at,
         ),

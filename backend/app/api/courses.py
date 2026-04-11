@@ -30,6 +30,7 @@ async def create_course(
         instructor_id=user.id,
     )
     db.add(course)
+    await db.flush()
 
     enrollment = Enrollment(course_id=course.id, user_id=user.id, role="instructor")
     db.add(enrollment)

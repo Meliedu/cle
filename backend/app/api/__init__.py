@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.analytics import router as analytics_router
 from app.api.auth import router as auth_router
 from app.api.canvas import router as canvas_router
 from app.api.courses import router as courses_router
@@ -13,6 +14,7 @@ from app.api.revision import router as revision_router
 from app.api.speech import router as speech_router
 
 api_router = APIRouter(prefix="/api")
+api_router.include_router(analytics_router)
 api_router.include_router(auth_router)
 api_router.include_router(courses_router)
 api_router.include_router(documents_router)
