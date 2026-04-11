@@ -172,7 +172,7 @@ ALTER TABLE flashcard_progress
     ADD COLUMN stability NUMERIC,        -- S in days
     ADD COLUMN difficulty NUMERIC,        -- D, range 1-10
     ADD COLUMN last_grade SMALLINT,       -- last FSRS grade 1-4
-    ADD COLUMN review_count INT NOT NULL DEFAULT 0;  -- per-card review count
+    ADD COLUMN fsrs_review_count INT NOT NULL DEFAULT 0;  -- per-card review count
 ```
 
 All new columns are nullable except `review_count` (defaults to 0). Existing SM-2 columns (`ease_factor`, `interval_days`, `repetitions`) remain untouched as the source of truth for students below the switchover threshold.
