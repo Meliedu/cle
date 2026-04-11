@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, require_student
 from app.models.course import Enrollment
 from app.models.revision import (
     BanditModel,
@@ -285,7 +285,7 @@ async def start_revision(
     course_id: uuid.UUID,
     body: StartRevisionRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_student),
 ):
     await _verify_enrollment(db, course_id, user.id)
 
@@ -335,7 +335,7 @@ async def submit_answer(
     session_id: uuid.UUID,
     body: SubmitAnswerRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_student),
 ):
     session = await _verify_session_owner(db, session_id, user.id)
 
@@ -472,7 +472,7 @@ async def submit_answer(
 async def next_item(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_student),
 ):
     session = await _verify_session_owner(db, session_id, user.id)
     item = await _select_and_serve(db, session, user)
@@ -487,7 +487,7 @@ async def next_item(
 async def get_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_student),
 ):
     session = await _verify_session_owner(db, session_id, user.id)
     avg = float(session.total_score) / session.items_answered if session.items_answered > 0 else 0.0
@@ -517,7 +517,7 @@ async def get_session(
 async def end_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_student),
 ):
     result = await db.execute(
         select(RevisionSession).where(
