@@ -46,6 +46,12 @@ class AuthMiddleware:
         path: str = scope.get("path", "")
         method: str = scope.get("method", "").upper()
 
+        # WebSocket auth is handled inside the endpoint (browser WS API
+        # cannot send custom headers), so skip middleware check.
+        if scope["type"] == "websocket":
+            await self.app(scope, receive, send)
+            return
+
         # Always allow CORS preflight, public paths, and non-API routes
         if method == "OPTIONS" or _is_public_path(path) or not path.startswith("/api"):
             await self.app(scope, receive, send)

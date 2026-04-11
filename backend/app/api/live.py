@@ -1,9 +1,12 @@
+import logging
+
 from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
     WebSocket,
     WebSocketDisconnect,
+    WebSocketException,
     status,
 )
 from sqlalchemy import select
@@ -15,7 +18,10 @@ from app.models.quiz import Quiz
 from app.models.session import LiveSession
 from app.schemas.common import APIResponse
 from app.schemas.live import CreateLiveSessionRequest, LiveSessionResponse
+from app.services.auth import verify_clerk_token
 from app.services.live_quiz import calculate_points, generate_join_code, manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["live-quiz"])
 
@@ -129,15 +135,122 @@ async def get_live_session(
     )
 
 
+## ------------------------------------------------------------------ ##
+##  REST endpoints for polling-based live quiz (WebSocket alternative)  ##
+## ------------------------------------------------------------------ ##
+
+
+@router.get("/live-sessions/{session_id}/state")
+async def get_live_state(
+    session_id: str,
+    user=Depends(get_current_user),
+):
+    """Poll the current in-memory state of a live session."""
+    state = manager.get_session(session_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Session state not found")
+
+    return APIResponse(
+        success=True,
+        data={
+            "status": state.status,
+            "current_question_index": state.current_question_index,
+            "time_limit": state.time_limit,
+            "leaderboard": state.get_leaderboard(),
+            "participant_count": len(state.player_scores),
+        },
+    )
+
+
+@router.post("/live-sessions/{session_id}/next-question")
+async def live_next_question(
+    session_id: str,
+    user=Depends(require_instructor),
+):
+    """Advance to the next question (host only)."""
+    state = manager.get_session(session_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Session state not found")
+
+    state.next_question()
+    return APIResponse(
+        success=True,
+        data={
+            "status": state.status,
+            "current_question_index": state.current_question_index,
+        },
+    )
+
+
+@router.post("/live-sessions/{session_id}/answer")
+async def live_answer(
+    session_id: str,
+    body: dict,
+    user=Depends(get_current_user),
+):
+    """Submit an answer (student)."""
+    state = manager.get_session(session_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Session state not found")
+
+    user_id = body.get("user_id", str(user.id))
+    answer = body.get("answer", "")
+    is_correct = body.get("is_correct", False)
+    elapsed = body.get("elapsed_seconds", 0)
+    points = calculate_points(is_correct, elapsed, state.time_limit)
+    state.record_answer(user_id, answer, points)
+
+    return APIResponse(success=True, data={"points": points})
+
+
+@router.post("/live-sessions/{session_id}/end")
+async def live_end_session(
+    session_id: str,
+    user=Depends(require_instructor),
+):
+    """End the session (host only)."""
+    state = manager.get_session(session_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Session state not found")
+
+    state.status = "finished"
+    return APIResponse(
+        success=True,
+        data={"final_leaderboard": state.get_leaderboard()},
+    )
+
+
+## ------------------------------------------------------------------ ##
+##  WebSocket endpoint (kept for non-WSL2 / production use)            ##
+## ------------------------------------------------------------------ ##
+
+
 @router.websocket("/live/{session_id}")
-async def websocket_live(websocket: WebSocket, session_id: str):
+async def websocket_live(
+    websocket: WebSocket,
+    session_id: str,
+    token: str = "",
+):
     """WebSocket handler for live quiz sessions.
+
+    Auth: pass Clerk JWT as ?token= query param (browser WebSocket API
+    cannot send custom headers).
 
     Message types:
       - next_question: advance to the next question (host only)
       - answer: submit an answer (student)
       - end_session: end the session early (host only)
     """
+    logger.info("WS connect attempt for session %s, token length=%d", session_id, len(token))
+    if not token:
+        logger.warning("WS rejected: no token for session %s", session_id)
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+    try:
+        verify_clerk_token(token)
+    except Exception as e:
+        logger.warning("WS auth failed for session %s: %s", session_id, e)
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+
     await manager.connect(session_id, websocket)
     try:
         while True:
