@@ -35,3 +35,4 @@ pgdata/
 # Build
 dist/
 build/
+.worktrees/
