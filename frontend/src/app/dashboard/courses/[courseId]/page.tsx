@@ -6,7 +6,6 @@ import { useSearchParams } from "next/navigation";
 import { useRole } from "@/hooks/use-role";
 import {
   BookOpen,
-  Users,
   Calendar,
   FileText,
   Clock,
