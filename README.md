@@ -12,6 +12,7 @@
 
 <p align="center">
   Upload course materials. Generate quizzes, flashcards, and summaries in seconds.<br/>
+  Practice with adaptive difficulty, live Kahoot-style quizzes, and pronunciation grading.<br/>
   Built for HKUST's Center for Language Education.
 </p>
 
@@ -40,6 +41,8 @@ Meli (_honey_ in several languages, _salt_ in Hebrew) is a RAG-powered platform 
 - **Upload anything** - PDF, DOCX, PPTX, MP3, MP4. Docling parses documents; Whisper transcribes audio.
 - **Generate quizzes** from uploaded materials with one click. Edit, publish, and track student attempts.
 - **Generate flashcard sets** tied to specific documents or entire courses.
+- **Host live quizzes** - Kahoot-style real-time sessions with join codes, speed-based scoring, and live leaderboards.
+- **Analytics dashboard** - course overview, per-quiz performance, and per-student stats (XP, scores, activity).
 - **Canvas LMS integration** - import files directly from connected Canvas courses.
 - **Usage analytics** - per-student rate limiting protects against API cost overruns.
 
@@ -47,7 +50,11 @@ Meli (_honey_ in several languages, _salt_ in Hebrew) is a RAG-powered platform 
 
 - **Practice quizzes** - take AI-generated quizzes with explanations for every answer.
 - **Flashcards with SM-2** - spaced repetition algorithm schedules reviews at optimal intervals.
+- **Adaptive revision** - infinite practice mode with a contextual bandit that adapts difficulty to your skill level in real time.
+- **Pronunciation grading** - record yourself, get per-word accuracy scores via Azure Speech or iFlytek.
+- **Live quizzes** - join instructor-hosted sessions with a code, compete for speed and accuracy.
 - **Summaries** - get markdown summaries of any subset of course materials.
+- **Gamification** - earn XP, maintain streaks, unlock badges, and climb the course leaderboard.
 - **Enrollment-scoped** - students only see courses and materials they're enrolled in.
 
 <br/>
@@ -59,54 +66,67 @@ Meli (_honey_ in several languages, _salt_ in Hebrew) is a RAG-powered platform 
 ## Architecture
 
 ```
-                                    ┌─────────────────────┐
-                                    │   Clerk (Auth)       │
-                                    └──────────┬──────────┘
-                                               │ JWT
-                    ┌──────────────────────────┐│┌──────────────────────────┐
-                    │                          │││                          │
-                    │   Next.js 16 (Vercel)    │││   FastAPI (Railway)      │
-                    │                          ├┤│                          │
-                    │   App Router + React 19  │ │   Async Python 3.12     │
-                    │   TanStack Query         │ │                          │
-                    │   Tailwind CSS 4         │ │   ┌──────────────────┐   │
-                    │   shadcn/ui              │ │   │  API Routers     │   │
-                    │                          │ │   │  auth, courses,  │   │
-                    └──────────────────────────┘ │   │  documents, rag, │   │
-                                                 │   │  quizzes, flash  │   │
-                                                 │   └────────┬─────────┘   │
-                                                 │            │             │
-                                                 │   ┌────────▼─────────┐   │
-                                                 │   │  Service Layer   │   │
-                                                 │   │                  │   │
-                                                 │   │  parser embedder │   │
-                                                 │   │  chunker retriev │   │
-                                                 │   │  generator       │   │
-                                                 │   └──┬────┬────┬─────┘   │
-                                                 │      │    │    │         │
-                                                 │   ┌──▼──┐ │ ┌──▼──────┐  │
-                                                 │   │Task │ │ │OpenAI   │  │
-                                                 │   │Queue│ │ │Embedder │  │
-                                                 │   └──┬──┘ │ └─────────┘  │
-                                                 │      │    │              │
-                                                 └──────┼────┼──────────────┘
-                                                        │    │
-                                              ┌─────────▼────▼──────────┐
-                                              │  PostgreSQL 17          │
-                                              │  + pgvector (HNSW)      │
-                                              │                         │
-                                              │  users, courses, docs,  │
-                                              │  chunks, quizzes,       │
-                                              │  flashcards, tasks,     │
-                                              │  api_usage              │
-                                              └─────────────────────────┘
-                                                        │
-                              ┌──────────────────────────┼──────────────────────────┐
-                              │                          │                          │
-                     ┌────────▼────────┐       ┌─────────▼────────┐      ┌──────────▼──────────┐
-                     │ Cloudflare R2   │       │ OpenRouter       │      │ OpenAI Whisper      │
-                     │ File Storage    │       │ LLM Generation   │      │ Audio Transcription │
-                     └─────────────────┘       └──────────────────┘      └─────────────────────┘
+                                    +---------------------+
+                                    |   Clerk (Auth)       |
+                                    +----------+----------+
+                                               | JWT
+                    +--------------------------+|+--------------------------+
+                    |                          |||                          |
+                    |   Next.js 16 (Vercel)    |||   FastAPI (Railway)      |
+                    |                          +-+                          |
+                    |   App Router + React 19  | |   Async Python 3.12     |
+                    |   TanStack Query         | |                          |
+                    |   Tailwind CSS 4         | |   +------------------+   |
+                    |   shadcn/ui              | |   |  API Routers     |   |
+                    |                          | |   |  auth, courses,  |   |
+                    +--------------------------+ |   |  documents, rag, |   |
+                                                 |   |  quizzes, flash, |   |
+                                                 |   |  live, revision, |   |
+                                                 |   |  speech, analytics|  |
+                                                 |   |  progress        |   |
+                                                 |   +--------+---------+   |
+                                                 |            |             |
+                                                 |   +--------v---------+   |
+                                                 |   |  Service Layer   |   |
+                                                 |   |                  |   |
+                                                 |   |  parser embedder |   |
+                                                 |   |  chunker retriev |   |
+                                                 |   |  generator       |   |
+                                                 |   |  bandit  speech  |   |
+                                                 |   |  live_quiz gamif |   |
+                                                 |   +--+----+----+-----+   |
+                                                 |      |    |    |         |
+                                                 |   +--v--+ | +--v------+  |
+                                                 |   |Task | | |OpenAI   |  |
+                                                 |   |Queue| | |Embedder |  |
+                                                 |   +--+--+ | +---------+  |
+                                                 |      |    |              |
+                                                 +------+----+--------------+
+                                                        |    |
+                                              +---------v----v--------------+
+                                              |  PostgreSQL 17              |
+                                              |  + pgvector (HNSW)          |
+                                              |  + tsvector (full-text)     |
+                                              |                             |
+                                              |  users, courses, docs,      |
+                                              |  chunks, quizzes,           |
+                                              |  flashcards, tasks,         |
+                                              |  live_sessions, revision,   |
+                                              |  bandit_models, progress,   |
+                                              |  pronunciation_scores       |
+                                              +-----------------------------+
+                                                        |
+                              +-------------------------+-------------------------+
+                              |                         |                         |
+                     +--------v--------+       +--------v--------+      +---------v-----------+
+                     | Cloudflare R2   |       | OpenRouter       |      | Azure / iFlytek     |
+                     | File Storage    |       | LLM Generation   |      | Speech Grading      |
+                     +-----------------+       +------------------+      +---------------------+
+                              |
+                     +--------v--------+
+                     | OpenAI Whisper  |
+                     | Transcription   |
+                     +-----------------+
 ```
 
 ### Monolith-first, splittable later
@@ -119,17 +139,19 @@ A single FastAPI process serves both HTTP requests and a background task worker.
 
 <br/>
 
-## RAG Pipeline
+## Features
+
+### RAG Pipeline
 
 The document processing pipeline is the core of Meli. When an instructor uploads a file:
 
 ```
  Upload                Parse                 Chunk                  Embed                Store
-┌──────┐  R2 store   ┌──────┐  Markdown    ┌──────┐  ~500 tok    ┌──────┐  vector     ┌──────┐
-│ File │ ──────────► │Docling│ ──────────► │Chunker│ ──────────► │OpenAI│ ──────────► │pgvec │
-│      │             │Whisper│             │       │  overlap     │      │  1536 dim   │ tor  │
-└──────┘             └──────┘             └──────┘              └──────┘             └──────┘
-                         │                     │
++------+  R2 store   +------+  Markdown    +------+  ~500 tok    +------+  vector     +------+
+| File | ----------> |Docling| ----------> |Chunker| ----------> |OpenAI| ----------> |pgvec |
+|      |             |Whisper|             |       |  overlap     |      |  1536 dim   | tor  |
++------+             +------+             +------+              +------+             +------+
+                         |                     |
                     PDF/DOCX/PPTX        Sentence-aligned
                     MP3/MP4              50-token overlap
 ```
@@ -139,17 +161,98 @@ The document processing pipeline is the core of Meli. When an instructor uploads
 | **Parse** | [parser.py](backend/app/services/parser.py) | Docling for PDF/DOCX/PPTX with page-level extraction. Whisper for MP3/MP4. |
 | **Chunk** | [chunker.py](backend/app/services/chunker.py) | Sentence-aligned splitting at ~500 tokens with 50-token overlap. Page numbers preserved. |
 | **Embed** | [embedder.py](backend/app/services/embedder.py) | OpenAI `text-embedding-3-large` (1536 dims). Batched in groups of 100. |
-| **Retrieve** | [retriever.py](backend/app/services/retriever.py) | pgvector cosine similarity (`<=>` operator). Course-scoped, optionally filtered by document. |
+| **Retrieve** | [retriever.py](backend/app/services/retriever.py) | Three modes: vector (pgvector cosine), full-text (tsvector + GIN), or hybrid (Reciprocal Rank Fusion). |
 | **Generate** | [generator.py](backend/app/services/generator.py) | OpenRouter LLM with automatic fallback. Primary model tried first; on JSON parse failure, secondary model retried. |
 
-### Generation outputs
+### Hybrid Search
 
-| Endpoint | Output | Who can call |
-|----------|--------|--------------|
-| `POST /api/rag/query` | Retrieved chunks with similarity scores | Any enrolled user |
-| `POST /api/rag/generate-quiz` | Multiple-choice quiz (persisted) | Instructors only |
-| `POST /api/rag/generate-summary` | Markdown summary | Any enrolled user |
-| `POST /api/rag/generate-flashcards` | Flashcard set (persisted) | Any enrolled user |
+Retrieval supports three modes via the `mode` parameter:
+
+| Mode | Method | Best for |
+|------|--------|----------|
+| `vector` | pgvector cosine similarity (`<=>`) | Semantic/conceptual queries |
+| `fulltext` | PostgreSQL tsvector with GIN index | Exact keyword/phrase matching |
+| `hybrid` | Reciprocal Rank Fusion (k=60) | Best of both — default for generation |
+
+A database trigger auto-populates the `tsvector_content` column on chunk insert/update.
+
+### Quizzes
+
+- Instructors generate multiple-choice quizzes from selected documents via RAG
+- Publish/unpublish controls student visibility
+- Students submit attempts and receive instant grading with explanations
+- Instructors can preview with answers, add questions manually, or regenerate individual questions
+
+### Flashcards & Spaced Repetition (SM-2)
+
+- Instructors generate flashcard sets from documents, with publish/unpublish control
+- Students review cards and rate recall quality (0-5)
+- SM-2 algorithm adjusts ease factor and schedules next review:
+  - Quality < 3 resets the repetition counter
+  - Intervals: 1 day, 6 days, then ease-factor-based multiplier
+- Per-user, per-card progress tracked in `flashcard_progress`
+
+### Adaptive Revision Mode (Contextual Bandit)
+
+Infinite practice sessions where difficulty adapts to the student in real time.
+
+| Component | Details |
+|-----------|---------|
+| **Policy network** | MLP (10 -> 32 -> 3) trained with REINFORCE policy gradients |
+| **State vector** | 10-dim features: recent scores, rolling accuracy, score variance, session count, time stats |
+| **Cold start** | First 20 attempts use rule-based difficulty (start easy, ramp up) |
+| **Online learning** | Policy updated after every single answer |
+| **Persistence** | Weights serialized to `bandit_models` table per (user, course, content_type) |
+| **Pool management** | Background worker auto-generates items when pool drops below threshold |
+| **Item dedup** | `revision_item_served` table prevents serving the same item twice |
+
+```
+Student answers -> compute reward -> REINFORCE update -> select next difficulty
+                                                              |
+                                                     easy / medium / hard
+                                                              |
+                                                     serve from pool
+```
+
+### Live Quiz (Kahoot-style)
+
+Real-time multiplayer quizzes with WebSocket communication.
+
+| Feature | Details |
+|---------|---------|
+| **Join codes** | 6-character alphanumeric codes for easy session joining |
+| **State machine** | WAITING -> ACTIVE -> QUESTION -> ANSWER_REVEAL -> FINISHED |
+| **Scoring** | Points = base * (1 - elapsed/time_limit) — faster answers earn more |
+| **Real-time** | WebSocket broadcasts questions, answers, and leaderboard updates |
+| **REST fallback** | Polling endpoints for clients that can't use WebSockets |
+| **In-memory state** | No Redis required — `SessionState` lives in the FastAPI process |
+
+### Pronunciation Grading
+
+Dual-provider speech assessment with per-word accuracy.
+
+| Provider | Language | Method |
+|----------|----------|--------|
+| **Azure Speech SDK** | English | Pronunciation Assessment API |
+| **iFlytek** | Chinese | REST API with HMAC-SHA256 auth |
+
+Returns normalized scores: overall, accuracy, fluency, completeness, prosody, plus word-level detail. History tracked per user per course.
+
+### Gamification
+
+| Feature | Details |
+|---------|---------|
+| **XP** | Quiz: score * 10, Flashcard review: 50, Pronunciation: 30 |
+| **Streaks** | Consecutive days with any activity |
+| **Badges** | `first_quiz`, `perfect_score`, `streak_7`, `streak_30`, `flashcard_master`, `speed_learner` |
+| **Leaderboard** | Per-course XP ranking, paginated |
+| **Progress card** | Dashboard widget showing XP, streak, and recent badges |
+
+### Instructor Analytics
+
+- **Course overview** - aggregate stats across all students
+- **Quiz analytics** - attempt count, average score per quiz
+- **Student stats** - per-student XP, quizzes completed, average score
 
 <br/>
 
@@ -169,9 +272,12 @@ The document processing pipeline is the core of Meli. When an instructor uploads
 | Auth | **Clerk** JWT verification via PyJWKClient |
 | Storage | **Cloudflare R2** (S3-compatible, boto3) |
 | Vectors | **pgvector** HNSW cosine similarity |
+| Full-text | **PostgreSQL** tsvector + GIN index |
 | Parsing | **Docling** 2.31 (PDF/DOCX/PPTX) + **Whisper** (audio) |
 | LLM | **OpenRouter** (OpenAI-compatible SDK) |
 | Embeddings | **OpenAI** text-embedding-3-large |
+| Speech | **Azure Speech SDK** + **iFlytek** |
+| ML | **PyTorch** + **NumPy** (REINFORCE bandit policy) |
 | Testing | **pytest** + pytest-asyncio |
 
 ### Frontend
@@ -300,6 +406,11 @@ cd frontend && npm run e2e
 | `ALLOWED_EMAIL_DOMAINS` | Comma-separated (e.g., `connect.ust.hk,ust.hk`) |
 | `STUDENT_RATE_LIMIT` | AI requests per hour for students (default: 10) |
 | `INSTRUCTOR_RATE_LIMIT` | AI requests per hour for instructors (default: 50) |
+| `AZURE_SPEECH_KEY` | Azure Speech Services key (pronunciation grading) |
+| `AZURE_SPEECH_REGION` | Azure Speech region |
+| `IFLYTEK_APP_ID` | iFlytek app ID (Chinese pronunciation) |
+| `IFLYTEK_API_KEY` | iFlytek API key |
+| `IFLYTEK_API_SECRET` | iFlytek API secret |
 
 </details>
 
@@ -368,7 +479,7 @@ Accepted MIME types: `application/pdf`, `application/vnd.openxmlformats-officedo
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `POST` | `/api/rag/query` | Enrolled | Semantic search over course chunks |
+| `POST` | `/api/rag/query` | Enrolled | Semantic search (vector, fulltext, or hybrid mode) |
 | `POST` | `/api/rag/generate-quiz` | Instructor | Generate and persist a quiz |
 | `POST` | `/api/rag/generate-summary` | Enrolled | Generate a markdown summary |
 | `POST` | `/api/rag/generate-flashcards` | Enrolled | Generate and persist flashcards |
@@ -384,9 +495,13 @@ Rate limited: students 10/hr, instructors 50/hr (configurable).
 |--------|----------|------|-------------|
 | `GET` | `/api/courses/:id/quizzes` | Enrolled | List quizzes (students see published only) |
 | `GET` | `/api/quizzes/:id` | Enrolled | Quiz with all questions |
+| `GET` | `/api/quizzes/:id/preview` | Instructor | Preview quiz with answers |
 | `PUT` | `/api/quizzes/:id` | Instructor | Update quiz metadata |
 | `DELETE` | `/api/quizzes/:id` | Instructor | Soft delete |
-| `POST` | `/api/quizzes/:id/publish` | Instructor | Publish quiz |
+| `POST` | `/api/quizzes/:id/publish` | Instructor | Toggle publish status |
+| `POST` | `/api/quizzes/:id/questions` | Instructor | Add question to quiz |
+| `DELETE` | `/api/questions/:id` | Instructor | Delete question and reindex |
+| `POST` | `/api/questions/:id/regenerate` | Instructor | Regenerate single question via RAG |
 | `POST` | `/api/quizzes/:id/attempt` | Enrolled | Submit answers, get graded results |
 
 </details>
@@ -396,9 +511,71 @@ Rate limited: students 10/hr, instructors 50/hr (configurable).
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `GET` | `/api/courses/:id/flashcard-sets` | Enrolled | List flashcard sets |
+| `GET` | `/api/courses/:id/flashcard-sets` | Enrolled | List flashcard sets (students see published only) |
 | `GET` | `/api/flashcard-sets/:id` | Enrolled | Set with all cards |
+| `POST` | `/api/flashcard-sets/:id/publish` | Instructor | Toggle publish status |
+| `DELETE` | `/api/flashcard-sets/:id` | Instructor | Soft delete set |
 | `PUT` | `/api/flashcard-sets/:id/progress` | Enrolled | Update SM-2 spaced repetition progress |
+
+</details>
+
+<details>
+<summary><strong>Revision Mode</strong></summary>
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/api/courses/:id/revision/start` | Student | Start adaptive revision session |
+| `POST` | `/api/revision/sessions/:id/answer` | Student | Submit answer (triggers bandit update) |
+| `POST` | `/api/revision/sessions/:id/next` | Student | Get next item at adapted difficulty |
+| `GET` | `/api/revision/sessions/:id` | Student | Get session stats |
+| `POST` | `/api/revision/sessions/:id/end` | Student | End session, return summary |
+
+</details>
+
+<details>
+<summary><strong>Live Quiz</strong></summary>
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/api/courses/:id/live-sessions` | Instructor | Create live session from a quiz |
+| `GET` | `/api/courses/:id/live-sessions` | Enrolled | List active sessions |
+| `GET` | `/api/live-sessions/:id` | Enrolled | Get session detail |
+| `GET` | `/api/live-sessions/:id/state` | Enrolled | Poll in-memory session state |
+| `POST` | `/api/live-sessions/:id/next-question` | Instructor | Advance to next question |
+| `POST` | `/api/live-sessions/:id/answer` | Student | Submit answer |
+| `POST` | `/api/live-sessions/:id/end` | Instructor | End session |
+| `WS` | `/api/live/:id` | Enrolled | WebSocket for real-time play |
+
+</details>
+
+<details>
+<summary><strong>Pronunciation</strong></summary>
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/api/speech/grade` | Enrolled | Grade pronunciation (upload audio + reference text) |
+| `GET` | `/api/courses/:id/pronunciation-history` | Enrolled | Past pronunciation scores |
+
+</details>
+
+<details>
+<summary><strong>Progress & Gamification</strong></summary>
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/courses/:id/progress` | Enrolled | User's XP, streak, badges, activity counts |
+| `GET` | `/api/courses/:id/leaderboard` | Enrolled | Paginated course leaderboard by XP |
+
+</details>
+
+<details>
+<summary><strong>Analytics (Instructor)</strong></summary>
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/analytics/courses/:id/overview` | Instructor | Course-level aggregate stats |
+| `GET` | `/api/analytics/courses/:id/quizzes` | Instructor | Per-quiz attempt count and average score |
+| `GET` | `/api/analytics/courses/:id/students` | Instructor | Per-student XP, quizzes completed, avg score |
 
 </details>
 
@@ -435,10 +612,22 @@ meli/
 │   │   │   ├── documents.py     #   Upload + file management
 │   │   │   ├── quizzes.py       #   Quiz CRUD + attempts + grading
 │   │   │   ├── flashcards.py    #   Flashcard sets + SM-2 progress
+│   │   │   ├── revision.py      #   Adaptive revision sessions
+│   │   │   ├── live.py          #   Live quiz (WebSocket + REST)
+│   │   │   ├── speech.py        #   Pronunciation grading
+│   │   │   ├── analytics.py     #   Instructor analytics
+│   │   │   ├── progress.py      #   Gamification (XP, badges, leaderboard)
 │   │   │   └── canvas.py        #   Canvas LMS integration
 │   │   ├── models/              # SQLAlchemy 2.0 models
 │   │   │   ├── base.py          #   UUID PK, timestamps, soft delete mixins
-│   │   │   └── ...              #   user, course, document, chunk, quiz, flashcard, task
+│   │   │   ├── user.py          #   User, Course, Enrollment
+│   │   │   ├── document.py      #   Document, Chunk (+ tsvector)
+│   │   │   ├── quiz.py          #   Quiz, Question, QuizAttempt, QuizDocument
+│   │   │   ├── flashcard.py     #   FlashcardSet, FlashcardCard, FlashcardProgress
+│   │   │   ├── revision.py      #   RevisionSession, RevisionPoolItem, RevisionAttempt, BanditModel
+│   │   │   ├── live.py          #   LiveSession, LiveAnswer
+│   │   │   ├── gamification.py  #   StudentProgress, PronunciationScore
+│   │   │   └── task.py          #   Task, ApiUsage, CanvasIntegration
 │   │   ├── schemas/             # Pydantic v2 request/response models
 │   │   ├── services/            # Business logic
 │   │   │   ├── pipeline.py      #   Orchestrates download → parse → chunk → embed → store
@@ -446,10 +635,15 @@ meli/
 │   │   │   ├── parser.py        #   Docling + Whisper dispatch
 │   │   │   ├── chunker.py       #   Sentence-aligned ~500-token chunks
 │   │   │   ├── embedder.py      #   OpenAI text-embedding-3-large
-│   │   │   ├── retriever.py     #   pgvector cosine similarity search
+│   │   │   ├── retriever.py     #   Hybrid search (vector + fulltext + RRF)
 │   │   │   ├── generator.py     #   OpenRouter LLM with fallback strategy
+│   │   │   ├── bandit.py        #   REINFORCE contextual bandit for difficulty adaptation
+│   │   │   ├── live_quiz.py     #   WebSocket manager + session state machine
+│   │   │   ├── gamification.py  #   XP awards, streaks, badges, leaderboard
+│   │   │   ├── speech.py        #   Azure Speech + iFlytek pronunciation grading
 │   │   │   ├── storage.py       #   Cloudflare R2 via boto3
-│   │   │   └── auth.py          #   Clerk JWT verification + role detection
+│   │   │   ├── auth.py          #   Clerk JWT verification + role detection
+│   │   │   └── canvas.py        #   Canvas LMS client
 │   │   └── middleware/          # ASGI middleware
 │   │       ├── auth.py          #   Early Bearer token gate
 │   │       └── rate_limit.py    #   Per-user hourly limits on /api/rag/*
@@ -463,11 +657,41 @@ meli/
 ├── frontend/
 │   ├── src/
 │   │   ├── app/                 # Next.js 16 App Router
-│   │   │   ├── dashboard/       #   Authenticated views (courses, quizzes, flashcards)
+│   │   │   ├── dashboard/       #   Authenticated views
+│   │   │   │   ├── courses/     #     Course list + detail
+│   │   │   │   │   └── [courseId]/
+│   │   │   │   │       ├── quizzes/          # Quiz player
+│   │   │   │   │       ├── flashcards/       # Flashcard player
+│   │   │   │   │       ├── revision/         # Adaptive revision
+│   │   │   │   │       ├── pronunciation/    # Speech grading
+│   │   │   │   │       └── live/             # Live quiz host/join
 │   │   │   ├── sign-in/         #   Clerk sign-in
 │   │   │   └── sign-up/         #   Clerk sign-up
-│   │   ├── components/          # Feature-organized (course/, quiz/, flashcard/, documents/)
-│   │   ├── hooks/               # useApiToken, useCourses, useQuizzes, useDocuments, etc.
+│   │   ├── components/          # Feature-organized
+│   │   │   ├── course/          #   Create course dialog
+│   │   │   ├── documents/       #   Upload zone, document selector
+│   │   │   ├── quiz/            #   Player, list, preview, results, generate dialog
+│   │   │   ├── flashcard/       #   Player, list, preview, generate dialog
+│   │   │   ├── revision/        #   Player, quiz/flashcard items, stats bar, summary
+│   │   │   ├── live-quiz/       #   Lobby, host panel, player view, podium
+│   │   │   ├── pronunciation/   #   Recorder, score display, history chart
+│   │   │   ├── gamification/    #   XP toast, badge display, leaderboard, progress card
+│   │   │   ├── analytics/       #   Course analytics dashboard
+│   │   │   ├── summary/         #   Generate summary dialog
+│   │   │   ├── layout/          #   Navbar, sidebar, dashboard shell, language toggle
+│   │   │   └── ui/              #   shadcn/ui primitives
+│   │   ├── hooks/               # Custom hooks
+│   │   │   ├── use-api-token.ts
+│   │   │   ├── use-courses.ts
+│   │   │   ├── use-quizzes.ts
+│   │   │   ├── use-flashcard-sets.ts
+│   │   │   ├── use-documents.ts
+│   │   │   ├── use-revision.ts
+│   │   │   ├── use-live-quiz.ts
+│   │   │   ├── use-pronunciation.ts
+│   │   │   ├── use-progress.ts
+│   │   │   ├── use-analytics.ts
+│   │   │   └── use-role.ts
 │   │   ├── lib/api.ts           # Typed fetch wrapper with Clerk Bearer token
 │   │   ├── proxy.ts             # Next.js 16 proxy (replaces middleware.ts)
 │   │   └── styles/tokens.css    # Design tokens (oklch, "Honey & Salt" palette)
@@ -497,15 +721,20 @@ Meli uses a **"Honey & Salt"** design system - warm amber primary tones paired w
 
 ## Database
 
-PostgreSQL 17 with pgvector extension. Key design decisions:
+PostgreSQL 17 with pgvector and tsvector extensions. Key design decisions:
 
 - **UUID primary keys** on all tables via `UUIDPrimaryKeyMixin`
 - **Soft deletes** on courses, documents, quizzes, flashcard sets (`deleted_at` timestamp)
 - **Timestamps** on all records via `TimestampMixin` (`created_at`, `updated_at`)
 - **Task queue** backed by the `tasks` table with `FOR UPDATE SKIP LOCKED` claiming
 - **Vector storage** in `chunks.embedding` column (1536-dim vectors, HNSW index)
+- **Full-text search** in `chunks.tsvector_content` column (GIN index, auto-populated trigger)
 - **Junction tables** for quiz-document and flashcard-document relationships (not UUID arrays)
 - **SM-2 spaced repetition** state in `flashcard_progress` with per-user-per-card tracking
+- **Bandit models** serialized policy weights stored per (user, course, content_type)
+- **Revision tracking** with session, pool, attempt, and served-item tables for adaptive difficulty
+- **Gamification** in `student_progress` (XP, streaks, badges JSONB, activity counts)
+- **Live quiz** state in `live_sessions` and `live_answers` tables
 
 ### Running migrations
 
@@ -549,8 +778,15 @@ Authentication is handled by **Clerk**. The frontend wraps the app in `<ClerkPro
 |-------|--------|----------|
 | **1a** Foundation | Done | Auth, models, storage, migrations, Docling validation |
 | **1b** RAG Pipeline | Done | Task queue, document processing, vector search, LLM generation |
-| **1c** Frontend + Deploy | In Progress | Dashboard UI, deploy to Railway + Vercel |
-| **2** Features | Planned | Pronunciation grading, live quiz WebSockets, hybrid search, gamification, i18n |
+| **1c** Frontend + Deploy | Done | Dashboard UI, quiz player, flashcard player, deploy to Railway + Vercel |
+| **2a** Hybrid Search | Done | tsvector + GIN index, full-text retrieval, Reciprocal Rank Fusion |
+| **2b** Gamification | Done | XP system, streaks, badges, course leaderboard, progress tracking |
+| **2c** Pronunciation Grading | Done | Azure Speech (English), iFlytek (Chinese), per-word scoring, history |
+| **2d** Live Quiz | Done | WebSocket real-time play, join codes, speed scoring, lobby + podium UI |
+| **2e** Difficulty Adapter | Done | REINFORCE contextual bandit, adaptive revision sessions, pool management |
+| **2f** Analytics | Done | Instructor dashboard: course overview, quiz stats, student stats |
+| **2g** Flashcard Publishing | Done | Publish/unpublish control for flashcard sets (mirrors quizzes) |
+| **3** Planned | Planned | i18n (Traditional Chinese), Canvas LMS import, advanced analytics |
 
 <br/>
 
