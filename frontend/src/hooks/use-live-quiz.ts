@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
 import { apiFetch } from "@/lib/api";
@@ -31,145 +31,109 @@ export interface QuestionMessage {
   readonly time_limit: number;
 }
 
-export type LiveStatus =
-  | "connecting"
-  | "connected"
-  | "waiting"
-  | "active"
-  | "finished"
-  | "error";
+export type LiveStatus = "connecting" | "connected" | "active" | "finished" | "error";
 
 interface ApiEnvelope<T> {
   readonly success: boolean;
   readonly data: T;
 }
 
-/* ------------------------------------------------------------------ */
-/*  WebSocket message types from backend                               */
-/* ------------------------------------------------------------------ */
-
-interface WsQuestionMsg {
-  readonly type: "question";
-  readonly index: number;
+interface LiveStateResponse {
+  readonly status: string;
+  readonly current_question_index: number;
   readonly time_limit: number;
-}
-
-interface WsAnswerReceivedMsg {
-  readonly type: "answer_received";
-  readonly user_id: string;
   readonly leaderboard: readonly LeaderboardEntry[];
-}
-
-interface WsSessionEndedMsg {
-  readonly type: "session_ended";
-  readonly final_leaderboard: readonly LeaderboardEntry[];
-}
-
-interface WsErrorMsg {
-  readonly type: "error";
-  readonly message: string;
-}
-
-type WsMessage =
-  | WsQuestionMsg
-  | WsAnswerReceivedMsg
-  | WsSessionEndedMsg
-  | WsErrorMsg;
-
-/* ------------------------------------------------------------------ */
-/*  Helper: derive WS URL from API URL                                 */
-/* ------------------------------------------------------------------ */
-
-function getWsUrl(): string {
-  const explicit = process.env.NEXT_PUBLIC_WS_URL;
-  if (explicit) return explicit;
-
-  const apiUrl =
-    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
-  return apiUrl
-    .replace(/^https:/, "wss:")
-    .replace(/^http:/, "ws:")
-    .replace(/\/api$/, "");
+  readonly participant_count: number;
 }
 
 /* ------------------------------------------------------------------ */
-/*  useLiveQuiz — WebSocket hook                                       */
+/*  useLiveQuiz — polling-based hook                                   */
 /* ------------------------------------------------------------------ */
+
+const POLL_INTERVAL_MS = 1500;
 
 export function useLiveQuiz(sessionId: string, token: string | null) {
-  const wsRef = useRef<WebSocket | null>(null);
-  const [status, setStatus] = useState<LiveStatus>("connecting");
-  const [currentQuestion, setCurrentQuestion] =
-    useState<QuestionMessage | null>(null);
-  const [leaderboard, setLeaderboard] = useState<readonly LeaderboardEntry[]>(
-    []
-  );
-  const [participantCount, setParticipantCount] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+  /* Poll session state every 1.5s */
+  const { data: state, error: pollError } = useQuery({
+    queryKey: ["live-state", sessionId],
+    queryFn: async () => {
+      const t = await getToken();
+      if (!t) throw new Error("Not authenticated");
+      const res = await apiFetch<ApiEnvelope<LiveStateResponse>>(
+        `/live-sessions/${sessionId}/state`,
+        { token: t }
+      );
+      return res.data;
+    },
+    enabled: !!sessionId && !!token,
+    refetchInterval: POLL_INTERVAL_MS,
+    retry: 2,
+  });
 
-  /* Connect / disconnect lifecycle */
-  useEffect(() => {
-    if (!sessionId || !token) return;
+  const status: LiveStatus = !state
+    ? "connecting"
+    : state.status === "finished"
+      ? "finished"
+      : state.status === "active"
+        ? "active"
+        : "connected";
 
-    const wsUrl = `${getWsUrl()}/live/${sessionId}`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+  const currentQuestion: QuestionMessage | null =
+    state && state.status === "active"
+      ? { index: state.current_question_index, time_limit: state.time_limit }
+      : null;
 
-    ws.onopen = () => {
-      setStatus("connected");
-      setError(null);
-    };
+  const leaderboard = state?.leaderboard ?? [];
+  const participantCount = state?.participant_count ?? 0;
 
-    ws.onmessage = (event) => {
-      const msg: WsMessage = JSON.parse(event.data);
+  /* Actions */
+  const nextQuestionMut = useMutation({
+    mutationFn: async () => {
+      const t = await getToken();
+      if (!t) throw new Error("Not authenticated");
+      await apiFetch(`/live-sessions/${sessionId}/next-question`, {
+        method: "POST",
+        token: t,
+      });
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["live-state", sessionId] }),
+  });
 
-      switch (msg.type) {
-        case "question":
-          setStatus("active");
-          setCurrentQuestion({ index: msg.index, time_limit: msg.time_limit });
-          break;
+  const answerMut = useMutation({
+    mutationFn: async (body: {
+      answer: string;
+      user_id: string;
+      question_index: number;
+      is_correct: boolean;
+      elapsed_seconds: number;
+    }) => {
+      const t = await getToken();
+      if (!t) throw new Error("Not authenticated");
+      await apiFetch(`/live-sessions/${sessionId}/answer`, {
+        method: "POST",
+        token: t,
+        body: JSON.stringify(body),
+      });
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["live-state", sessionId] }),
+  });
 
-        case "answer_received":
-          setLeaderboard(msg.leaderboard);
-          setParticipantCount(msg.leaderboard.length);
-          break;
-
-        case "session_ended":
-          setStatus("finished");
-          setLeaderboard(msg.final_leaderboard);
-          setCurrentQuestion(null);
-          break;
-
-        case "error":
-          setError(msg.message);
-          break;
-      }
-    };
-
-    ws.onerror = () => {
-      setStatus("error");
-      setError("WebSocket connection failed");
-    };
-
-    ws.onclose = () => {
-      if (status !== "finished") {
-        setStatus("error");
-      }
-    };
-
-    return () => {
-      ws.close();
-      wsRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, token]);
-
-  /* Send helpers */
-  const send = useCallback((data: Record<string, unknown>) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(data));
-    }
-  }, []);
+  const endMut = useMutation({
+    mutationFn: async () => {
+      const t = await getToken();
+      if (!t) throw new Error("Not authenticated");
+      await apiFetch(`/live-sessions/${sessionId}/end`, {
+        method: "POST",
+        token: t,
+      });
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["live-state", sessionId] }),
+  });
 
   const sendAnswer = useCallback(
     (
@@ -179,8 +143,7 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
       isCorrect: boolean,
       elapsedSeconds: number
     ) => {
-      send({
-        type: "answer",
+      answerMut.mutate({
         answer,
         user_id: userId,
         question_index: questionIndex,
@@ -188,23 +151,23 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
         elapsed_seconds: elapsedSeconds,
       });
     },
-    [send]
+    [answerMut]
   );
 
   const nextQuestion = useCallback(() => {
-    send({ type: "next_question" });
-  }, [send]);
+    nextQuestionMut.mutate();
+  }, [nextQuestionMut]);
 
   const endSession = useCallback(() => {
-    send({ type: "end_session" });
-  }, [send]);
+    endMut.mutate();
+  }, [endMut]);
 
   return {
     status,
     currentQuestion,
     leaderboard,
     participantCount,
-    error,
+    error: pollError?.message ?? null,
     sendAnswer,
     nextQuestion,
     endSession,

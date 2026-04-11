@@ -13,6 +13,10 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, RefreshCw, FileText, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import {
+  DocumentSelector,
+  useDocumentSelection,
+} from "@/components/documents/document-selector";
 
 interface GenerateSummaryDialogProps {
   readonly courseId: string;
@@ -26,10 +30,10 @@ export function GenerateSummaryDialog({
   onOpenChange,
 }: GenerateSummaryDialogProps) {
   const { getToken } = useAuth();
+  const { selectedIds, setSelectedIds } = useDocumentSelection(courseId);
   const [summary, setSummary] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasGenerated, setHasGenerated] = useState(false);
 
   const generateSummary = useCallback(async () => {
     setIsGenerating(true);
@@ -43,11 +47,13 @@ export function GenerateSummaryDialog({
         {
           method: "POST",
           token: token!,
-          body: JSON.stringify({ course_id: courseId }),
+          body: JSON.stringify({
+            course_id: courseId,
+            document_ids: selectedIds.length > 0 ? selectedIds : undefined,
+          }),
         }
       );
       setSummary(result.data.summary);
-      setHasGenerated(true);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to generate summary";
@@ -55,25 +61,19 @@ export function GenerateSummaryDialog({
     } finally {
       setIsGenerating(false);
     }
-  }, [courseId, getToken]);
+  }, [courseId, selectedIds, getToken]);
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
-      if (nextOpen && !hasGenerated && !isGenerating) {
-        // Auto-generate on open
-        onOpenChange(true);
-        generateSummary();
-      } else if (!nextOpen) {
+      if (!nextOpen) {
         onOpenChange(false);
-        // Reset state on close so fresh generation happens next time
         setSummary(null);
         setError(null);
-        setHasGenerated(false);
       } else {
-        onOpenChange(nextOpen);
+        onOpenChange(true);
       }
     },
-    [hasGenerated, isGenerating, onOpenChange, generateSummary]
+    [onOpenChange]
   );
 
   return (
@@ -140,7 +140,23 @@ export function GenerateSummaryDialog({
                 </Button>
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="space-y-4">
+              <DocumentSelector
+                courseId={courseId}
+                selectedIds={selectedIds}
+                onSelectionChange={setSelectedIds}
+              />
+              <Button
+                onClick={generateSummary}
+                disabled={selectedIds.length === 0}
+                className="w-full"
+              >
+                <FileText className="size-4" />
+                Generate Summary
+              </Button>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
 import { apiFetch } from "@/lib/api";
 
@@ -47,6 +47,25 @@ export function useDocuments(courseId: string) {
         (doc) => doc.status === "pending" || doc.status === "processing"
       );
       return hasPending ? 10_000 : false;
+    },
+  });
+}
+
+export function useDeleteDocument(courseId: string) {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (documentId: string) => {
+      const token = await getToken();
+      if (!token) throw new Error("Not authenticated");
+      await apiFetch(`/courses/${courseId}/documents/${documentId}`, {
+        method: "DELETE",
+        token,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["documents", courseId] });
     },
   });
 }
