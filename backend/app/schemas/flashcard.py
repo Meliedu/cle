@@ -19,6 +19,7 @@ class FlashcardSetResponse(BaseModel):
     id: uuid.UUID
     course_id: uuid.UUID
     title: str
+    is_published: bool
     card_count: int
     created_at: datetime
 
@@ -29,6 +30,7 @@ class FlashcardSetDetailResponse(BaseModel):
     id: uuid.UUID
     course_id: uuid.UUID
     title: str
+    is_published: bool
     cards: list[FlashcardCardResponse]
     created_at: datetime
 

@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, require_instructor
 from app.models.course import Enrollment
 from app.models.flashcard import FlashcardCard, FlashcardProgress, FlashcardSet
 from app.models.user import User
@@ -66,6 +66,9 @@ async def list_flashcard_sets(
         .group_by(FlashcardSet.id)
     )
 
+    if user.role != "instructor":
+        stmt = stmt.where(FlashcardSet.is_published.is_(True))
+
     result = await db.execute(stmt)
     rows = result.all()
 
@@ -74,6 +77,7 @@ async def list_flashcard_sets(
             id=fc_set.id,
             course_id=fc_set.course_id,
             title=fc_set.title,
+            is_published=fc_set.is_published,
             card_count=card_count,
             created_at=fc_set.created_at,
         )
@@ -106,6 +110,12 @@ async def get_flashcard_set(
 
     await _verify_enrollment(db, fc_set.course_id, user.id)
 
+    if user.role != "instructor" and not fc_set.is_published:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Flashcard set not found",
+        )
+
     card_responses = [
         FlashcardCardResponse(
             id=c.id,
@@ -123,10 +133,86 @@ async def get_flashcard_set(
             id=fc_set.id,
             course_id=fc_set.course_id,
             title=fc_set.title,
+            is_published=fc_set.is_published,
             cards=card_responses,
             created_at=fc_set.created_at,
         ),
     )
+
+
+@router.post(
+    "/flashcard-sets/{set_id}/publish",
+    response_model=APIResponse[FlashcardSetResponse],
+)
+async def publish_flashcard_set(
+    set_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    result = await db.execute(
+        select(FlashcardSet).where(
+            FlashcardSet.id == set_id,
+            FlashcardSet.created_by == user.id,
+            FlashcardSet.deleted_at.is_(None),
+        )
+    )
+    fc_set = result.scalar_one_or_none()
+    if not fc_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Flashcard set not found",
+        )
+
+    fc_set.is_published = not fc_set.is_published
+    await db.commit()
+    await db.refresh(fc_set)
+
+    count_result = await db.execute(
+        select(func.count(FlashcardCard.id)).where(
+            FlashcardCard.flashcard_set_id == fc_set.id
+        )
+    )
+    card_count = count_result.scalar_one()
+
+    return APIResponse(
+        success=True,
+        data=FlashcardSetResponse(
+            id=fc_set.id,
+            course_id=fc_set.course_id,
+            title=fc_set.title,
+            is_published=fc_set.is_published,
+            card_count=card_count,
+            created_at=fc_set.created_at,
+        ),
+    )
+
+
+@router.delete(
+    "/flashcard-sets/{set_id}",
+    response_model=APIResponse[None],
+)
+async def delete_flashcard_set(
+    set_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    result = await db.execute(
+        select(FlashcardSet).where(
+            FlashcardSet.id == set_id,
+            FlashcardSet.created_by == user.id,
+            FlashcardSet.deleted_at.is_(None),
+        )
+    )
+    fc_set = result.scalar_one_or_none()
+    if not fc_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Flashcard set not found",
+        )
+
+    fc_set.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+    return APIResponse(success=True, data=None)
 
 
 @router.put(

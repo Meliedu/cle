@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,6 +19,7 @@ class FlashcardSet(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=False)
 
     cards: Mapped[list["FlashcardCard"]] = relationship(
         back_populates="flashcard_set", cascade="all, delete-orphan",
