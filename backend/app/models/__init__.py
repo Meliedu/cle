@@ -11,6 +11,7 @@ from app.models.score import PronunciationScore, StudentProgress
 from app.models.live_answer import LiveAnswer
 from app.models.session import LiveSession, SessionSummary
 from app.models.task import Task
+from app.models.recalibration import RecalibrationModel, RecalibrationStats
 from app.models.revision import (
     BanditModel,
     RevisionAttempt,
@@ -49,4 +50,6 @@ __all__ = [
     "RevisionAttempt",
     "RevisionItemServed",
     "BanditModel",
+    "RecalibrationStats",
+    "RecalibrationModel",
 ]

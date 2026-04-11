@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -67,6 +68,11 @@ class RevisionPoolItem(UUIDPrimaryKeyMixin, Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+    # Recalibration columns
+    recalibrated_difficulty: Mapped[str | None] = mapped_column(String(10))
+    recalibration_confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    instructor_override: Mapped[bool] = mapped_column(Boolean, default=False)
+
 
 class RevisionAttempt(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "revision_attempts"
@@ -90,6 +96,7 @@ class RevisionAttempt(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    corrected_difficulty: Mapped[str | None] = mapped_column(String(10))
 
 
 class RevisionItemServed(Base):
