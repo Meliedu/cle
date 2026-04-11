@@ -3,7 +3,6 @@
 import math
 
 import pytest
-import torch
 
 from app.services.scheduler import (
     DEFAULT_PARAMS,
@@ -222,10 +221,37 @@ class TestNextState:
         assert stab2 < stab
 
 
+class TestShortTermStability:
+    def test_easy_increases_stability(self):
+        """Easy same-day review should increase stability."""
+        s = FSRSScheduler(DEFAULT_PARAMS)
+        new_s = s.stability_short_term(5.0, grade=4)
+        assert new_s > 5.0
+
+    def test_again_decreases_stability(self):
+        """Again same-day review should decrease stability."""
+        s = FSRSScheduler(DEFAULT_PARAMS)
+        new_s = s.stability_short_term(5.0, grade=1)
+        assert new_s < 5.0
+
+    def test_same_day_uses_short_term(self):
+        """next_state with elapsed < 1 day should use short-term formula."""
+        s = FSRSScheduler(DEFAULT_PARAMS)
+        stab, diff, _ = s.next_state(grade=3, stability=None, difficulty=None, elapsed_days=0.0)
+        # Same-day review (0.5 days later)
+        stab2, _, _ = s.next_state(grade=3, stability=stab, difficulty=diff, elapsed_days=0.5)
+        # Short-term formula for Good (grade=3): S * e^(w17*(3-3+w18)) = S * e^(w17*w18)
+        expected = stab * math.exp(DEFAULT_PARAMS[17] * (3 - 3 + DEFAULT_PARAMS[18]))
+        assert stab2 == pytest.approx(expected, rel=1e-4)
+
+
 class TestUpdateParameters:
     def test_params_change_after_update(self):
         """Parameters should change after an SGD step."""
-        new_params = update_parameters(DEFAULT_PARAMS, predicted_r=0.9, actual_recall=True)
+        new_params = update_parameters(
+            DEFAULT_PARAMS, predicted_r=0.9, actual_recall=True,
+            stability=5.0, difficulty=5.0, elapsed_days=5.0, grade=3,
+        )
         assert len(new_params) == len(DEFAULT_PARAMS)
         any_changed = any(
             abs(new_params[i] - DEFAULT_PARAMS[i]) > 1e-10
@@ -235,12 +261,45 @@ class TestUpdateParameters:
 
     def test_forget_shifts_params(self):
         """A forgotten card (predicted high R, actual forget) should shift params."""
-        new_params = update_parameters(DEFAULT_PARAMS, predicted_r=0.9, actual_recall=False)
+        new_params = update_parameters(
+            DEFAULT_PARAMS, predicted_r=0.9, actual_recall=False,
+            stability=5.0, difficulty=5.0, elapsed_days=5.0, grade=1,
+        )
         any_changed = any(
             abs(new_params[i] - DEFAULT_PARAMS[i]) > 1e-10
             for i in range(len(DEFAULT_PARAMS))
         )
         assert any_changed
+
+    def test_sgd_step_reduces_loss(self):
+        """SGD step should move stability in the right direction."""
+        stability, difficulty, elapsed, grade = 5.0, 5.0, 5.0, 3
+        sched = FSRSScheduler(DEFAULT_PARAMS)
+        predicted_r = sched.compute_retrievability(elapsed, stability)
+
+        # Student forgot — prediction was too optimistic (R=0.9 but they forgot)
+        new_params = update_parameters(
+            DEFAULT_PARAMS, predicted_r, actual_recall=False,
+            stability=stability, difficulty=difficulty,
+            elapsed_days=elapsed, grade=grade,
+        )
+
+        # The updated params should produce LOWER stability (shorter intervals)
+        # because the student forgot — params should become more conservative
+        s_old, _, _ = FSRSScheduler(DEFAULT_PARAMS).next_state(grade, stability, difficulty, elapsed)
+        s_new, _, _ = FSRSScheduler(new_params).next_state(grade, stability, difficulty, elapsed)
+        assert s_new < s_old
+
+    def test_per_parameter_gradients_differ(self):
+        """Different parameters should get different gradient magnitudes."""
+        new_params = update_parameters(
+            DEFAULT_PARAMS, predicted_r=0.9, actual_recall=False,
+            stability=5.0, difficulty=5.0, elapsed_days=5.0, grade=3,
+        )
+        deltas = [abs(new_params[i] - DEFAULT_PARAMS[i]) for i in range(len(DEFAULT_PARAMS))]
+        # Not all deltas should be identical (unlike the uniform nudge bug)
+        unique_deltas = set(round(d, 12) for d in deltas if d > 1e-15)
+        assert len(unique_deltas) > 1, "All parameter updates are identical — not per-param gradients"
 
 
 class TestFeatureFlag:

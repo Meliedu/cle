@@ -12,8 +12,6 @@ import math
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-import torch
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -135,6 +133,11 @@ class FSRSScheduler:
         )
         return max(0.1, min(s, s_new))  # S'_f should not exceed S
 
+    def stability_short_term(self, s: float, grade: int) -> float:
+        """S'_s = S * e^(w17 * (G - 3 + w18)) for same-day reviews."""
+        s_new = s * math.exp(self.w[17] * (grade - 3 + self.w[18]))
+        return max(0.1, s_new)
+
     def next_state(
         self,
         grade: int,
@@ -151,6 +154,10 @@ class FSRSScheduler:
             # First review
             s = self.initial_stability(grade)
             d = self.initial_difficulty(grade)
+        elif elapsed_days < 1.0:
+            # Same-day review — use short-term stability formula
+            d = self.update_difficulty(difficulty, grade)
+            s = self.stability_short_term(stability, grade)
         else:
             r = self.compute_retrievability(elapsed_days, stability)
             d = self.update_difficulty(difficulty, grade)
@@ -201,32 +208,55 @@ def update_parameters(
     params: list[float],
     predicted_r: float,
     actual_recall: bool,
+    stability: float = 1.0,
+    difficulty: float = 5.0,
+    elapsed_days: float = 1.0,
+    grade: int = 3,
 ) -> list[float]:
-    """One-step SGD on binary cross-entropy loss.
+    """One-step SGD with per-parameter gradients via numerical differentiation.
 
-    Uses PyTorch autograd to compute the gradient of the loss w.r.t.
-    the predicted retrievability, then applies a uniform nudge to all
-    parameters scaled by that gradient.
+    Computes dLoss/dw_i = loss_signal * dS'/dw_i where:
+    - loss_signal = (R_predicted - y) captures how wrong the prediction was
+    - dS'/dw_i captures each parameter's influence on the stability formula
+
+    Uses finite differences on next_state to get per-parameter sensitivities.
+    L2 norm clipping prevents wild updates.
 
     Returns a new list of 19 floats (updated parameters).
     """
-    r = torch.tensor(predicted_r, dtype=torch.float32, requires_grad=True)
-
     y = 1.0 if actual_recall else 0.0
     eps = 1e-7
-    r_clamped = torch.clamp(r, eps, 1.0 - eps)
-    loss = -(y * torch.log(r_clamped) + (1.0 - y) * torch.log(1.0 - r_clamped))
 
-    loss.backward()
+    # Loss signal: positive = over-predicted recall, negative = under-predicted
+    r_c = max(eps, min(1.0 - eps, predicted_r))
+    loss_signal = r_c - y
 
-    dr = r.grad.item() if r.grad is not None else 0.0
+    # Base stability from current parameters
+    base_sched = FSRSScheduler(params)
+    s_base, _, _ = base_sched.next_state(grade, stability, difficulty, elapsed_days)
 
-    new_params = list(params)
-    step = LEARNING_RATE * dr
-    step = max(-0.1, min(0.1, step))
+    # Per-parameter gradient via finite differences on stability
+    delta = 1e-4
+    grads: list[float] = []
+    for i in range(len(params)):
+        params_up = list(params)
+        params_up[i] += delta
+        s_up, _, _ = FSRSScheduler(params_up).next_state(
+            grade, stability, difficulty, elapsed_days
+        )
+        ds_dwi = (s_up - s_base) / delta
+        grads.append(loss_signal * ds_dwi)
 
-    for i in range(len(new_params)):
-        new_params[i] -= step * 0.01
+    # L2 norm clipping
+    grad_norm = math.sqrt(sum(g * g for g in grads))
+    if grad_norm > GRAD_CLIP_NORM:
+        scale = GRAD_CLIP_NORM / grad_norm
+        grads = [g * scale for g in grads]
+
+    new_params = [
+        params[i] - LEARNING_RATE * grads[i]
+        for i in range(len(params))
+    ]
     return new_params
 
 

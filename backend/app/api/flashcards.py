@@ -334,7 +334,13 @@ async def update_progress(
             predicted_r = scheduler.compute_retrievability(elapsed, progress.stability)
             actual_recall = grade >= 2
             sched_model.parameters = update_parameters(
-                sched_model.parameters, predicted_r, actual_recall
+                sched_model.parameters,
+                predicted_r,
+                actual_recall,
+                stability=progress.stability,
+                difficulty=progress.difficulty or 5.0,
+                elapsed_days=elapsed,
+                grade=grade,
             )
             scheduler = FSRSScheduler(sched_model.parameters)
 
