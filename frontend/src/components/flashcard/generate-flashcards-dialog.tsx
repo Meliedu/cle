@@ -23,6 +23,10 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Sparkles } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import {
+  DocumentSelector,
+  useDocumentSelection,
+} from "@/components/documents/document-selector";
 
 interface GenerateFlashcardsDialogProps {
   readonly courseId: string;
@@ -39,6 +43,7 @@ export function GenerateFlashcardsDialog({
 }: GenerateFlashcardsDialogProps) {
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
+  const { selectedIds, setSelectedIds } = useDocumentSelection(courseId);
   const [title, setTitle] = useState("");
   const [numCards, setNumCards] = useState("10");
   const [titleError, setTitleError] = useState<string | null>(null);
@@ -77,6 +82,7 @@ export function GenerateFlashcardsDialog({
             course_id: courseId,
             title: title.trim(),
             num_cards: Number(numCards),
+            document_ids: selectedIds.length > 0 ? selectedIds : undefined,
           }),
         });
         await queryClient.invalidateQueries({
@@ -96,7 +102,7 @@ export function GenerateFlashcardsDialog({
         setIsSubmitting(false);
       }
     },
-    [title, numCards, courseId, onOpenChange, getToken, queryClient]
+    [title, numCards, courseId, selectedIds, onOpenChange, getToken, queryClient]
   );
 
   const handleOpenChange = useCallback(
@@ -163,6 +169,13 @@ export function GenerateFlashcardsDialog({
             </Select>
           </div>
 
+          <DocumentSelector
+            courseId={courseId}
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
+            disabled={isSubmitting}
+          />
+
           {submitError && (
             <p className="text-sm text-[var(--color-error)]">{submitError}</p>
           )}
@@ -176,7 +189,7 @@ export function GenerateFlashcardsDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" disabled={isSubmitting || selectedIds.length === 0}>
               {isSubmitting && <Loader2 className="size-4 animate-spin" />}
               {isSubmitting ? "Generating..." : "Generate"}
             </Button>

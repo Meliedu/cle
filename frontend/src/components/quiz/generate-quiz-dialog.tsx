@@ -23,6 +23,10 @@ import {
 } from "@/components/ui/select";
 import { Sparkles } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import {
+  DocumentSelector,
+  useDocumentSelection,
+} from "@/components/documents/document-selector";
 
 interface GenerateQuizDialogProps {
   readonly courseId: string;
@@ -54,6 +58,7 @@ export function GenerateQuizDialog({
 }: GenerateQuizDialogProps) {
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
+  const { selectedIds, setSelectedIds } = useDocumentSelection(courseId);
   const [form, setForm] = useState<FormState>(initialForm);
   const [titleError, setTitleError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -97,6 +102,7 @@ export function GenerateQuizDialog({
             course_id: courseId,
             title: form.title.trim(),
             num_questions: Number(form.numQuestions),
+            document_ids: selectedIds.length > 0 ? selectedIds : undefined,
           }),
         });
         await queryClient.invalidateQueries({
@@ -116,7 +122,7 @@ export function GenerateQuizDialog({
         setGenerationStep(0);
       }
     },
-    [form, courseId, onOpenChange, getToken, queryClient]
+    [form, courseId, selectedIds, onOpenChange, getToken, queryClient]
   );
 
   const handleOpenChange = useCallback(
@@ -209,6 +215,12 @@ export function GenerateQuizDialog({
                 </Select>
               </div>
 
+              <DocumentSelector
+                courseId={courseId}
+                selectedIds={selectedIds}
+                onSelectionChange={setSelectedIds}
+              />
+
               {submitError && (
                 <p className="text-sm text-[var(--color-error)]">
                   {submitError}
@@ -223,7 +235,7 @@ export function GenerateQuizDialog({
                 >
                   Cancel
                 </Button>
-                <Button type="submit">
+                <Button type="submit" disabled={selectedIds.length === 0}>
                   <Sparkles className="size-4" />
                   Generate
                 </Button>

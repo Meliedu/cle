@@ -83,9 +83,32 @@ export function QuizPlayer({ quizId, courseId }: QuizPlayerProps) {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
       startTimeRef.current = Date.now();
-      return apiFetch<QuizDetail>(`/quizzes/${quizId}`, {
-        token: token!,
-      });
+      const res = await apiFetch<{
+        success: boolean;
+        data: {
+          id: string;
+          title: string;
+          questions: {
+            id: string;
+            question_text: string;
+            options: Record<string, string> | null;
+            explanation: string | null;
+          }[];
+        };
+      }>(`/quizzes/${quizId}`, { token: token! });
+
+      return {
+        id: res.data.id,
+        title: res.data.title,
+        questions: (res.data.questions ?? []).map((q) => ({
+          id: q.id,
+          text: q.question_text,
+          options: Object.entries(q.options ?? {}).map(([label, text]) => ({
+            label,
+            text,
+          })),
+        })),
+      };
     },
     enabled: isSignedIn === true,
     retry: (count, error) => {

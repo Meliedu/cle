@@ -31,6 +31,7 @@ import {
   Clock,
   HelpCircle,
   PlayCircle,
+  Eye,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { GenerateQuizDialog } from "@/components/quiz/generate-quiz-dialog";
@@ -39,7 +40,7 @@ interface Quiz {
   readonly id: string;
   readonly title: string;
   readonly question_count: number;
-  readonly status: "draft" | "published";
+  readonly is_published: boolean;
   readonly created_at: string;
 }
 
@@ -104,9 +105,11 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
     queryFn: async () => {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
-      return apiFetch<Quiz[]>(`/courses/${courseId}/quizzes`, {
-        token: token!,
-      });
+      const response = await apiFetch<{ success: boolean; data: Quiz[] }>(
+        `/courses/${courseId}/quizzes`,
+        { token: token! }
+      );
+      return response.data;
     },
     enabled: isSignedIn === true,
     retry: (count, error) => {
@@ -152,7 +155,7 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
 
   const visibleQuizzes = isInstructor
     ? quizzes
-    : quizzes?.filter((q) => q.status === "published");
+    : quizzes?.filter((q) => q.is_published);
 
   if (isLoading) {
     return (
@@ -310,7 +313,7 @@ function QuizCardItem({
   onDelete,
   isPublishing,
 }: QuizCardItemProps) {
-  const isPublished = quiz.status === "published";
+  const { is_published: isPublished } = quiz;
 
   return (
     <Card className="group relative transition-all duration-[var(--duration-normal)] hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)]">
@@ -329,16 +332,18 @@ function QuizCardItem({
               <MoreHorizontal className="size-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {!isPublished && (
-                <DropdownMenuItem
-                  onClick={onPublish}
-                  disabled={isPublishing}
-                >
-                  <Globe className="size-4" />
-                  {isPublishing ? "Publishing..." : "Publish"}
-                </DropdownMenuItem>
-              )}
-              {!isPublished && <DropdownMenuSeparator />}
+              <DropdownMenuItem
+                onClick={onPublish}
+                disabled={isPublishing}
+              >
+                <Globe className="size-4" />
+                {isPublishing
+                  ? "Updating..."
+                  : isPublished
+                    ? "Unpublish"
+                    : "Publish"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onDelete} variant="destructive">
                 <Trash2 className="size-4" />
                 Delete
@@ -378,7 +383,12 @@ function QuizCardItem({
               <Clock className="size-3" />
               {relativeDate(quiz.created_at)}
             </span>
-            {!isInstructor && (
+            {isInstructor ? (
+              <span className="flex items-center gap-1 text-xs font-medium text-[var(--color-text-muted)]">
+                <Eye className="size-3.5" />
+                Preview
+              </span>
+            ) : (
               <span className="flex items-center gap-1 text-xs font-medium text-[var(--color-primary)]">
                 <PlayCircle className="size-3.5" />
                 Take Quiz
