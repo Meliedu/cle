@@ -17,6 +17,7 @@ from app.models.revision import (
     RevisionPoolItem,
     RevisionSession,
 )
+from app.models.recalibration import RecalibrationModel, RecalibrationStats
 from app.models.scheduler import SchedulerModel
 from app.models.user import User
 
@@ -48,5 +49,7 @@ __all__ = [
     "RevisionAttempt",
     "RevisionItemServed",
     "BanditModel",
+    "RecalibrationStats",
+    "RecalibrationModel",
     "SchedulerModel",
 ]
