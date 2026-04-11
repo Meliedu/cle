@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     allowed_email_domains: str = "connect.ust.hk,ust.hk"
 
     # FSRS scheduler feature flag
-    fsrs_enabled: bool = False
+    fsrs_enabled: bool = True
 
     # Upload limits
     max_upload_size_mb: int = 100
