@@ -1,28 +1,28 @@
 import uuid
-from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import JSON, UUID
+from sqlalchemy import BigInteger, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import ARRAY, DOUBLE_PRECISION, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, UUIDPrimaryKeyMixin
+from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
-class SchedulerModel(UUIDPrimaryKeyMixin, Base):
+class SchedulerModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Per-user-per-course FSRS parameter store and strategy tracker."""
+
     __tablename__ = "scheduler_models"
-    __table_args__ = (
-        UniqueConstraint("user_id", "course_id"),
-    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     course_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), nullable=False
+        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False
     )
-    parameters: Mapped[dict] = mapped_column(JSON, nullable=False)
-    strategy: Mapped[str] = mapped_column(String(10), default="sm2")
-    review_count: Mapped[int] = mapped_column(Integer, default=0)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    # 19 FSRS-5 learnable parameters stored as a float array
+    parameters: Mapped[list[float]] = mapped_column(
+        ARRAY(DOUBLE_PRECISION), nullable=False
     )
+    # "sm2" until SWITCHOVER_THRESHOLD reviews, then "fsrs"
+    strategy: Mapped[str] = mapped_column(String(10), nullable=False, default="sm2")
+    # Total review count across all cards for this user/course
+    review_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)

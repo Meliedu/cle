@@ -66,6 +66,14 @@ async def process_task(session: AsyncSession, task: Task) -> None:
     elif task.task_type == "revision_pool_replenish":
         from app.services.pool import replenish_pool
         await replenish_pool(session, task.payload)
+    elif task.task_type == "recalibration":
+        from app.services.recalibrator import run_recalibration_job
+        from uuid import UUID
+        course_id = task.payload.get("course_id")
+        content_type = task.payload.get("content_type")
+        if not course_id or not content_type:
+            raise ValueError("Missing course_id or content_type in recalibration payload")
+        await run_recalibration_job(session, UUID(course_id), content_type)
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
 

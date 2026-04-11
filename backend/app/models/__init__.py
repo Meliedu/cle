@@ -6,10 +6,12 @@ from app.models.course import Course, Enrollment
 from app.models.document import Document
 from app.models.flashcard import FlashcardCard, FlashcardProgress, FlashcardSet, FlashcardSetDocument
 from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument
+from app.models.scheduler import SchedulerModel
 from app.models.score import PronunciationScore, StudentProgress
 from app.models.live_answer import LiveAnswer
 from app.models.session import LiveSession, SessionSummary
 from app.models.task import Task
+from app.models.recalibration import RecalibrationModel, RecalibrationStats
 from app.models.revision import (
     BanditModel,
     RevisionAttempt,
@@ -17,8 +19,6 @@ from app.models.revision import (
     RevisionPoolItem,
     RevisionSession,
 )
-from app.models.recalibration import RecalibrationModel, RecalibrationStats
-from app.models.scheduler import SchedulerModel
 from app.models.user import User
 
 __all__ = [
@@ -36,6 +36,7 @@ __all__ = [
     "FlashcardCard",
     "FlashcardSetDocument",
     "FlashcardProgress",
+    "SchedulerModel",
     "PronunciationScore",
     "StudentProgress",
     "SessionSummary",

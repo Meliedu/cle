@@ -34,7 +34,7 @@ export function Lobby({
     }
   }, [joinCode]);
 
-  const isConnected = status === "connected" || status === "waiting";
+  const isConnected = status === "connected";
 
   return (
     <div className="mx-auto flex max-w-md flex-col items-center gap-6">

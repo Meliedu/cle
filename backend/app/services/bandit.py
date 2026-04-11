@@ -117,10 +117,13 @@ def compute_state_vector(
         vec[9] = min(current_session_count / 20.0, 1.0)
         return vec
 
+    def _eff_diff(a: Any) -> str:
+        return getattr(a, "corrected_difficulty", None) or a.difficulty
+
     # --- Features 0-2: average score per difficulty (last 50) ---
     recent_50 = attempts[-50:]
     for diff_name, diff_idx in _DIFF_INDEX.items():
-        scores = [a.score for a in recent_50 if a.difficulty == diff_name]
+        scores = [a.score for a in recent_50 if _eff_diff(a) == diff_name]
         if scores:
             vec[diff_idx] = float(np.mean(scores))
         # else keeps default 0.5
@@ -129,7 +132,7 @@ def compute_state_vector(
     recent_20 = attempts[-20:]
     decay = 0.9
     for diff_name, diff_idx in _DIFF_INDEX.items():
-        diff_attempts = [a for a in recent_20 if a.difficulty == diff_name]
+        diff_attempts = [a for a in recent_20 if _eff_diff(a) == diff_name]
         if diff_attempts:
             weighted_sum = 0.0
             weight_total = 0.0

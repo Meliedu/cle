@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, Numeric, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -81,8 +81,8 @@ class FlashcardProgress(UUIDPrimaryKeyMixin, Base):
     repetitions: Mapped[int] = mapped_column(Integer, default=0)
     next_review: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_reviewed: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # FSRS-5 state (nullable — populated once scheduler switches from SM-2)
-    stability: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
-    difficulty: Mapped[float | None] = mapped_column(Numeric(4, 2), nullable=True)
+    # FSRS-5 state columns (null until first FSRS review)
+    stability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    difficulty: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_grade: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    fsrs_review_count: Mapped[int] = mapped_column(Integer, default=0)
+    fsrs_review_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
