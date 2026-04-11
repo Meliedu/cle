@@ -9,16 +9,19 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.models.course import Enrollment
-from app.models.quiz import Question, Quiz, QuizAttempt
+from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.services.gamification import award_xp
 from app.schemas.quiz import (
+    QuestionCreate,
     QuestionResponse,
+    QuestionWithAnswerResponse,
     QuizAttemptCreate,
     QuizAttemptResponse,
     QuizAttemptResult,
     QuizDetailResponse,
+    QuizPreviewResponse,
     QuizResponse,
     QuizUpdate,
 )
@@ -144,6 +147,57 @@ async def get_quiz(
     )
 
 
+@router.get(
+    "/quizzes/{quiz_id}/preview",
+    response_model=APIResponse[QuizPreviewResponse],
+)
+async def preview_quiz(
+    quiz_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    result = await db.execute(
+        select(Quiz)
+        .options(selectinload(Quiz.questions))
+        .where(Quiz.id == quiz_id, Quiz.deleted_at.is_(None))
+    )
+    quiz = result.scalar_one_or_none()
+    if not quiz:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz not found",
+        )
+
+    await _verify_enrollment(db, quiz.course_id, user.id)
+
+    question_responses = [
+        QuestionWithAnswerResponse(
+            id=q.id,
+            question_index=q.question_index,
+            type=q.type,
+            question_text=q.question_text,
+            options=q.options,
+            explanation=q.explanation,
+            correct_answer=q.correct_answer,
+        )
+        for q in quiz.questions
+    ]
+
+    return APIResponse(
+        success=True,
+        data=QuizPreviewResponse(
+            id=quiz.id,
+            course_id=quiz.course_id,
+            title=quiz.title,
+            description=quiz.description,
+            quiz_type=quiz.quiz_type,
+            is_published=quiz.is_published,
+            questions=question_responses,
+            created_at=quiz.created_at,
+        ),
+    )
+
+
 @router.put(
     "/quizzes/{quiz_id}",
     response_model=APIResponse[QuizResponse],
@@ -246,7 +300,7 @@ async def publish_quiz(
             detail="Quiz not found",
         )
 
-    quiz.is_published = True
+    quiz.is_published = not quiz.is_published
     await db.commit()
     await db.refresh(quiz)
 
@@ -270,6 +324,186 @@ async def publish_quiz(
     )
 
 
+@router.delete(
+    "/questions/{question_id}",
+    response_model=APIResponse[None],
+)
+async def delete_question(
+    question_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    result = await db.execute(
+        select(Question)
+        .join(Quiz, Quiz.id == Question.quiz_id)
+        .where(
+            Question.id == question_id,
+            Quiz.created_by == user.id,
+            Quiz.deleted_at.is_(None),
+        )
+    )
+    question = result.scalar_one_or_none()
+    if not question:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question not found",
+        )
+
+    await db.delete(question)
+
+    # Reindex remaining questions
+    remaining = await db.execute(
+        select(Question)
+        .where(Question.quiz_id == question.quiz_id)
+        .order_by(Question.question_index)
+    )
+    for idx, q in enumerate(remaining.scalars().all()):
+        q.question_index = idx
+
+    await db.commit()
+    return APIResponse(success=True, data=None)
+
+
+@router.post(
+    "/quizzes/{quiz_id}/questions",
+    response_model=APIResponse[QuestionWithAnswerResponse],
+    status_code=201,
+)
+async def add_question(
+    quiz_id: uuid.UUID,
+    body: QuestionCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    result = await db.execute(
+        select(Quiz).where(
+            Quiz.id == quiz_id,
+            Quiz.created_by == user.id,
+            Quiz.deleted_at.is_(None),
+        )
+    )
+    quiz = result.scalar_one_or_none()
+    if not quiz:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz not found",
+        )
+
+    # Determine next question index
+    count_result = await db.execute(
+        select(func.count(Question.id)).where(Question.quiz_id == quiz_id)
+    )
+    next_index = count_result.scalar_one()
+
+    question = Question(
+        quiz_id=quiz_id,
+        question_index=next_index,
+        type="multiple_choice",
+        question_text=body.question_text,
+        options=body.options,
+        correct_answer=body.correct_answer,
+        explanation=body.explanation,
+    )
+    db.add(question)
+    await db.commit()
+    await db.refresh(question)
+
+    return APIResponse(
+        success=True,
+        data=QuestionWithAnswerResponse(
+            id=question.id,
+            question_index=question.question_index,
+            type=question.type,
+            question_text=question.question_text,
+            options=question.options,
+            explanation=question.explanation,
+            correct_answer=question.correct_answer,
+        ),
+    )
+
+
+@router.post(
+    "/questions/{question_id}/regenerate",
+    response_model=APIResponse[QuestionWithAnswerResponse],
+)
+async def regenerate_question(
+    question_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    from app.services.embedder import embed_query
+    from app.services.generator import generate_quiz
+    from app.services.retriever import retrieve_chunks
+
+    result = await db.execute(
+        select(Question)
+        .join(Quiz, Quiz.id == Question.quiz_id)
+        .where(
+            Question.id == question_id,
+            Quiz.created_by == user.id,
+            Quiz.deleted_at.is_(None),
+        )
+    )
+    question = result.scalar_one_or_none()
+    if not question:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question not found",
+        )
+
+    # Get quiz and course language
+    quiz_result = await db.execute(
+        select(Quiz).options(selectinload(Quiz.source_documents)).where(Quiz.id == question.quiz_id)
+    )
+    quiz = quiz_result.scalar_one()
+
+    from app.models.course import Course
+    course_result = await db.execute(select(Course).where(Course.id == quiz.course_id))
+    course = course_result.scalar_one()
+
+    # Get document IDs from the quiz's source docs
+    doc_ids = [qd.document_id for qd in quiz.source_documents] or None
+
+    # Retrieve chunks and generate 1 replacement question
+    query_embedding = await embed_query(question.question_text)
+    chunks = await retrieve_chunks(
+        db,
+        course_id=quiz.course_id,
+        query_embedding=query_embedding,
+        top_k=10,
+        document_ids=doc_ids,
+    )
+
+    generated = await generate_quiz(chunks, num_questions=1, language=course.language)
+    if not generated:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to regenerate question",
+        )
+
+    new_q = generated[0]
+    question.question_text = new_q.question_text
+    question.options = new_q.options
+    question.correct_answer = new_q.correct_answer
+    question.explanation = new_q.explanation
+
+    await db.commit()
+    await db.refresh(question)
+
+    return APIResponse(
+        success=True,
+        data=QuestionWithAnswerResponse(
+            id=question.id,
+            question_index=question.question_index,
+            type=question.type,
+            question_text=question.question_text,
+            options=question.options,
+            explanation=question.explanation,
+            correct_answer=question.correct_answer,
+        ),
+    )
+
+
 @router.post(
     "/quizzes/{quiz_id}/attempt",
     response_model=APIResponse[QuizAttemptResponse],
@@ -286,7 +520,6 @@ async def submit_attempt(
         .options(selectinload(Quiz.questions))
         .where(
             Quiz.id == quiz_id,
-            Quiz.is_published.is_(True),
             Quiz.deleted_at.is_(None),
         )
     )
@@ -298,6 +531,13 @@ async def submit_attempt(
         )
 
     await _verify_enrollment(db, quiz.course_id, user.id)
+
+    # Unpublished quizzes can only be attempted by their creator (for preview)
+    if not quiz.is_published and quiz.created_by != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz not found",
+        )
 
     total_questions = len(quiz.questions)
     correct_count = 0

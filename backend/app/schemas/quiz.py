@@ -46,6 +46,26 @@ class QuizDetailResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class QuizPreviewResponse(BaseModel):
+    id: uuid.UUID
+    course_id: uuid.UUID
+    title: str
+    description: str | None
+    quiz_type: str
+    is_published: bool
+    questions: list[QuestionWithAnswerResponse]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class QuestionCreate(BaseModel):
+    question_text: str
+    options: dict[str, str]
+    correct_answer: str
+    explanation: str | None = None
+
+
 class QuizUpdate(BaseModel):
     title: str | None = None
     description: str | None = None

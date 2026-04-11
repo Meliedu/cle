@@ -76,3 +76,12 @@ async def require_instructor(user: User = Depends(get_current_user)) -> User:
             detail="Instructor access required",
         )
     return user
+
+
+async def require_student(user: User = Depends(get_current_user)) -> User:
+    if user.role != "student":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Student access required",
+        )
+    return user
