@@ -273,33 +273,96 @@ async def update_progress(
         )
         db.add(progress)
 
-    # SM-2 algorithm
-    q = body.quality
-    ef = float(progress.ease_factor)
-
-    if q < 3:
-        # Reset on poor recall
-        progress.repetitions = 0
-        progress.interval_days = 0
-    else:
-        # Advance interval
-        reps = progress.repetitions
-        if reps == 0:
-            progress.interval_days = 1
-        elif reps == 1:
-            progress.interval_days = 6
-        else:
-            progress.interval_days = round(progress.interval_days * ef)
-        progress.repetitions = progress.repetitions + 1
-
-    # Update ease factor: ef + (0.1 - (5-q)*(0.08 + (5-q)*0.02))
-    new_ef = ef + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
-    new_ef = max(new_ef, 1.3)
-    progress.ease_factor = Decimal(str(round(new_ef, 2)))
-
     now = datetime.now(timezone.utc)
+
+    # Load or create scheduler model
+    from app.config import settings
+    from app.models.scheduler import SchedulerModel
+    from app.services.scheduler import (
+        DEFAULT_PARAMS,
+        GRADE_MAP,
+        SWITCHOVER_THRESHOLD,
+        FSRSScheduler,
+        initialize_from_sm2,
+        sm2_update,
+        update_parameters,
+    )
+
+    sched_result = await db.execute(
+        select(SchedulerModel).where(
+            SchedulerModel.user_id == user.id,
+            SchedulerModel.course_id == fc_set.course_id,
+        )
+    )
+    sched_model = sched_result.scalar_one_or_none()
+    if sched_model is None:
+        sched_model = SchedulerModel(
+            user_id=user.id,
+            course_id=fc_set.course_id,
+            parameters=list(DEFAULT_PARAMS),
+            strategy="sm2",
+            review_count=0,
+        )
+        db.add(sched_model)
+
+    use_fsrs = (
+        settings.fsrs_enabled
+        and sched_model.review_count >= SWITCHOVER_THRESHOLD
+    )
+
+    if use_fsrs:
+        # FSRS path
+        grade = GRADE_MAP.get(body.quality, 3)
+        scheduler = FSRSScheduler(sched_model.parameters)
+
+        # Compute elapsed days since last review
+        elapsed = 0.0
+        if progress.last_reviewed is not None:
+            elapsed = (now - progress.last_reviewed).total_seconds() / 86400.0
+
+        # Handle switchover: initialize FSRS state from SM-2 if needed
+        if sched_model.strategy == "sm2":
+            stability, difficulty = initialize_from_sm2(
+                float(progress.ease_factor), progress.interval_days
+            )
+            progress.stability = stability
+            progress.difficulty = difficulty
+            sched_model.strategy = "fsrs"
+
+        # Online parameter update
+        if progress.stability is not None and elapsed > 0:
+            predicted_r = scheduler.compute_retrievability(elapsed, progress.stability)
+            actual_recall = grade >= 2
+            sched_model.parameters = update_parameters(
+                sched_model.parameters, predicted_r, actual_recall
+            )
+            scheduler = FSRSScheduler(sched_model.parameters)
+
+        # State transition
+        new_s, new_d, interval = scheduler.next_state(
+            grade=grade,
+            stability=progress.stability,
+            difficulty=progress.difficulty,
+            elapsed_days=elapsed,
+        )
+        progress.stability = new_s
+        progress.difficulty = new_d
+        progress.last_grade = grade
+        progress.interval_days = interval
+        progress.next_review = now + timedelta(days=interval)
+    else:
+        # SM-2 path (unchanged logic)
+        q = body.quality
+        ef = float(progress.ease_factor)
+        new_ef, new_interval, new_reps = sm2_update(q, ef, progress.interval_days, progress.repetitions)
+        progress.ease_factor = Decimal(str(round(new_ef, 2)))
+        progress.interval_days = new_interval
+        progress.repetitions = new_reps
+        progress.next_review = now + timedelta(days=new_interval)
+
     progress.last_reviewed = now
-    progress.next_review = now + timedelta(days=progress.interval_days)
+    progress.fsrs_review_count = (progress.fsrs_review_count or 0) + 1
+    sched_model.review_count = sched_model.review_count + 1
 
     await db.commit()
     await db.refresh(progress)

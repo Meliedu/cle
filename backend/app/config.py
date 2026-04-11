@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     allowed_email_domains: str = "connect.ust.hk,ust.hk"
 
+    # FSRS scheduler feature flag
+    fsrs_enabled: bool = False
+
     # Upload limits
     max_upload_size_mb: int = 100
 
