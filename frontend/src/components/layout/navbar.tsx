@@ -1,36 +1,82 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { Menu, ChevronRight } from "lucide-react";
 import { LanguageToggle } from "@/components/layout/language-toggle";
+import { useCourses } from "@/hooks/use-courses";
 
 interface NavbarProps {
   readonly onMenuClick?: () => void;
 }
 
-function buildBreadcrumbs(
-  pathname: string
-): readonly { label: string; href: string }[] {
-  const segments = pathname.split("/").filter(Boolean);
-  const crumbs: { label: string; href: string }[] = [];
+const TAB_LABELS: Record<string, string> = {
+  overview: "Overview",
+  materials: "Materials",
+  quizzes: "Quizzes",
+  flashcards: "Flashcards",
+  revision: "Revision",
+  pronunciation: "Pronunciation",
+  live: "Live Quiz",
+  progress: "Progress",
+  leaderboard: "Leaderboard",
+  students: "Students",
+};
 
-  let path = "";
-  for (const segment of segments) {
-    path += `/${segment}`;
-    const label = segment
-      .replace(/[-_]/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-    crumbs.push({ label, href: path });
+const SUB_PAGE_LABELS: Record<string, string> = {
+  revision: "Revision",
+  pronunciation: "Pronunciation",
+  live: "Live Quiz",
+  quizzes: "Quiz",
+  flashcards: "Flashcards",
+};
+
+interface Crumb {
+  label: string;
+  href: string;
+}
+
+function useBreadcrumbs(): readonly Crumb[] {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { data: courses } = useCourses();
+
+  const crumbs: Crumb[] = [{ label: "Dashboard", href: "/dashboard" }];
+
+  // Match /dashboard/courses/{courseId}
+  const courseMatch = pathname.match(/\/dashboard\/courses\/([^/]+)/);
+  if (!courseMatch) return crumbs;
+
+  const courseId = courseMatch[1];
+  const course = courses?.find((c) => c.id === courseId);
+  const courseName = course?.name ?? "Course";
+
+  crumbs.push({
+    label: courseName,
+    href: `/dashboard/courses/${courseId}?tab=overview`,
+  });
+
+  // Check for sub-page (e.g., /courses/{id}/revision, /courses/{id}/quizzes/{quizId})
+  const subMatch = pathname.match(/\/courses\/[^/]+\/(\w+)/);
+  if (subMatch) {
+    const segment = subMatch[1];
+    const label = SUB_PAGE_LABELS[segment] ?? segment.charAt(0).toUpperCase() + segment.slice(1);
+    crumbs.push({ label, href: pathname });
+  } else {
+    // On main course page, show the active tab
+    const tab = searchParams.get("tab");
+    if (tab && tab !== "overview") {
+      const label = TAB_LABELS[tab] ?? tab;
+      crumbs.push({ label, href: `${pathname}?tab=${tab}` });
+    }
   }
 
   return crumbs;
 }
 
 export function Navbar({ onMenuClick }: NavbarProps) {
-  const pathname = usePathname();
-  const breadcrumbs = buildBreadcrumbs(pathname);
+  const breadcrumbs = useBreadcrumbs();
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 md:px-6">

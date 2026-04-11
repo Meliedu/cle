@@ -1,21 +1,15 @@
 "use client";
 
-import { useUser } from "@clerk/nextjs";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { Skeleton } from "@/components/ui/skeleton";
-
-function detectRole(email: string | undefined): "instructor" | "student" {
-  if (!email) return "student";
-  if (email.endsWith("@ust.hk")) return "instructor";
-  return "student";
-}
+import { useRole } from "@/hooks/use-role";
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { user, isLoaded } = useUser();
+  const { isLoaded } = useRole();
 
   if (!isLoaded) {
     return (
@@ -28,7 +22,5 @@ export default function DashboardLayout({
     );
   }
 
-  const role = detectRole(user?.primaryEmailAddress?.emailAddress);
-
-  return <DashboardShell role={role}>{children}</DashboardShell>;
+  return <DashboardShell>{children}</DashboardShell>;
 }

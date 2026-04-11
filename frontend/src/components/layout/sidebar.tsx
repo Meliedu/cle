@@ -2,55 +2,63 @@
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
-  LayoutDashboard,
-  BookOpen,
   GraduationCap,
   ChevronLeft,
   X,
+  LayoutDashboard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface NavItem {
-  readonly label: string;
-  readonly href: string;
-  readonly icon: React.ComponentType<{ className?: string }>;
-}
-
-const instructorNav: readonly NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Courses", href: "/dashboard/courses", icon: BookOpen },
-] as const;
-
-const studentNav: readonly NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "My Courses", href: "/dashboard/courses", icon: BookOpen },
-] as const;
+import { useRole } from "@/hooks/use-role";
+import { SidebarSectionNav } from "@/components/layout/sidebar-section-nav";
 
 interface SidebarProps {
-  readonly role?: "instructor" | "student";
   readonly mobileOpen?: boolean;
   readonly onMobileClose?: () => void;
 }
 
+/** Extract courseId from a pathname like /dashboard/courses/{uuid}/... */
+function extractCourseId(pathname: string): string | null {
+  const match = pathname.match(/\/courses\/([^/]+)/);
+  return match ? match[1] : null;
+}
+
+/** Determine the active tab from search params or sub-page path. */
+function resolveActiveTab(pathname: string, tabParam: string | null): string {
+  // Sub-pages like /courses/{id}/revision, /courses/{id}/pronunciation, etc.
+  const subPageMatch = pathname.match(/\/courses\/[^/]+\/(\w+)/);
+  if (subPageMatch) {
+    const segment = subPageMatch[1];
+    // Map known sub-page routes to tab values
+    const subPageMap: Record<string, string> = {
+      revision: "revision",
+      pronunciation: "pronunciation",
+      live: "live",
+      quizzes: "quizzes",
+      flashcards: "flashcards",
+    };
+    if (segment in subPageMap) return subPageMap[segment];
+  }
+  return tabParam || "overview";
+}
+
 export function Sidebar({
-  role = "student",
   mobileOpen = false,
   onMobileClose,
 }: SidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
-  const navItems = role === "instructor" ? instructorNav : studentNav;
+
+  const { role, isInstructor } = useRole();
+
+  const courseId = extractCourseId(pathname);
+  const activeTab = resolveActiveTab(pathname, searchParams.get("tab"));
 
   const toggleCollapse = useCallback(() => {
     setCollapsed((prev) => !prev);
   }, []);
-
-  const isActive = (href: string): boolean => {
-    if (href === "/dashboard") return pathname === "/dashboard";
-    return pathname.startsWith(href);
-  };
 
   const sidebarContent = (
     <div className="flex h-full flex-col">
@@ -69,43 +77,37 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-2">
-        <ul className="flex flex-col gap-0.5">
-          {navItems.map((item) => {
-            const active = isActive(item.href);
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  onClick={onMobileClose}
-                  className={cn(
-                    "group relative flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2 text-sm font-medium transition-all duration-[var(--duration-fast)]",
-                    collapsed && "justify-center px-2",
-                    active
-                      ? "bg-[var(--color-primary-light)] text-[var(--color-primary)]"
-                      : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
-                  )}
-                >
-                  {/* Active indicator */}
-                  {active && (
-                    <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-[var(--color-primary)]" />
-                  )}
-                  <item.icon
-                    className={cn(
-                      "size-[18px] shrink-0 transition-colors duration-[var(--duration-fast)]",
-                      active
-                        ? "text-[var(--color-primary)]"
-                        : "text-[var(--color-text-muted)] group-hover:text-[var(--color-text-secondary)]"
-                    )}
-                  />
-                  {!collapsed && <span>{item.label}</span>}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+      {/* Scrollable nav area */}
+      <div className="flex-1 overflow-y-auto py-3">
+        {/* Dashboard link */}
+        <div className="mb-2 px-2">
+          <Link
+            href="/dashboard"
+            onClick={onMobileClose}
+            className={cn(
+              "flex items-center gap-2.5 rounded-[var(--radius-md)] px-2.5 py-2 text-sm font-medium transition-all duration-[var(--duration-fast)]",
+              collapsed && "justify-center px-2",
+              !courseId && pathname === "/dashboard"
+                ? "bg-[var(--color-primary-light)] text-[var(--color-primary)]"
+                : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
+            )}
+          >
+            <LayoutDashboard className="size-[18px] shrink-0 text-[var(--color-text-muted)]" />
+            {!collapsed && <span>Dashboard</span>}
+          </Link>
+        </div>
+
+        {/* Course section nav — only when viewing a course */}
+        {courseId && (
+          <SidebarSectionNav
+            courseId={courseId}
+            activeTab={activeTab}
+            isInstructor={isInstructor}
+            collapsed={collapsed}
+            onMobileClose={onMobileClose}
+          />
+        )}
+      </div>
 
       {/* Role indicator */}
       <div
@@ -167,7 +169,6 @@ export function Sidebar({
             aria-hidden="true"
           />
           <aside className="fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-[var(--color-surface)] shadow-[var(--shadow-lg)] md:hidden">
-            {/* Mobile close button */}
             <button
               onClick={onMobileClose}
               className="absolute right-3 top-4 rounded-[var(--radius-sm)] p-1 text-[var(--color-text-muted)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
