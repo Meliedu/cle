@@ -49,9 +49,6 @@ class Settings(BaseSettings):
     student_rate_limit: int = 10
     instructor_rate_limit: int = 50
 
-    # Neural spaced repetition
-    fsrs_enabled: bool = True
-
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

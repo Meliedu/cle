@@ -11,7 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSON, UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, UUIDPrimaryKeyMixin
@@ -50,8 +50,8 @@ class RecalibrationModel(UUIDPrimaryKeyMixin, Base):
         nullable=False,
     )
     content_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    dirichlet_params: Mapped[dict] = mapped_column(JSON, nullable=False)
-    transition_matrix: Mapped[dict] = mapped_column(JSON, nullable=False)
+    dirichlet_params: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    transition_matrix: Mapped[dict] = mapped_column(JSONB, nullable=False)
     items_used: Mapped[int] = mapped_column(Integer, default=0)
     total_attempts_since_last_run: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(

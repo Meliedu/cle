@@ -38,7 +38,7 @@ function ContentTypeSummaryCard({
             <dd className="text-sm font-semibold text-[var(--color-text)]">
               {itemsRelabeled}{" "}
               <span className="font-normal text-[var(--color-text-muted)]">
-                ({Math.round(relabelPct * 100)}%)
+                ({Math.round(relabelPct)}%)
               </span>
             </dd>
           </div>

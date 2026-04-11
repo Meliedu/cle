@@ -81,9 +81,12 @@ async def _get_unserved_counts(
     db: AsyncSession, course_id: uuid.UUID, content_type: str, user_id: uuid.UUID
 ) -> dict[str, int]:
     """Count unserved pool items per difficulty for this user."""
+    effective_difficulty = func.coalesce(
+        RevisionPoolItem.recalibrated_difficulty, RevisionPoolItem.difficulty
+    )
     stmt = (
         select(
-            RevisionPoolItem.difficulty,
+            effective_difficulty,
             func.count(RevisionPoolItem.id),
         )
         .outerjoin(
@@ -96,7 +99,7 @@ async def _get_unserved_counts(
             RevisionPoolItem.content_type == content_type,
             RevisionItemServed.user_id.is_(None),  # not served
         )
-        .group_by(RevisionPoolItem.difficulty)
+        .group_by(effective_difficulty)
     )
     result = await db.execute(stmt)
     return {row[0]: row[1] for row in result.all()}
@@ -210,6 +213,7 @@ async def _get_recent_attempts(
     return [
         SimpleNamespace(
             difficulty=a.difficulty,
+            corrected_difficulty=a.corrected_difficulty,
             score=float(a.score),
             created_at=a.created_at,
         )
@@ -426,7 +430,7 @@ async def submit_answer(
         new_weights, updated_mean, updated_var = update_policy(
             weights=bandit_model.weights,
             state=state,
-            chosen_idx=DIFFICULTY_TO_IDX[pool_item.difficulty],
+            chosen_idx=DIFFICULTY_TO_IDX[pool_item.recalibrated_difficulty or pool_item.difficulty],
             reward=score,
             reward_mean=old_mean,
             reward_var=old_var,

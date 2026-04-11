@@ -35,7 +35,7 @@ def upgrade() -> None:
     op.add_column('flashcard_progress', sa.Column('stability', sa.Numeric(precision=10, scale=4), nullable=True))
     op.add_column('flashcard_progress', sa.Column('difficulty', sa.Numeric(precision=4, scale=2), nullable=True))
     op.add_column('flashcard_progress', sa.Column('last_grade', sa.Integer(), nullable=True))
-    op.add_column('flashcard_progress', sa.Column('fsrs_review_count', sa.Integer(), nullable=False))
+    op.add_column('flashcard_progress', sa.Column('fsrs_review_count', sa.Integer(), nullable=False, server_default=sa.text('0')))
     # ### end Alembic commands ###
 
 

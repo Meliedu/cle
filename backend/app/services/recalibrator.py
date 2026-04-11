@@ -355,6 +355,11 @@ async def maybe_trigger_recalibration(
         model.total_attempts_since_last_run = total
 
     if total >= BATCH_TRIGGER_ATTEMPTS:
+        # Race condition note: concurrent requests may each enqueue a
+        # recalibration task before the counter resets.  This is harmless
+        # because run_recalibration_job is idempotent — duplicate tasks
+        # simply recompute the same Dirichlet posteriors and produce
+        # identical relabel decisions.
         task = Task(
             task_type="recalibration",
             payload={
@@ -466,6 +471,12 @@ async def run_recalibration_job(
             update(RevisionPoolItem)
             .where(RevisionPoolItem.id == pid, RevisionPoolItem.recalibrated_difficulty.is_not(None))
             .values(recalibrated_difficulty=None, recalibration_confidence=None)
+        )
+        # Also clear corrected_difficulty on attempts linked to this reverted item
+        await db.execute(
+            update(RevisionAttempt)
+            .where(RevisionAttempt.pool_item_id == pid, RevisionAttempt.corrected_difficulty.is_not(None))
+            .values(corrected_difficulty=None)
         )
 
     await db.flush()

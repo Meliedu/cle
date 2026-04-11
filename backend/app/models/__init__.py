@@ -52,5 +52,4 @@ __all__ = [
     "BanditModel",
     "RecalibrationStats",
     "RecalibrationModel",
-    "SchedulerModel",
 ]

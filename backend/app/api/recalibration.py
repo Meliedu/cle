@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_instructor
@@ -49,25 +49,24 @@ async def get_recalibration_overview(
     transition_matrices: dict[str, dict[str, dict[str, float]]] = {}
 
     for ct in CONTENT_TYPES:
-        # Count items_scanned: total recalibration_stats rows for this course+content_type
-        stats_result = await db.execute(
-            select(RecalibrationStats).where(
+        # Count items_scanned using func.count() instead of materializing ORM objects
+        scanned_result = await db.execute(
+            select(func.count()).select_from(RecalibrationStats).where(
                 RecalibrationStats.course_id == course_id,
                 RecalibrationStats.content_type == ct,
             )
         )
-        stats_rows = stats_result.scalars().all()
-        items_scanned = len(stats_rows)
+        items_scanned = scanned_result.scalar_one()
 
-        # Count items_relabeled: pool items with recalibrated_difficulty IS NOT NULL
+        # Count items_relabeled using func.count()
         relabeled_result = await db.execute(
-            select(RevisionPoolItem).where(
+            select(func.count()).select_from(RevisionPoolItem).where(
                 RevisionPoolItem.course_id == course_id,
                 RevisionPoolItem.content_type == ct,
                 RevisionPoolItem.recalibrated_difficulty.is_not(None),
             )
         )
-        items_relabeled = len(relabeled_result.scalars().all())
+        items_relabeled = relabeled_result.scalar_one()
 
         relabel_pct = (items_relabeled / items_scanned * 100.0) if items_scanned > 0 else 0.0
 
