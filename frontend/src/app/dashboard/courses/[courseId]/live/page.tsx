@@ -3,7 +3,7 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { useRole } from "@/hooks/use-role";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,11 +32,6 @@ import {
 import { useQuizzes } from "@/hooks/use-quizzes";
 import { formatRelativeTime } from "@/lib/format";
 
-function isInstructorEmail(email: string | undefined): boolean {
-  if (!email) return false;
-  return email.endsWith("@ust.hk");
-}
-
 interface LiveSessionListPageProps {
   params: Promise<{ courseId: string }>;
 }
@@ -46,7 +41,7 @@ export default function LiveSessionListPage({
 }: LiveSessionListPageProps) {
   const { courseId } = use(params);
   const router = useRouter();
-  const { user, isLoaded: userLoaded } = useUser();
+  const { isInstructor, isLoaded: userLoaded } = useRole();
   const { data: sessions, isLoading: sessionsLoading } =
     useLiveSessions(courseId);
   const { data: quizzes, isLoading: quizzesLoading } = useQuizzes(courseId);
@@ -56,10 +51,6 @@ export default function LiveSessionListPage({
   const [selectedQuizId, setSelectedQuizId] = useState("");
   const [timeLimit, setTimeLimit] = useState("30");
   const [joinCodeInput, setJoinCodeInput] = useState("");
-
-  const isInstructor = isInstructorEmail(
-    user?.primaryEmailAddress?.emailAddress
-  );
 
   const handleCreate = () => {
     if (!selectedQuizId) return;

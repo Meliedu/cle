@@ -1,8 +1,9 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth, useUser } from "@clerk/nextjs";
+import { useRole } from "@/hooks/use-role";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft } from "lucide-react";
@@ -15,11 +16,6 @@ import {
   useLiveSession,
 } from "@/hooks/use-live-quiz";
 import { useQuiz } from "@/hooks/use-quizzes";
-
-function isInstructorEmail(email: string | undefined): boolean {
-  if (!email) return false;
-  return email.endsWith("@ust.hk");
-}
 
 interface LiveSessionPageProps {
   params: Promise<{ courseId: string; sessionId: string }>;
@@ -59,10 +55,16 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
     endSession,
   } = useLiveQuiz(sessionId, token);
 
-  const isInstructor = isInstructorEmail(
-    user?.primaryEmailAddress?.emailAddress
-  );
+  const { isInstructor } = useRole();
   const isHost = session?.host_id === user?.id;
+
+  /* Track when each question arrives to compute elapsed answer time */
+  const questionStartRef = useRef<number>(Date.now());
+  useEffect(() => {
+    if (currentQuestion) {
+      questionStartRef.current = Date.now();
+    }
+  }, [currentQuestion]);
 
   /* Get current question data from the quiz detail */
   const currentQuestionData =
@@ -70,9 +72,7 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
 
   const handleAnswer = (answer: string) => {
     if (!currentQuestion || !user?.id) return;
-    const elapsed =
-      currentQuestion.time_limit -
-      Math.max(0, currentQuestion.time_limit);
+    const elapsed = Math.round((Date.now() - questionStartRef.current) / 1000);
     const isCorrect =
       currentQuestionData?.options != null &&
       answer === Object.keys(currentQuestionData.options)[0]; // Simplified — backend decides correctness

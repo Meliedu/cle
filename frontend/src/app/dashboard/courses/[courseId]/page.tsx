@@ -2,7 +2,8 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { useSearchParams } from "next/navigation";
+import { useRole } from "@/hooks/use-role";
 import {
   BookOpen,
   Users,
@@ -13,11 +14,11 @@ import {
   Sparkles,
   Mic,
   Radio,
+  Trash2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { UploadZone } from "@/components/documents/upload-zone";
@@ -27,8 +28,9 @@ import { ProgressCard } from "@/components/gamification/progress-card";
 import { Leaderboard } from "@/components/gamification/leaderboard";
 import { BadgeDisplay } from "@/components/gamification/badge-display";
 import { GenerateSummaryDialog } from "@/components/summary/generate-summary-dialog";
+import { CourseAnalytics } from "@/components/analytics/course-analytics";
 import { useCourse } from "@/hooks/use-courses";
-import { useDocuments, type DocumentResponse } from "@/hooks/use-documents";
+import { useDocuments, useDeleteDocument, type DocumentResponse } from "@/hooks/use-documents";
 import { useProgress } from "@/hooks/use-progress";
 import {
   formatFileSize,
@@ -64,27 +66,22 @@ function statusLabel(status: DocumentStatus): string {
   }
 }
 
-function isInstructorEmail(email: string | undefined): boolean {
-  if (!email) return false;
-  return email.endsWith("@ust.hk");
-}
-
 interface CourseDetailPageProps {
   params: Promise<{ courseId: string }>;
 }
 
 export default function CourseDetailPage({ params }: CourseDetailPageProps) {
   const { courseId } = use(params);
-  const { user, isLoaded: userLoaded } = useUser();
+  const searchParams = useSearchParams();
+  const activeTab = searchParams.get("tab") || "overview";
+  const { isInstructor, isLoaded: roleLoaded } = useRole();
   const { data: course, isLoading: courseLoading } = useCourse(courseId);
   const { data: documents, isLoading: docsLoading } = useDocuments(courseId);
+  const deleteDocument = useDeleteDocument(courseId);
   const { data: progress, isLoading: progressLoading } = useProgress(courseId);
   const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
 
-  const isLoaded = userLoaded && !courseLoading;
-  const isInstructor = isInstructorEmail(
-    user?.primaryEmailAddress?.emailAddress
-  );
+  const isLoaded = roleLoaded && !courseLoading;
 
   if (!isLoaded || !course) {
     return (
@@ -106,7 +103,7 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
   const documentCount = docList.length;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       {/* Course header */}
       <section>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -133,23 +130,9 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
         </div>
       </section>
 
-      {/* Tabs */}
-      <Tabs defaultValue="overview">
-        <TabsList variant="line">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="materials">Materials</TabsTrigger>
-          <TabsTrigger value="quizzes">Quizzes</TabsTrigger>
-          <TabsTrigger value="flashcards">Flashcards</TabsTrigger>
-          <TabsTrigger value="revision">Revision</TabsTrigger>
-          <TabsTrigger value="pronunciation">Pronunciation</TabsTrigger>
-          <TabsTrigger value="live">Live Quiz</TabsTrigger>
-          <TabsTrigger value="progress">Progress</TabsTrigger>
-          <TabsTrigger value="leaderboard">Leaderboard</TabsTrigger>
-          <TabsTrigger value="students">Students</TabsTrigger>
-        </TabsList>
-
-        {/* Overview tab */}
-        <TabsContent value="overview" className="space-y-6 pt-4">
+      {/* Tab content — navigation is in the sidebar */}
+      {activeTab === "overview" && (
+        <div className="space-y-6">
           {/* Stats cards */}
           <div className="grid gap-4 sm:grid-cols-2">
             <Card>
@@ -211,16 +194,23 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
                   Generate an overview of all uploaded course materials.
                 </p>
               </div>
-              <Button variant="outline" onClick={() => setSummaryDialogOpen(true)}>
-                <Sparkles className="size-4" />
-                Generate Summary
-              </Button>
+              {isInstructor ? (
+                <Button variant="outline" onClick={() => setSummaryDialogOpen(true)}>
+                  <Sparkles className="size-4" />
+                  Generate Summary
+                </Button>
+              ) : (
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  AI summaries are generated by your instructor.
+                </p>
+              )}
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
+      )}
 
-        {/* Materials tab */}
-        <TabsContent value="materials" className="space-y-6 pt-4">
+      {activeTab === "materials" && (
+        <div className="space-y-6">
           {isInstructor && (
             <Card>
               <CardHeader>
@@ -285,13 +275,25 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
                           </span>
                         </div>
                       </div>
-                      <Badge
-                        className={statusBadgeClasses(
-                          doc.status as DocumentStatus
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          className={statusBadgeClasses(
+                            doc.status as DocumentStatus
+                          )}
+                        >
+                          {statusLabel(doc.status as DocumentStatus)}
+                        </Badge>
+                        {isInstructor && (
+                          <button
+                            onClick={() => deleteDocument.mutate(doc.id)}
+                            disabled={deleteDocument.isPending}
+                            className="rounded-[var(--radius-sm)] p-1 text-[var(--color-text-muted)] transition-colors duration-[var(--duration-fast)] hover:bg-[oklch(93%_0.05_25)] hover:text-[var(--color-error)]"
+                            aria-label={`Delete ${doc.filename}`}
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
                         )}
-                      >
-                        {statusLabel(doc.status as DocumentStatus)}
-                      </Badge>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -305,20 +307,23 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
+      )}
 
-        {/* Quizzes tab */}
-        <TabsContent value="quizzes" className="pt-4">
+      {activeTab === "quizzes" && (
+        <div className="pt-0">
           <QuizList courseId={courseId} isInstructor={isInstructor} />
-        </TabsContent>
+        </div>
+      )}
 
-        {/* Flashcards tab */}
-        <TabsContent value="flashcards" className="pt-4">
-          <FlashcardList courseId={courseId} />
-        </TabsContent>
+      {activeTab === "flashcards" && (
+        <div>
+          <FlashcardList courseId={courseId} isInstructor={isInstructor} />
+        </div>
+      )}
 
-        {/* Revision tab */}
-        <TabsContent value="revision" className="space-y-4 pt-4">
+      {activeTab === "revision" && (
+        <div className="space-y-4">
           <Card>
             <CardContent className="flex flex-col items-center gap-4 py-8">
               <div className="flex size-12 items-center justify-center rounded-full bg-[var(--color-primary-light)] text-[var(--color-primary)]">
@@ -335,10 +340,11 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
               </Link>
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
+      )}
 
-        {/* Pronunciation tab */}
-        <TabsContent value="pronunciation" className="pt-4">
+      {activeTab === "pronunciation" && (
+        <div>
           <Card>
             <CardContent className="flex flex-col items-center py-12 text-center">
               <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-success-light)]">
@@ -358,10 +364,11 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
               </Link>
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
+      )}
 
-        {/* Live Quiz tab */}
-        <TabsContent value="live" className="pt-4">
+      {activeTab === "live" && (
+        <div>
           <Card>
             <CardContent className="flex flex-col items-center py-12 text-center">
               <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-success-light)]">
@@ -383,37 +390,25 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
               </Link>
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
+      )}
 
-        {/* Progress tab */}
-        <TabsContent value="progress" className="space-y-6 pt-4">
+      {activeTab === "progress" && (
+        <div className="space-y-6">
           <ProgressCard progress={progress} isLoading={progressLoading} />
           <BadgeDisplay badges={progress?.badges ?? []} />
-        </TabsContent>
+        </div>
+      )}
 
-        {/* Leaderboard tab */}
-        <TabsContent value="leaderboard" className="pt-4">
+      {activeTab === "leaderboard" && (
+        <div>
           <Leaderboard courseId={courseId} />
-        </TabsContent>
+        </div>
+      )}
 
-        {/* Students tab */}
-        <TabsContent value="students" className="pt-4">
-          <Card>
-            <CardContent className="flex flex-col items-center py-12 text-center">
-              <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-primary-light)]">
-                <Users className="size-6 text-[var(--color-primary)]" />
-              </div>
-              <h3 className="font-semibold text-[var(--color-text)]">
-                No students enrolled yet
-              </h3>
-              <p className="mt-1 max-w-sm text-sm text-[var(--color-text-muted)]">
-                Share the course enrollment link with your students to get
-                started.
-              </p>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {activeTab === "students" && (
+        <CourseAnalytics courseId={courseId} />
+      )}
 
       <GenerateSummaryDialog
         courseId={courseId}
@@ -423,3 +418,4 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
     </div>
   );
 }
+
