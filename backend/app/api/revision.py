@@ -39,6 +39,7 @@ from app.services.bandit import (
     select_difficulty,
     update_policy,
 )
+from app.services.recalibrator import accumulate_stats, maybe_trigger_recalibration
 
 router = APIRouter(tags=["revision"])
 
@@ -377,6 +378,17 @@ async def submit_answer(
         time_taken_ms=body.time_taken_ms,
     )
     db.add(attempt)
+
+    # Recalibration stat accumulation
+    await accumulate_stats(
+        db,
+        pool_item_id=pool_item.id,
+        course_id=session.course_id,
+        content_type=pool_item.content_type,
+        llm_difficulty=pool_item.difficulty,
+        score=score,
+    )
+    await maybe_trigger_recalibration(db, session.course_id, pool_item.content_type)
 
     # Update session counters
     session.items_answered = (session.items_answered or 0) + 1
