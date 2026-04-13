@@ -456,7 +456,23 @@ npm run dev
 
 The app is now at `http://localhost:3000`.
 
-### 5. Testing
+### 5. Browse the database (DBeaver / TablePlus / any SQL client)
+
+The Docker Postgres from step 2 is reachable from any SQL client on your laptop. Use this when you want to inspect the schema, query data directly, or debug migrations.
+
+| Field    | Value           |
+|----------|-----------------|
+| Host     | `localhost`     |
+| Port     | `5432`          |
+| Database | `langassistant` |
+| Username | `postgres`      |
+| Password | `postgres`      |
+
+No SSL needed (local). If the connection is empty, you haven't run `alembic upgrade head` yet — repeat step 3. If you want demo data, run `python seed.py`.
+
+> Each teammate runs their own Docker instance — databases are isolated per laptop. To share data across the team, use the Railway-hosted Postgres (separate credentials, shared with the team out-of-band).
+
+### 6. Testing
 
 ```bash
 # Backend (requires langassistant_test database)
