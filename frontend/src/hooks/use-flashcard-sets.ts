@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
-import { apiFetch, type ApiEnvelope } from "@/lib/api";
+import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 
 export interface FlashcardCardResponse {
   readonly id: string;
@@ -42,7 +42,7 @@ export function useFlashcardSets(courseId: string) {
     },
     enabled: isSignedIn === true && !!courseId,
     retry: (count, error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
+      if (isAuthError(error)) return false;
       return count < 3;
     },
   });
@@ -64,7 +64,7 @@ export function useFlashcardSet(setId: string) {
     },
     enabled: isSignedIn === true && !!setId,
     retry: (count, error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
+      if (isAuthError(error)) return false;
       return count < 3;
     },
   });

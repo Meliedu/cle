@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, isAuthError } from "@/lib/api";
 
 export interface ProgressResponse {
   readonly course_id: string;
@@ -53,7 +53,7 @@ export function useProgress(courseId: string) {
     },
     enabled: isSignedIn === true && !!courseId,
     retry: (count: number, error: Error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
+      if (isAuthError(error)) return false;
       return count < 3;
     },
   });
@@ -75,7 +75,7 @@ export function useLeaderboard(courseId: string, page = 1) {
     },
     enabled: isSignedIn === true && !!courseId,
     retry: (count: number, error: Error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
+      if (isAuthError(error)) return false;
       return count < 3;
     },
   });

@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useQuery } from "@tanstack/react-query";
-import { apiFetch, type ApiEnvelope } from "@/lib/api";
+import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -114,7 +114,7 @@ export function QuizPlayer({ quizId, courseId }: QuizPlayerProps) {
     },
     enabled: isSignedIn === true,
     retry: (count, error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
+      if (isAuthError(error)) return false;
       return count < 3;
     },
   });

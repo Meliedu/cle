@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, isAuthError } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
@@ -105,8 +105,7 @@ export function usePronunciationHistory(courseId: string) {
     enabled: isSignedIn === true && !!courseId,
     retry: (count, error) => {
       if (
-        error.message.includes("401") ||
-        error.message.includes("Unauthorized")
+        isAuthError(error)
       )
         return false;
       return count < 3;

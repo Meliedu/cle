@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
-import { apiFetch, type ApiEnvelope } from "@/lib/api";
+import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 
 export interface QuestionResponse {
   readonly id: string;
@@ -49,7 +49,7 @@ export function useQuizzes(courseId: string) {
     },
     enabled: isSignedIn === true && !!courseId,
     retry: (count, error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
+      if (isAuthError(error)) return false;
       return count < 3;
     },
   });
@@ -71,7 +71,7 @@ export function useQuiz(quizId: string) {
     },
     enabled: isSignedIn === true && !!quizId,
     retry: (count, error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
+      if (isAuthError(error)) return false;
       return count < 3;
     },
   });

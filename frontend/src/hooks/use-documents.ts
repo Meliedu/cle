@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
-import { apiFetch, type ApiEnvelope } from "@/lib/api";
+import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 
 export interface DocumentResponse {
   readonly id: string;
@@ -32,7 +32,7 @@ export function useDocuments(courseId: string) {
     },
     enabled: isSignedIn === true && !!courseId,
     retry: (count, error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
+      if (isAuthError(error)) return false;
       return count < 3;
     },
     refetchInterval: (query) => {

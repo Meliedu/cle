@@ -14,7 +14,7 @@ import {
   Check,
   Trophy,
 } from "lucide-react";
-import { apiFetch, type ApiEnvelope } from "@/lib/api";
+import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 
 interface Flashcard {
   readonly id: string;
@@ -111,7 +111,7 @@ export function FlashcardPlayer({ setId, courseId }: FlashcardPlayerProps) {
     },
     enabled: isSignedIn === true,
     retry: (count, error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
+      if (isAuthError(error)) return false;
       return count < 3;
     },
   });
