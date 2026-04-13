@@ -50,7 +50,7 @@ export function FlashcardPreview({ setId, courseId }: FlashcardPreviewProps) {
   } = useQuery<FlashcardSetDetail>({
     queryKey: ["flashcard-set", setId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const res = await apiFetch<{ success: boolean; data: FlashcardSetDetail }>(
         `/flashcard-sets/${setId}`,
@@ -63,7 +63,7 @@ export function FlashcardPreview({ setId, courseId }: FlashcardPreviewProps) {
 
   const publishMutation = useMutation({
     mutationFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(`/flashcard-sets/${setId}/publish`, {
         method: "POST",

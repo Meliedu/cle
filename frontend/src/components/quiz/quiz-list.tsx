@@ -96,7 +96,7 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
 
   const publishMutation = useMutation({
     mutationFn: async (quizId: string) => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(`/quizzes/${quizId}/publish`, {
         method: "POST",
@@ -110,7 +110,7 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async (quizId: string) => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(`/quizzes/${quizId}`, {
         method: "DELETE",

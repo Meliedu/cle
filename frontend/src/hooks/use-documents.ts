@@ -22,7 +22,7 @@ export function useDocuments(courseId: string) {
   return useQuery({
     queryKey: ["documents", courseId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<ApiEnvelope<DocumentResponse[]>>(
         `/courses/${courseId}/documents`,
@@ -52,7 +52,7 @@ export function useDeleteDocument(courseId: string) {
 
   return useMutation({
     mutationFn: async (documentId: string) => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       await apiFetch(`/courses/${courseId}/documents/${documentId}`, {
         method: "DELETE",

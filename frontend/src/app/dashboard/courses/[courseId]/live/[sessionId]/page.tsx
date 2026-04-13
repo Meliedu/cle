@@ -30,7 +30,7 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
   /* Fetch the Clerk token for the WebSocket hook */
   useEffect(() => {
     let cancelled = false;
-    getToken().then((t) => {
+    getToken({ template: "backend" }).then((t) => {
       if (!cancelled) setToken(t);
     });
     return () => {

@@ -21,7 +21,7 @@ export function useCourses() {
   return useQuery({
     queryKey: ["courses"],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<ApiEnvelope<CourseResponse[]>>(
         "/courses",
@@ -43,7 +43,7 @@ export function useCourse(courseId: string) {
   return useQuery({
     queryKey: ["courses", courseId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<ApiEnvelope<CourseResponse>>(
         `/courses/${courseId}`,

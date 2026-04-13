@@ -32,7 +32,7 @@ export function useFlashcardSets(courseId: string) {
   return useQuery({
     queryKey: ["flashcard-sets", courseId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<ApiEnvelope<FlashcardSetResponse[]>>(
         `/courses/${courseId}/flashcard-sets`,
@@ -54,7 +54,7 @@ export function useFlashcardSet(setId: string) {
   return useQuery({
     queryKey: ["flashcard-sets", "detail", setId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<ApiEnvelope<FlashcardSetDetailResponse>>(
         `/flashcard-sets/${setId}`,

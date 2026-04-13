@@ -66,7 +66,7 @@ export function useRecalibrationOverview(courseId: string) {
     queryKey: ["recalibration", "overview", courseId],
     staleTime: STALE_MS,
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const res = await apiFetch<ApiEnvelope<RecalibrationOverview>>(
         `/courses/${courseId}/recalibration/overview`,
@@ -96,7 +96,7 @@ export function useRecalibrationItems(
     queryKey: ["recalibration", "items", courseId, filters],
     staleTime: STALE_MS,
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const res = await apiFetch<ApiEnvelope<RecalibrationItemsPage>>(
         `/courses/${courseId}/recalibration/items?${qs}`,
@@ -112,7 +112,7 @@ export function useToggleOverride(courseId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (itemId: string) => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const res = await apiFetch<ApiEnvelope<Record<string, unknown>>>(
         `/courses/${courseId}/recalibration/items/${itemId}/override`,

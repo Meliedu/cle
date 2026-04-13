@@ -93,7 +93,7 @@ export function GenerateQuizDialog({
       setSubmitError(null);
 
       try {
-        const token = await getToken();
+        const token = await getToken({ template: "backend" });
         if (!token) throw new Error("Not authenticated");
         await apiFetch<{ success: boolean }>("/rag/generate-quiz", {
           method: "POST",

@@ -33,7 +33,7 @@ export function useCourseOverview(courseId: string) {
   return useQuery<CourseOverview>({
     queryKey: ["analytics", "overview", courseId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const res = await apiFetch<{ data: CourseOverview }>(
         `/analytics/courses/${courseId}/overview`,
@@ -50,7 +50,7 @@ export function useQuizStats(courseId: string) {
   return useQuery<QuizStats[]>({
     queryKey: ["analytics", "quizzes", courseId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const res = await apiFetch<{ data: QuizStats[] }>(
         `/analytics/courses/${courseId}/quizzes`,
@@ -67,7 +67,7 @@ export function useStudentStats(courseId: string) {
   return useQuery<StudentStats[]>({
     queryKey: ["analytics", "students", courseId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const res = await apiFetch<{ data: StudentStats[] }>(
         `/analytics/courses/${courseId}/students`,

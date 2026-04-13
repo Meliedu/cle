@@ -43,7 +43,7 @@ export function useProgress(courseId: string) {
   return useQuery({
     queryKey: ["progress", courseId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<ApiEnvelope<ProgressResponse>>(
         `/courses/${courseId}/progress`,
@@ -65,7 +65,7 @@ export function useLeaderboard(courseId: string, page = 1) {
   return useQuery({
     queryKey: ["leaderboard", courseId, page],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<PaginatedEnvelope<LeaderboardEntry[]>>(
         `/courses/${courseId}/leaderboard?page=${page}`,

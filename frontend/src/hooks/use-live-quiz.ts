@@ -59,7 +59,7 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
   const { data: state, error: pollError } = useQuery({
     queryKey: ["live-state", sessionId],
     queryFn: async () => {
-      const t = await getToken();
+      const t = await getToken({ template: "backend" });
       if (!t) throw new Error("Not authenticated");
       const res = await apiFetch<ApiEnvelope<LiveStateResponse>>(
         `/live-sessions/${sessionId}/state`,
@@ -91,7 +91,7 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
   /* Actions */
   const nextQuestionMut = useMutation({
     mutationFn: async () => {
-      const t = await getToken();
+      const t = await getToken({ template: "backend" });
       if (!t) throw new Error("Not authenticated");
       await apiFetch(`/live-sessions/${sessionId}/next-question`, {
         method: "POST",
@@ -110,7 +110,7 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
       is_correct: boolean;
       elapsed_seconds: number;
     }) => {
-      const t = await getToken();
+      const t = await getToken({ template: "backend" });
       if (!t) throw new Error("Not authenticated");
       await apiFetch(`/live-sessions/${sessionId}/answer`, {
         method: "POST",
@@ -124,7 +124,7 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
 
   const endMut = useMutation({
     mutationFn: async () => {
-      const t = await getToken();
+      const t = await getToken({ template: "backend" });
       if (!t) throw new Error("Not authenticated");
       await apiFetch(`/live-sessions/${sessionId}/end`, {
         method: "POST",
@@ -184,7 +184,7 @@ export function useLiveSessions(courseId: string) {
   return useQuery({
     queryKey: ["live-sessions", courseId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<ApiEnvelope<LiveSessionResponse[]>>(
         `/courses/${courseId}/live-sessions`,
@@ -210,7 +210,7 @@ export function useLiveSession(sessionId: string) {
   return useQuery({
     queryKey: ["live-sessions", "detail", sessionId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<ApiEnvelope<LiveSessionResponse>>(
         `/live-sessions/${sessionId}`,
@@ -238,7 +238,7 @@ export function useCreateLiveSession(courseId: string) {
       quiz_id: string;
       time_limit_seconds?: number;
     }) => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<ApiEnvelope<LiveSessionResponse>>(
         `/courses/${courseId}/live-sessions`,

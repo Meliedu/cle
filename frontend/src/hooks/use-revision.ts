@@ -93,7 +93,7 @@ export function useRevisionSession(courseId: string) {
 
   const startMutation = useMutation({
     mutationFn: async (input: StartInput = {}): Promise<StartResponse> => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
 
       const response = await apiFetch<ApiEnvelope<StartResponse>>(
@@ -125,7 +125,7 @@ export function useRevisionSession(courseId: string) {
     mutationFn: async (input: AnswerInput): Promise<AnswerResponse> => {
       if (!sessionId) throw new Error("No active session");
 
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
 
       const response = await apiFetch<ApiEnvelope<AnswerResponse>>(
@@ -159,7 +159,7 @@ export function useRevisionSession(courseId: string) {
     mutationFn: async (): Promise<EndResponse> => {
       if (!sessionId) throw new Error("No active session");
 
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
 
       const response = await apiFetch<ApiEnvelope<EndResponse>>(

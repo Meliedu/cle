@@ -83,7 +83,7 @@ export function QuizPlayer({ quizId, courseId }: QuizPlayerProps) {
   } = useQuery<QuizDetail>({
     queryKey: ["quizzes", "detail", quizId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       startTimeRef.current = Date.now();
       const res = await apiFetch<
@@ -137,7 +137,7 @@ export function QuizPlayer({ quizId, courseId }: QuizPlayerProps) {
     );
 
     try {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const result = await apiFetch<ApiEnvelope<AttemptResponse>>(
         `/quizzes/${quizId}/attempt`,

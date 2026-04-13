@@ -40,7 +40,7 @@ export function GenerateSummaryDialog({
     setError(null);
 
     try {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const result = await apiFetch<{ data: { summary: string } }>(
         "/rag/generate-summary",

@@ -56,7 +56,7 @@ export function UploadZone({ courseId, onUploadComplete }: UploadZoneProps) {
 
   const uploadFile = useCallback(
     async (uploadFile: UploadFile) => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const formData = new FormData();
       formData.append("file", uploadFile.file);

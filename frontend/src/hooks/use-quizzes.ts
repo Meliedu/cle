@@ -39,7 +39,7 @@ export function useQuizzes(courseId: string) {
   return useQuery({
     queryKey: ["quizzes", courseId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<ApiEnvelope<QuizResponse[]>>(
         `/courses/${courseId}/quizzes`,
@@ -61,7 +61,7 @@ export function useQuiz(quizId: string) {
   return useQuery({
     queryKey: ["quizzes", "detail", quizId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<ApiEnvelope<QuizDetailResponse>>(
         `/quizzes/${quizId}`,

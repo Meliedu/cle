@@ -58,7 +58,7 @@ export function usePronunciationGrade() {
       courseId,
       language,
     }: GradeInput): Promise<PronunciationGradeResponse> => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
 
       const formData = new FormData();
@@ -95,7 +95,7 @@ export function usePronunciationHistory(courseId: string) {
   return useQuery({
     queryKey: ["pronunciation-history", courseId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<
         ApiEnvelope<PronunciationHistoryEntry[]>

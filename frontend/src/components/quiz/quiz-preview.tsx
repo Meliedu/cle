@@ -86,7 +86,7 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
   } = useQuery<QuizPreviewData>({
     queryKey: ["quiz-preview", quizId],
     queryFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const res = await apiFetch<{ success: boolean; data: QuizPreviewData }>(
         `/quizzes/${quizId}/preview`,
@@ -99,7 +99,7 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
 
   const publishMutation = useMutation({
     mutationFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(`/quizzes/${quizId}/publish`, {
         method: "POST",
@@ -111,7 +111,7 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
 
   const deleteQuizMutation = useMutation({
     mutationFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(`/quizzes/${quizId}`, {
         method: "DELETE",
@@ -126,7 +126,7 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
 
   const deleteQuestionMutation = useMutation({
     mutationFn: async (questionId: string) => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(`/questions/${questionId}`, {
         method: "DELETE",
@@ -139,7 +139,7 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
   const regenerateMutation = useMutation({
     mutationFn: async (questionId: string) => {
       setRegeneratingId(questionId);
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(
         `/questions/${questionId}/regenerate`,
@@ -152,7 +152,7 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
 
   const addQuestionMutation = useMutation({
     mutationFn: async () => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(
         `/quizzes/${quizId}/questions`,

@@ -97,7 +97,7 @@ export function FlashcardList({ courseId, isInstructor }: FlashcardListProps) {
 
   const publishMutation = useMutation({
     mutationFn: async (setId: string) => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(`/flashcard-sets/${setId}/publish`, {
         method: "POST",
@@ -111,7 +111,7 @@ export function FlashcardList({ courseId, isInstructor }: FlashcardListProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async (setId: string) => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(`/flashcard-sets/${setId}`, {
         method: "DELETE",

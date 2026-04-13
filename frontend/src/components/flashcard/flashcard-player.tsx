@@ -101,7 +101,7 @@ export function FlashcardPlayer({ setId, courseId }: FlashcardPlayerProps) {
   } = useQuery({
     queryKey: ["flashcard-sets", "detail", setId],
     queryFn: async (): Promise<FlashcardSetDetail> => {
-      const token = await getToken();
+      const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const res = await apiFetch<ApiEnvelope<FlashcardSetDetail>>(
         `/flashcard-sets/${setId}`,
@@ -134,7 +134,7 @@ export function FlashcardPlayer({ setId, courseId }: FlashcardPlayerProps) {
       setHasRated(true);
 
       try {
-        const token = await getToken();
+        const token = await getToken({ template: "backend" });
         if (!token) throw new Error("Not authenticated");
         await apiFetch(`/flashcard-sets/${setId}/progress`, {
           method: "PUT",
