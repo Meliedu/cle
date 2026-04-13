@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_factory
 from app.models.chunk import Chunk
+from app.models.document import Document
 
 
 @dataclass(frozen=True)
@@ -41,10 +42,13 @@ async def retrieve_chunks(
         "similarity"
     )
 
+    # Join Document so soft-deleted documents' chunks drop out of results.
     stmt = (
         select(Chunk, similarity)
+        .join(Document, Document.id == Chunk.document_id)
         .where(Chunk.course_id == course_id)
         .where(Chunk.embedding.isnot(None))
+        .where(Document.deleted_at.is_(None))
     )
 
     if document_ids:
@@ -84,9 +88,11 @@ async def fulltext_retrieve(
             Chunk.page_number,
             func.ts_rank(Chunk.tsvector_content, tsquery).label("rank"),
         )
+        .join(Document, Document.id == Chunk.document_id)
         .where(
             Chunk.course_id == course_id,
             Chunk.tsvector_content.op("@@")(tsquery),
+            Document.deleted_at.is_(None),
         )
         .order_by(text("rank DESC"))
         .limit(top_k)
