@@ -2,7 +2,7 @@ import openai
 
 from app.config import settings
 
-EMBEDDING_MODEL = "text-embedding-3-large"
+EMBEDDING_MODEL = "openai/text-embedding-3-large"
 EMBEDDING_DIMENSIONS = 1536
 BATCH_SIZE = 100
 
@@ -12,7 +12,10 @@ _client: openai.AsyncOpenAI | None = None
 def _get_client() -> openai.AsyncOpenAI:
     global _client
     if _client is None:
-        _client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+        _client = openai.AsyncOpenAI(
+            api_key=settings.openrouter_api_key,
+            base_url=settings.openrouter_base_url,
+        )
     return _client
 
 

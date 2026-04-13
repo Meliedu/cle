@@ -36,3 +36,5 @@ pgdata/
 dist/
 build/
 .worktrees/
+
+CLAUDE.md

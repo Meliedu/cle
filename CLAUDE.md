@@ -115,8 +115,9 @@ frontend/src/
 - **Database**: All models use UUID primary keys. Soft deletes via `deleted_at` column. Alembic manages migrations with async engine.
 - **Environment**: Copy `.env.example` to `backend/.env`. Frontend env vars prefixed with `NEXT_PUBLIC_`.
 - **LLM calls**: OpenRouter with OpenAI SDK. Primary model is tried first; on JSON parse failure, falls back to secondary model. Both configured in settings.
+- **Embeddings**: Also via OpenRouter (not direct OpenAI). `embedder.py` uses `openai.AsyncOpenAI` with `base_url=settings.openrouter_base_url` and `api_key=settings.openrouter_api_key`. Model IDs must be provider-prefixed (e.g. `openai/text-embedding-3-large`). No `OPENAI_API_KEY` is required.
 - **Rate limiting**: Only applies to `/api/rag/*` endpoints. Tracked per-user per-hour in `api_usage` table. Instructors get 50 req/hr, students get 10.
 - **Email domains**: `ust.hk` = instructor, `connect.ust.hk` = student. Configured via `ALLOWED_EMAIL_DOMAINS`.
-- **Deployment**: Backend on Railway (Dockerfile), frontend on Vercel.
+- **Deployment**: Backend on Railway (Dockerfile), frontend on Vercel. Operate infra directly — Railway CLI + GraphQL API (`jq -r '.user.accessToken' ~/.railway/config.json`), Vercel CLI, Clerk REST API with `CLERK_SECRET_KEY`. Don't route the user through web dashboards when an API exists.
 - **Design tokens**: Use CSS custom properties from `styles/tokens.css`, not hardcoded colors. oklch color space.
 - **WSL2**: If Next.js OOMs, use `NODE_OPTIONS=--max-old-space-size=4096`.
