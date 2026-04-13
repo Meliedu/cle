@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -36,6 +37,18 @@ class GenerateQuizRequest(BaseModel):
 class GenerateSummaryRequest(BaseModel):
     course_id: uuid.UUID
     document_ids: list[uuid.UUID] | None = None
+
+
+class CourseSummaryResponse(BaseModel):
+    id: uuid.UUID
+    course_id: uuid.UUID
+    summary_text: str
+    document_ids: list[uuid.UUID] | None
+    generated_by: uuid.UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class GenerateFlashcardsRequest(BaseModel):

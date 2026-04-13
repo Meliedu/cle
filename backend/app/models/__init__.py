@@ -10,6 +10,7 @@ from app.models.scheduler import SchedulerModel
 from app.models.score import PronunciationScore, StudentProgress
 from app.models.live_answer import LiveAnswer
 from app.models.session import LiveSession, SessionSummary
+from app.models.summary import CourseSummary
 from app.models.task import Task
 from app.models.recalibration import RecalibrationModel, RecalibrationStats
 from app.models.revision import (
@@ -40,6 +41,7 @@ __all__ = [
     "PronunciationScore",
     "StudentProgress",
     "SessionSummary",
+    "CourseSummary",
     "LiveAnswer",
     "LiveSession",
     "Task",

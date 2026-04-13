@@ -93,6 +93,12 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # GET reads under /api/rag/* (e.g. fetching a persisted course summary)
+        # are not LLM calls and shouldn't count against the generation quota.
+        if method == "GET":
+            await self.app(scope, receive, send)
+            return
+
         # Extract token from Authorization header
         headers = dict(scope.get("headers", []))
         auth_value = headers.get(b"authorization", b"").decode("latin-1")
