@@ -28,3 +28,7 @@ class RecalibrationItemRow(BaseModel):
 
 class RecalibrationItemsResponse(BaseModel):
     items: list[RecalibrationItemRow]
+    total: int
+    page: int
+    limit: int
+    pages: int

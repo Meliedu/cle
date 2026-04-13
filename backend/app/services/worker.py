@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,7 +25,7 @@ async def claim_task(session: AsyncSession) -> Task | None:
     if task:
         task.status = "running"
         task.attempts += 1
-        task.started_at = datetime.utcnow()
+        task.started_at = datetime.now(timezone.utc)
         await session.commit()
         await session.refresh(task)
     return task
@@ -33,14 +33,16 @@ async def claim_task(session: AsyncSession) -> Task | None:
 
 async def complete_task(session: AsyncSession, task: Task) -> None:
     task.status = "completed"
-    task.completed_at = datetime.utcnow()
+    task.completed_at = datetime.now(timezone.utc)
     await session.commit()
 
 
 async def fail_task(session: AsyncSession, task: Task, error: str) -> None:
     permanently_failed = task.attempts >= task.max_attempts
     task.status = "failed" if permanently_failed else "pending"
-    task.error_message = error
+    # Store only the exception class + truncated message — keep raw stack traces
+    # in the application log, not in the DB column that may be surfaced via API.
+    task.error_message = (error or "")[:200]
 
     if permanently_failed and task.task_type == "process_document":
         document_id = task.payload.get("document_id")
@@ -91,8 +93,8 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
                         await complete_task(session, task)
                         logger.info(f"Task {task.id} completed")
                     except Exception as e:
-                        logger.error(f"Task {task.id} failed: {e}")
-                        await fail_task(session, task, str(e))
+                        logger.exception("Task %s failed", task.id)
+                        await fail_task(session, task, f"{type(e).__name__}: {e}")
                 else:
                     await asyncio.sleep(POLL_INTERVAL_SECONDS)
         except Exception as e:

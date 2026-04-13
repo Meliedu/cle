@@ -123,7 +123,7 @@ class RateLimitMiddleware:
                 if request_count >= limit:
                     logger.warning(
                         "Rate limit exceeded for user %s (%s): %d/%d",
-                        user.email,
+                        user.id,
                         user.role,
                         request_count,
                         limit,
