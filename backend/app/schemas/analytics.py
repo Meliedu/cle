@@ -23,7 +23,6 @@ class QuizStats(BaseModel):
 class StudentStats(BaseModel):
     user_id: uuid.UUID
     full_name: str | None
-    email: str
     xp_points: int
     quizzes_completed: int
     avg_quiz_score: Decimal | None

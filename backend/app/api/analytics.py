@@ -159,7 +159,6 @@ async def get_student_stats(
         select(
             User.id,
             User.full_name,
-            User.email,
             func.coalesce(StudentProgress.xp_points, 0).label("xp_points"),
             func.coalesce(StudentProgress.quizzes_completed, 0).label("quizzes_completed"),
             func.coalesce(StudentProgress.flashcards_reviewed, 0).label("flashcards_reviewed"),
@@ -201,7 +200,6 @@ async def get_student_stats(
             StudentStats(
                 user_id=row.id,
                 full_name=row.full_name,
-                email=row.email,
                 xp_points=row.xp_points,
                 quizzes_completed=row.quizzes_completed,
                 avg_quiz_score=Decimal(str(round(float(avg_score), 2))) if avg_score else None,

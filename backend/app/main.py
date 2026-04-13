@@ -2,8 +2,9 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api import api_router
 from app.config import settings
@@ -32,7 +33,33 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title="Meli API", version="0.1.0", lifespan=lifespan)
+_is_production = settings.environment == "production"
+
+app = FastAPI(
+    title="Meli API",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
+)
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception):
+    """Log full traceback server-side, return generic envelope to clients."""
+    logger = logging.getLogger("app.errors")
+    logger.exception("Unhandled exception: %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "An unexpected error occurred.",
+            },
+        },
+    )
 
 # AuthMiddleware does a fast Bearer-token check to reject unauthenticated
 # /api/* traffic before it reaches routing/DB. Full JWT verification still
