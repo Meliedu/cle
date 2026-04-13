@@ -470,7 +470,27 @@ The Docker Postgres from step 2 is reachable from any SQL client on your laptop.
 
 No SSL needed (local). If the connection is empty, you haven't run `alembic upgrade head` yet — repeat step 3. If you want demo data, run `python seed.py`.
 
-> Each teammate runs their own Docker instance — databases are isolated per laptop. To share data across the team, use the Railway-hosted Postgres (separate credentials, shared with the team out-of-band).
+> Each teammate runs their own Docker instance — databases are isolated per laptop. To share data across the team, use the Railway-hosted Postgres below.
+
+#### Browsing the shared Railway database (read-only)
+
+For inspecting live production data without risk. Use the `meli_readonly` role — it can `SELECT` but not `INSERT`/`UPDATE`/`DELETE`/`ALTER`.
+
+| Field    | Value                          |
+|----------|--------------------------------|
+| Host     | `hopper.proxy.rlwy.net`        |
+| Port     | `21531`                        |
+| Database | `railway`                      |
+| Username | `meli_readonly`                |
+| Password | _ask the project owner_        |
+| SSL      | `require`                      |
+
+Or as a JDBC URL for DBeaver's "URL" mode:
+```
+jdbc:postgresql://hopper.proxy.rlwy.net:21531/railway?sslmode=require
+```
+
+> ⚠️ **Never share the `postgres` superuser password.** The backend connects as `meli_app` (NOBYPASSRLS, CRUD-only). Teammates should always use `meli_readonly`. If someone needs write access for a one-off migration, use the superuser temporarily via the Railway dashboard and rotate the password afterward.
 
 ### 6. Testing
 
