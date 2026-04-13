@@ -126,16 +126,20 @@ def chunk_text(
         )
         chunk_index += 1
 
-        # Rewind by overlap: step back through sentences until we've covered OVERLAP_TOKENS.
+        # Rewind by overlap: step back through sentences until we've covered
+        # OVERLAP_TOKENS. Always include at least one sentence, and include
+        # the sentence that pushes us over the threshold — otherwise any
+        # trailing sentence longer than OVERLAP_TOKENS silently produced
+        # zero overlap between consecutive chunks.
         if i < len(sentences):
             overlap_tokens = 0
             rewind = 0
             for j in range(i - 1, start_i - 1, -1):
                 s_tokens = _count_tokens(sentences[j])
-                if overlap_tokens + s_tokens > OVERLAP_TOKENS:
-                    break
                 overlap_tokens += s_tokens
                 rewind += 1
+                if overlap_tokens >= OVERLAP_TOKENS:
+                    break
             if rewind > 0:
                 i -= rewind
 
