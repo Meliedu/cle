@@ -338,30 +338,72 @@ async def maybe_trigger_recalibration(
     course_id: "UUID",
     content_type: str,
 ) -> None:
-    """Check attempt counter and enqueue a recalibration task if threshold reached."""
-    from sqlalchemy import select
+    """Check attempt counter and enqueue a recalibration task if threshold reached.
+
+    Uses a server-side atomic UPDATE to increment ``total_attempts_since_last_run``
+    so concurrent /answer requests cannot read the same stale counter and produce
+    a lost-update.
+    """
+    from sqlalchemy import func, select, update
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
     from app.models.recalibration import RecalibrationModel, RecalibrationStats
     from app.models.task import Task
 
     result = await db.execute(
-        select(RecalibrationModel).where(
+        select(RecalibrationModel.id).where(
             RecalibrationModel.course_id == course_id,
             RecalibrationModel.content_type == content_type,
         )
     )
-    model = result.scalar_one_or_none()
+    model_id = result.scalar_one_or_none()
 
-    if model is None:
-        count_result = await db.execute(
-            select(RecalibrationStats.attempt_count).where(
+    if model_id is None:
+        # Bootstrap a model row so future calls hit the cheap atomic-increment
+        # path instead of re-summing recalibration_stats every request.
+        # Use ON CONFLICT DO UPDATE so concurrent bootstraps for the same
+        # (course_id, content_type) can't produce IntegrityError — the
+        # losing request becomes an atomic increment on the winning row.
+        sum_result = await db.execute(
+            select(func.coalesce(func.sum(RecalibrationStats.attempt_count), 0)).where(
                 RecalibrationStats.course_id == course_id,
                 RecalibrationStats.content_type == content_type,
             )
         )
-        total = sum(r[0] for r in count_result)
+        bootstrap_total = int(sum_result.scalar_one() or 0)
+        initial_dirichlet = build_initial_dirichlet()
+        stmt = (
+            pg_insert(RecalibrationModel)
+            .values(
+                course_id=course_id,
+                content_type=content_type,
+                dirichlet_params=initial_dirichlet,
+                transition_matrix=compute_transition_matrix(initial_dirichlet),
+                items_used=0,
+                total_attempts_since_last_run=bootstrap_total,
+            )
+            .on_conflict_do_update(
+                index_elements=["course_id", "content_type"],
+                set_={
+                    "total_attempts_since_last_run": (
+                        RecalibrationModel.total_attempts_since_last_run + 1
+                    )
+                },
+            )
+            .returning(RecalibrationModel.total_attempts_since_last_run)
+        )
+        total = (await db.execute(stmt)).scalar_one()
     else:
-        total = model.total_attempts_since_last_run + 1
-        model.total_attempts_since_last_run = total
+        upd = (
+            update(RecalibrationModel)
+            .where(RecalibrationModel.id == model_id)
+            .values(
+                total_attempts_since_last_run=(
+                    RecalibrationModel.total_attempts_since_last_run + 1
+                )
+            )
+            .returning(RecalibrationModel.total_attempts_since_last_run)
+        )
+        total = (await db.execute(upd)).scalar_one()
 
     if total >= BATCH_TRIGGER_ATTEMPTS:
         # Dedup: skip enqueue if a pending/running recalibration task already
@@ -476,31 +518,46 @@ async def run_recalibration_job(
             total_attempts_since_last_run=0,
         ))
 
-    # 5. Apply relabels
-    for pool_item_id_str, new_diff, confidence in relabels:
-        pid = UUID(pool_item_id_str)
-        await db.execute(
-            update(RevisionPoolItem).where(RevisionPoolItem.id == pid)
-            .values(recalibrated_difficulty=new_diff, recalibration_confidence=round(confidence, 3))
-        )
-        await db.execute(
-            update(RevisionAttempt)
-            .where(RevisionAttempt.pool_item_id == pid, RevisionAttempt.corrected_difficulty.is_(None))
-            .values(corrected_difficulty=new_diff)
-        )
+    # 5. Apply relabels — bulk-update per (new_diff, rounded_confidence) group
+    # to collapse N round-trips into at most a handful per content type.
+    if relabels:
+        from collections import defaultdict
+        grouped: dict[tuple[str, float], list[UUID]] = defaultdict(list)
+        for pool_item_id_str, new_diff, confidence in relabels:
+            grouped[(new_diff, round(float(confidence), 3))].append(UUID(pool_item_id_str))
+
+        for (new_diff, conf), pids in grouped.items():
+            await db.execute(
+                update(RevisionPoolItem)
+                .where(RevisionPoolItem.id.in_(pids))
+                .values(recalibrated_difficulty=new_diff, recalibration_confidence=conf)
+            )
+            await db.execute(
+                update(RevisionAttempt)
+                .where(
+                    RevisionAttempt.pool_item_id.in_(pids),
+                    RevisionAttempt.corrected_difficulty.is_(None),
+                )
+                .values(corrected_difficulty=new_diff)
+            )
 
     # 6. Revert items no longer meeting threshold
-    for pool_item_id_str in reverts:
-        pid = UUID(pool_item_id_str)
+    if reverts:
+        revert_pids = [UUID(s) for s in reverts]
         await db.execute(
             update(RevisionPoolItem)
-            .where(RevisionPoolItem.id == pid, RevisionPoolItem.recalibrated_difficulty.is_not(None))
+            .where(
+                RevisionPoolItem.id.in_(revert_pids),
+                RevisionPoolItem.recalibrated_difficulty.is_not(None),
+            )
             .values(recalibrated_difficulty=None, recalibration_confidence=None)
         )
-        # Also clear corrected_difficulty on attempts linked to this reverted item
         await db.execute(
             update(RevisionAttempt)
-            .where(RevisionAttempt.pool_item_id == pid, RevisionAttempt.corrected_difficulty.is_not(None))
+            .where(
+                RevisionAttempt.pool_item_id.in_(revert_pids),
+                RevisionAttempt.corrected_difficulty.is_not(None),
+            )
             .values(corrected_difficulty=None)
         )
 

@@ -206,15 +206,12 @@ async def _get_recent_attempts(
             RevisionAttempt.course_id == course_id,
             RevisionAttempt.content_type == content_type,
         )
-        .order_by(RevisionAttempt.created_at.asc())
+        .order_by(RevisionAttempt.created_at.desc())
         .limit(limit)
     )
     result = await db.execute(stmt)
-    # Use the EFFECTIVE difficulty (corrected label if present, otherwise original LLM label)
-    # as the `difficulty` attribute. Downstream consumers (bandit.cold_start_select,
-    # bandit.is_degenerate, compute_state_vector) see the recalibrated difficulty without
-    # needing special-case handling. `corrected_difficulty` is preserved for consumers that
-    # want to distinguish the two (e.g., compute_state_vector fallback).
+    rows = list(result.scalars().all())
+    rows.reverse()  # most-recent-last so attempts[-1] is the latest
     return [
         SimpleNamespace(
             difficulty=a.corrected_difficulty or a.difficulty,
@@ -222,7 +219,7 @@ async def _get_recent_attempts(
             score=float(a.score),
             created_at=a.created_at,
         )
-        for a in result.scalars().all()
+        for a in rows
     ]
 
 
@@ -349,9 +346,12 @@ async def submit_answer(
 ):
     session = await _verify_session_owner(db, session_id, user.id)
 
-    # Fetch the pool item
+    # Fetch the pool item, scoped to the session's course to prevent IDOR.
     item_result = await db.execute(
-        select(RevisionPoolItem).where(RevisionPoolItem.id == body.pool_item_id)
+        select(RevisionPoolItem).where(
+            RevisionPoolItem.id == body.pool_item_id,
+            RevisionPoolItem.course_id == session.course_id,
+        )
     )
     pool_item = item_result.scalar_one_or_none()
     if not pool_item:

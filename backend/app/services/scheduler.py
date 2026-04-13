@@ -215,14 +215,15 @@ def update_parameters(
 ) -> list[float]:
     """One-step SGD with per-parameter gradients via numerical differentiation.
 
-    Computes dLoss/dw_i = loss_signal * dS'/dw_i where:
-    - loss_signal = (R_predicted - y) captures how wrong the prediction was
-    - dS'/dw_i captures each parameter's influence on the stability formula
+    Loss = binary cross-entropy on predicted retrievability R(t, S').
+    By the chain rule:
+        dL/dw_i = (R_predicted - y) * dR/dS' * dS'/dw_i
 
-    Uses finite differences on next_state to get per-parameter sensitivities.
-    L2 norm clipping prevents wild updates.
+    `dR/dS' = t / (9 * S'^2) * (1 + t/(9*S'))^(-2)` is the missing factor that
+    earlier versions of this function dropped, which produced gradients of the
+    wrong magnitude (and sometimes wrong sign for short intervals).
 
-    Returns a new list of 19 floats (updated parameters).
+    L2 norm clipping prevents wild updates. Returns a new list of 19 floats.
     """
     y = 1.0 if actual_recall else 0.0
     eps = 1e-7
@@ -235,6 +236,11 @@ def update_parameters(
     base_sched = FSRSScheduler(params)
     s_base, _, _ = base_sched.next_state(grade, stability, difficulty, elapsed_days)
 
+    # dR/dS' at the predicted next stability. Guard against zero stability.
+    s_for_dr = max(eps, s_base)
+    inner = 1.0 + elapsed_days / (9.0 * s_for_dr)
+    dr_ds = elapsed_days / (9.0 * s_for_dr * s_for_dr) * (inner ** -2)
+
     # Per-parameter gradient via finite differences on stability
     delta = 1e-4
     grads: list[float] = []
@@ -245,7 +251,7 @@ def update_parameters(
             grade, stability, difficulty, elapsed_days
         )
         ds_dwi = (s_up - s_base) / delta
-        grads.append(loss_signal * ds_dwi)
+        grads.append(loss_signal * dr_ds * ds_dwi)
 
     # L2 norm clipping
     grad_norm = math.sqrt(sum(g * g for g in grads))

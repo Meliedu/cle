@@ -59,14 +59,29 @@ interface RecalibrationOverviewProps {
 }
 
 export function RecalibrationOverview({ courseId }: RecalibrationOverviewProps) {
-  const { data, isLoading, error } = useRecalibrationOverview(courseId);
+  // `isPending` (TanStack Query v5) is true on first load AND when there is no
+  // cached data yet. `isLoading` would be false on a refetch with stale data,
+  // letting the empty-state branch render even while a refetch is in flight.
+  const { data, isPending, error } = useRecalibrationOverview(courseId);
 
-  if (isLoading) {
+  if (error) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center" role="alert">
+          <p className="text-sm text-[var(--color-error)]">
+            {error instanceof Error ? error.message : "Failed to load recalibration data."}
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isPending) {
     return (
       <div className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i}>
+            <Card key={`skeleton-card-${i}`}>
               <CardHeader>
                 <Skeleton className="h-4 w-24" />
               </CardHeader>
@@ -87,18 +102,6 @@ export function RecalibrationOverview({ courseId }: RecalibrationOverviewProps) 
           </CardContent>
         </Card>
       </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <Card>
-        <CardContent className="py-8 text-center">
-          <p className="text-sm text-[var(--color-error)]">
-            Failed to load recalibration data.
-          </p>
-        </CardContent>
-      </Card>
     );
   }
 

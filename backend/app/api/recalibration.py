@@ -65,45 +65,46 @@ async def get_recalibration_overview(
     user: User = Depends(require_instructor),
 ):
     await _verify_course_ownership(db, course_id, user.id)
+    # Aggregate per content_type with three queries (was 3*N before).
+    scanned_rows = (
+        await db.execute(
+            select(RecalibrationStats.content_type, func.count())
+            .where(RecalibrationStats.course_id == course_id)
+            .group_by(RecalibrationStats.content_type)
+        )
+    ).all()
+    scanned_map = {ct: cnt for ct, cnt in scanned_rows}
+
+    relabeled_rows = (
+        await db.execute(
+            select(RevisionPoolItem.content_type, func.count())
+            .where(
+                RevisionPoolItem.course_id == course_id,
+                RevisionPoolItem.recalibrated_difficulty.is_not(None),
+            )
+            .group_by(RevisionPoolItem.content_type)
+        )
+    ).all()
+    relabeled_map = {ct: cnt for ct, cnt in relabeled_rows}
+
+    model_rows = (
+        await db.execute(
+            select(RecalibrationModel).where(RecalibrationModel.course_id == course_id)
+        )
+    ).scalars().all()
+    model_map = {m.content_type: m for m in model_rows}
+
     summaries: list[RecalibrationContentTypeSummary] = []
     transition_matrices: dict[str, dict[str, dict[str, float]]] = {}
 
     for ct in CONTENT_TYPES:
-        # Count items_scanned using func.count() instead of materializing ORM objects
-        scanned_result = await db.execute(
-            select(func.count()).select_from(RecalibrationStats).where(
-                RecalibrationStats.course_id == course_id,
-                RecalibrationStats.content_type == ct,
-            )
-        )
-        items_scanned = scanned_result.scalar_one()
-
-        # Count items_relabeled using func.count()
-        relabeled_result = await db.execute(
-            select(func.count()).select_from(RevisionPoolItem).where(
-                RevisionPoolItem.course_id == course_id,
-                RevisionPoolItem.content_type == ct,
-                RevisionPoolItem.recalibrated_difficulty.is_not(None),
-            )
-        )
-        items_relabeled = relabeled_result.scalar_one()
-
+        items_scanned = scanned_map.get(ct, 0)
+        items_relabeled = relabeled_map.get(ct, 0)
         relabel_pct = (items_relabeled / items_scanned * 100.0) if items_scanned > 0 else 0.0
-
-        # Load RecalibrationModel for transition_matrix and last_run
-        model_result = await db.execute(
-            select(RecalibrationModel).where(
-                RecalibrationModel.course_id == course_id,
-                RecalibrationModel.content_type == ct,
-            )
-        )
-        model = model_result.scalar_one_or_none()
-
-        last_run: str | None = None
+        model = model_map.get(ct)
+        last_run = model.updated_at.isoformat() if (model and model.updated_at) else None
         if model:
-            last_run = model.updated_at.isoformat() if model.updated_at else None
             transition_matrices[ct] = model.transition_matrix or {}
-
         summaries.append(
             RecalibrationContentTypeSummary(
                 content_type=ct,
@@ -138,25 +139,43 @@ async def get_recalibration_items(
     user: User = Depends(require_instructor),
 ):
     await _verify_course_ownership(db, course_id, user.id)
-    # Build join query: recalibration_stats joined with revision_pool_items
+    if content_type is not None and content_type not in CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"content_type must be one of {CONTENT_TYPES}",
+        )
+    if llm_difficulty is not None and llm_difficulty not in {"easy", "medium", "hard"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="llm_difficulty must be one of easy, medium, hard",
+        )
+
+    base_filters = [RecalibrationStats.course_id == course_id]
+    if content_type:
+        base_filters.append(RecalibrationStats.content_type == content_type)
+    if llm_difficulty:
+        base_filters.append(RecalibrationStats.llm_difficulty == llm_difficulty)
+
+    join_filters: list = []
+    if recalibrated_only:
+        join_filters.append(RevisionPoolItem.recalibrated_difficulty.is_not(None))
+
+    count_stmt = (
+        select(func.count())
+        .select_from(RecalibrationStats)
+        .join(RevisionPoolItem, RevisionPoolItem.id == RecalibrationStats.pool_item_id)
+        .where(*base_filters, *join_filters)
+    )
+    total = (await db.execute(count_stmt)).scalar_one()
+
     stmt = (
         select(RecalibrationStats, RevisionPoolItem)
-        .join(
-            RevisionPoolItem,
-            RevisionPoolItem.id == RecalibrationStats.pool_item_id,
-        )
-        .where(RecalibrationStats.course_id == course_id)
+        .join(RevisionPoolItem, RevisionPoolItem.id == RecalibrationStats.pool_item_id)
+        .where(*base_filters, *join_filters)
+        .order_by(RecalibrationStats.id)
+        .offset((page - 1) * limit)
+        .limit(limit)
     )
-
-    if content_type:
-        stmt = stmt.where(RecalibrationStats.content_type == content_type)
-    if llm_difficulty:
-        stmt = stmt.where(RecalibrationStats.llm_difficulty == llm_difficulty)
-    if recalibrated_only:
-        stmt = stmt.where(RevisionPoolItem.recalibrated_difficulty.is_not(None))
-
-    offset = (page - 1) * limit
-    stmt = stmt.offset(offset).limit(limit)
 
     result = await db.execute(stmt)
     rows = result.all()
@@ -186,9 +205,12 @@ async def get_recalibration_items(
             )
         )
 
+    pages = (total + limit - 1) // limit if total else 0
     return APIResponse(
         success=True,
-        data=RecalibrationItemsResponse(items=items),
+        data=RecalibrationItemsResponse(
+            items=items, total=total, page=page, limit=limit, pages=pages
+        ),
     )
 
 

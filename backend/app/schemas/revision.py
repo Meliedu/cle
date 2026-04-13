@@ -1,4 +1,5 @@
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -38,7 +39,7 @@ class StartRevisionResponse(BaseModel):
 
 
 class SubmitAnswerRequest(BaseModel):
-    pool_item_id: str
+    pool_item_id: UUID
     answer: str | None = None  # quiz: option letter (A/B/C/D)
     quality: int | None = Field(None, ge=0, le=5)  # flashcard: SM-2 quality
     pronunciation_score: float | None = None  # speaking: 0-100 from grading

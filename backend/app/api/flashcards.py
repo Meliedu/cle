@@ -8,11 +8,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_db, require_instructor
+from app.config import settings
 from app.models.course import Enrollment
 from app.models.flashcard import FlashcardCard, FlashcardProgress, FlashcardSet
+from app.models.scheduler import SchedulerModel
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.services.gamification import award_xp
+from app.services.scheduler import (
+    DEFAULT_PARAMS,
+    GRADE_MAP,
+    SWITCHOVER_THRESHOLD,
+    FSRSScheduler,
+    initialize_from_sm2,
+    sm2_update,
+    update_parameters,
+)
 from app.schemas.flashcard import (
     FlashcardCardResponse,
     FlashcardProgressResponse,
@@ -274,19 +285,6 @@ async def update_progress(
         db.add(progress)
 
     now = datetime.now(timezone.utc)
-
-    # Load or create scheduler model
-    from app.config import settings
-    from app.models.scheduler import SchedulerModel
-    from app.services.scheduler import (
-        DEFAULT_PARAMS,
-        GRADE_MAP,
-        SWITCHOVER_THRESHOLD,
-        FSRSScheduler,
-        initialize_from_sm2,
-        sm2_update,
-        update_parameters,
-    )
 
     sched_result = await db.execute(
         select(SchedulerModel).where(
