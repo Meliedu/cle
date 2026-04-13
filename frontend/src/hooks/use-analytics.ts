@@ -20,7 +20,6 @@ interface QuizStats {
 interface StudentStats {
   readonly user_id: string;
   readonly full_name: string | null;
-  readonly email: string;
   readonly xp_points: number;
   readonly quizzes_completed: number;
   readonly avg_quiz_score: number | null;

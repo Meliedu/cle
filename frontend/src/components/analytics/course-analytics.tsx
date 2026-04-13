@@ -157,9 +157,6 @@ export function CourseAnalytics({ courseId }: CourseAnalyticsProps) {
                           <p className="font-medium text-[var(--color-text)]">
                             {student.full_name ?? "—"}
                           </p>
-                          <p className="text-xs text-[var(--color-text-muted)]">
-                            {student.email}
-                          </p>
                         </div>
                       </td>
                       <td className="py-2.5 pr-4 text-right font-medium text-[var(--color-primary)]">
