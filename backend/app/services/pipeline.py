@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 
@@ -16,6 +17,24 @@ from app.services.storage import download_file
 logger = logging.getLogger(__name__)
 
 
+async def _set_document_status(
+    session: AsyncSession, document: Document, status: str
+) -> None:
+    """Persist a document status transition; isolate failures so the caller's
+    original error is not masked by a commit/rollback failure here."""
+    try:
+        document.status = status
+        await session.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Failed to persist document status=%s for %s", status, document.id
+        )
+        try:
+            await session.rollback()
+        except Exception:  # noqa: BLE001
+            logger.exception("Rollback also failed")
+
+
 async def process_document_pipeline(
     session: AsyncSession, document_id: str
 ) -> bool:
@@ -28,13 +47,13 @@ async def process_document_pipeline(
     if not document:
         raise ValueError(f"Document not found: {document_id}")
 
-    document.status = "processing"
-    await session.commit()
+    await _set_document_status(session, document, "processing")
 
     try:
-        # 1. Download from R2
+        # 1. Download from R2 — boto3 is sync, off-load to thread pool so the
+        #    event loop isn't blocked for multi-second downloads on large docs.
         logger.info(f"Downloading {document.r2_key}")
-        file_data = download_file(document.r2_key)
+        file_data = await asyncio.to_thread(download_file, document.r2_key)
 
         # 2. Parse
         logger.info(f"Parsing {document.filename} (type={document.file_type})")
@@ -58,7 +77,7 @@ async def process_document_pipeline(
         logger.info(f"Embedding {len(chunks)} chunks")
         embeddings = await embed_texts([c.content for c in chunks])
 
-        # 5. Store chunks
+        # 5. Store chunks + final metadata in a single transaction.
         for chunk_data, embedding in zip(chunks, embeddings):
             chunk = Chunk(
                 document_id=document.id,
@@ -71,7 +90,6 @@ async def process_document_pipeline(
             )
             session.add(chunk)
 
-        # 6. Update document metadata
         document.status = "ready"
         document.page_count = parse_result.page_count
         document.word_count = parse_result.word_count
@@ -81,6 +99,5 @@ async def process_document_pipeline(
         return True
 
     except Exception:
-        document.status = "failed"
-        await session.commit()
+        await _set_document_status(session, document, "failed")
         raise

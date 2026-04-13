@@ -1,5 +1,7 @@
+import asyncio
+import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from sqlalchemy import select
@@ -14,6 +16,8 @@ from app.models.user import User
 from app.schemas.common import APIResponse
 from app.schemas.document import DocumentResponse
 from app.services.storage import build_r2_key, upload_file
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/courses/{course_id}/documents", tags=["documents"])
 
@@ -63,6 +67,9 @@ async def upload_document(
     document_id = uuid.uuid4()
     r2_key = build_r2_key(course_id, document_id, file.filename or "unnamed")
 
+    # Persist the DB row first. If the R2 upload later fails, we have a
+    # traceable pending/failed row to reconcile rather than an orphaned R2
+    # object with no database record.
     document = Document(
         id=document_id,
         course_id=course_id,
@@ -74,17 +81,27 @@ async def upload_document(
         status="pending",
     )
     db.add(document)
+    await db.commit()
+    await db.refresh(document)
 
-    upload_file(r2_key, file_data, content_type)
+    # Upload to R2 off the event loop (boto3 is synchronous).
+    try:
+        await asyncio.to_thread(upload_file, r2_key, file_data, content_type)
+    except Exception:
+        document.status = "failed"
+        await db.commit()
+        logger.exception("R2 upload failed for document %s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="File storage upload failed",
+        )
 
     task = Task(
         task_type="process_document",
         payload={"document_id": str(document_id)},
     )
     db.add(task)
-
     await db.commit()
-    await db.refresh(document)
 
     return APIResponse(success=True, data=DocumentResponse.model_validate(document))
 
@@ -133,6 +150,6 @@ async def delete_document(
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-    doc.deleted_at = datetime.now()
+    doc.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     return APIResponse(success=True, data=None)
