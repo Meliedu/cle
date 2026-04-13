@@ -818,11 +818,161 @@ PostgreSQL 17 with pgvector and tsvector extensions. Key design decisions:
 - **Vector storage** in `chunks.embedding` column (1536-dim vectors, HNSW index)
 - **Full-text search** in `chunks.tsvector_content` column (GIN index, auto-populated trigger)
 - **Junction tables** for quiz-document and flashcard-document relationships (not UUID arrays)
-- **SM-2 spaced repetition** state in `flashcard_progress` with per-user-per-card tracking
+- **SM-2 + FSRS-5** spaced repetition state in `flashcard_progress`; per-user-per-course FSRS parameters in `scheduler_models`
 - **Bandit models** serialized policy weights stored per (user, course, content_type)
 - **Revision tracking** with session, pool, attempt, and served-item tables for adaptive difficulty
+- **Difficulty recalibration** via `recalibration_stats` + `recalibration_models` (Dirichlet/HMM over LLM-labeled difficulty vs. observed outcomes)
 - **Gamification** in `student_progress` (XP, streaks, badges JSONB, activity counts)
 - **Live quiz** state in `live_sessions` and `live_answers` tables
+
+### Schema Diagram
+
+```
+                                    +-------------+
+                                    |    users    |
+                                    |   (Clerk)   |
+                                    +------+------+
+                                           |
+                    +----------------------+---------------------+
+                    |                      |                     |
+             +------v------+        +------v------+       +------v------+
+             |   courses   |<-------+ enrollments |       | api_usage   |
+             |  (soft del) |        +-------------+       +-------------+
+             +--+---+---+--+
+                |   |   |
+      +---------+   |   +---------+------------+----------+---------+
+      |             |             |            |          |         |
+  +---v------+  +---v------+  +---v----+  +----v----+  +--v------+ +v----------+
+  |documents |  |  quizzes |  |flashcrd|  |revision |  | live_   | |pronounc-  |
+  |(soft del)|  |(soft del)|  |_sets   |  |_sessions|  |sessions | |iation_    |
+  +--+-------+  +-+--------+  +--+-----+  +----+----+  +----+----+ |scores     |
+     |            |              |             |            |      +-----------+
+  +--v----+    +--v-------+   +--v------+  +---v-------+ +--v----+
+  |chunks |    |questions |   |flashcrd |  |revision_  | |live_  |
+  |pgvec+ |    +-+--------+   |_cards   |  |pool_items | |answers|
+  |tsvect |    +-v--------+   +---+-----+  +----+------+ +-------+
+  +-------+    |quiz_     |       |             |
+               |documents |   +---v---------+   |
+               +-+--------+   |flashcard_   |   +--->+-revision_attempts---+
+               +-v--------+   |progress     |   +--->+-revision_item_served|
+               |quiz_     |   |(SM-2+FSRS)  |   +--->+-bandit_models-------+
+               |attempts  |   +-------------+   +--->+-recalibration_stats-+
+               +----------+                     +--->+-recalibration_models+
+
+              +---------+   +-------------+   +------------+   +------------------+
+              |  tasks  |   |scheduler_   |   |canvas_     |   |session_summaries |
+              |  queue  |   |models (FSRS)|   |integrations|   |(daily topics)    |
+              +---------+   +-------------+   +------------+   +------------------+
+
+              +------------------+
+              |student_progress  |
+              |(XP/streak/badges)|
+              +------------------+
+```
+
+### Core Tables
+
+<details>
+<summary><strong>Identity & Enrollment</strong></summary>
+
+| Table | Columns | Notes |
+|-------|---------|-------|
+| **users** | `id` (uuid PK), `clerk_id` (unique), `email` (unique), `full_name`, `role`, `avatar_url`, `created_at`, `updated_at` | Auto-created on first Clerk JWT. Role derived from email domain. |
+| **courses** | `id`, `name`, `code`, `description`, `language`, `semester`, `instructor_id` (FK users), `settings` (JSON), timestamps, `deleted_at` | Soft delete. Settings stores per-course config. |
+| **enrollments** | `id`, `course_id` (FK), `user_id` (FK), `role`, `enrolled_at` | Unique(`course_id`, `user_id`). Cascades on course/user delete. |
+
+</details>
+
+<details>
+<summary><strong>Documents & RAG</strong></summary>
+
+| Table | Columns | Notes |
+|-------|---------|-------|
+| **documents** | `id`, `course_id` (FK), `uploaded_by` (FK users), `filename`, `file_type`, `file_size` (bigint), `r2_key`, `r2_url`, `status`, `page_count`, `word_count`, `metadata` (JSON), timestamps, `deleted_at` | Status: `pending`, `processing`, `ready`, `failed`. |
+| **chunks** | `id`, `document_id` (FK), `course_id` (FK), `content`, `chunk_index`, `page_number`, `token_count`, `embedding` (vector(1536)), `metadata` (JSON), `tsvector_content` (TSVECTOR), `created_at` | HNSW index on embedding, GIN index on tsvector (auto-populated via trigger). |
+
+</details>
+
+<details>
+<summary><strong>Quizzes</strong></summary>
+
+| Table | Columns | Notes |
+|-------|---------|-------|
+| **quizzes** | `id`, `course_id`, `created_by`, `title`, `description`, `quiz_type`, `settings` (JSON), `is_published`, timestamps, `deleted_at` | `is_published` gates student visibility. |
+| **questions** | `id`, `quiz_id` (FK), `question_index`, `type`, `question_text`, `options` (JSON), `correct_answer`, `explanation`, `source_chunk_id` (FK chunks), `difficulty` (easy/medium/hard), `created_at` | Ordered by `question_index`. |
+| **quiz_documents** | `quiz_id` (PK), `document_id` (PK) | Junction: source documents for generation. |
+| **quiz_attempts** | `id`, `quiz_id`, `user_id`, `answers` (JSON), `score` (numeric(5,2)), `total_questions`, `correct_count`, `time_taken_seconds`, `completed_at`, `created_at` | One row per submitted attempt. |
+
+</details>
+
+<details>
+<summary><strong>Flashcards + Spaced Repetition</strong></summary>
+
+| Table | Columns | Notes |
+|-------|---------|-------|
+| **flashcard_sets** | `id`, `course_id`, `created_by`, `title`, `is_published`, timestamps, `deleted_at` | Mirrors quiz publish gating. |
+| **flashcard_cards** | `id`, `flashcard_set_id` (FK), `card_index`, `front`, `back`, `source_chunk_id` (FK), `difficulty`, `created_at` | Ordered by `card_index`. |
+| **flashcard_set_documents** | `flashcard_set_id` (PK), `document_id` (PK) | Source document junction. |
+| **flashcard_progress** | `id`, `user_id`, `flashcard_card_id`, `ease_factor` (numeric(3,2)), `interval_days`, `repetitions`, `next_review`, `last_reviewed`, `stability` (float), `difficulty` (float), `last_grade`, `fsrs_review_count` (bigint) | Unique(`user_id`, `card_id`). SM-2 fields + FSRS-5 state columns. |
+| **scheduler_models** | `id`, `user_id`, `course_id`, `parameters` (JSON, 19 FSRS-5 params), `strategy` (`sm2` / `fsrs`), `review_count` (bigint), timestamps | Unique(`user_id`, `course_id`). Transitions from SM-2 to FSRS-5 after threshold reviews. |
+
+</details>
+
+<details>
+<summary><strong>Revision Mode + Contextual Bandit</strong></summary>
+
+| Table | Columns | Notes |
+|-------|---------|-------|
+| **revision_sessions** | `id`, `user_id`, `course_id`, `content_type` (quiz/flashcard/speaking), `started_at`, `ended_at`, `items_answered`, `total_score` (numeric(7,2)) | Open session has `ended_at IS NULL`. |
+| **revision_pool_items** | `id`, `course_id`, `content_type`, `difficulty`, quiz fields (`question_text`, `options`, `correct_answer`, `explanation`), flashcard fields (`front`, `back`), speaking fields (`target_text`, `language`), `source_chunk_id`, `recalibrated_difficulty`, `recalibration_confidence`, `instructor_override`, `created_at` | Unified pool table for all three content types with nullable type-specific columns. |
+| **revision_attempts** | `id`, `user_id`, `course_id`, `session_id` (FK), `pool_item_id` (FK), `content_type`, `difficulty`, `score` (numeric(3,2)), `time_taken_ms`, `created_at`, `corrected_difficulty` | Training signal for bandit + recalibration. |
+| **revision_item_served** | `user_id` (PK), `pool_item_id` (PK), `served_at` | Dedup: no student sees the same item twice. |
+| **bandit_models** | `id`, `user_id`, `course_id`, `content_type`, `weights` (LargeBinary, torch.save blob), `strategy` (`rules`/`bandit`), `reward_mean`, `reward_var`, `attempt_count`, `updated_at` | Unique(`user_id`, `course_id`, `content_type`). Strategy auto-flips after cold-start. |
+| **recalibration_stats** | `id`, `pool_item_id` (unique), `course_id`, `content_type`, `llm_difficulty`, `attempt_count`, `correct_count`, `hard_count`, `score_sum` (numeric(10,2)), `score_sq_sum` (numeric(12,4)) | Per-item observed-difficulty statistics. |
+| **recalibration_models** | `id`, `course_id`, `content_type`, `dirichlet_params` (JSONB), `transition_matrix` (JSONB), `items_used`, `total_attempts_since_last_run`, `updated_at` | Unique(`course_id`, `content_type`). Bayesian model to correct LLM difficulty labels from real attempt data. |
+
+</details>
+
+<details>
+<summary><strong>Live Quiz</strong></summary>
+
+| Table | Columns | Notes |
+|-------|---------|-------|
+| **live_sessions** | `id`, `quiz_id`, `course_id`, `host_id`, `join_code` (6-char unique), `status` (waiting/active/question/reveal/finished), `current_question_index`, `participant_count`, `time_limit_seconds`, `settings` (JSONB), `started_at`, `ended_at`, `created_at` | In-memory state (WebSocket) is the source of truth during play; DB is snapshot. |
+| **live_answers** | `id`, `session_id` (FK cascade), `user_id`, `question_index`, `answer`, `answered_at`, `points_earned` | Unique(`session_id`, `user_id`, `question_index`). |
+| **session_summaries** | `id`, `course_id`, `generated_by`, `session_date`, `summary_text`, `key_topics` (JSON), `created_at` | Optional daily-session summary artifacts. |
+
+</details>
+
+<details>
+<summary><strong>Gamification & Pronunciation</strong></summary>
+
+| Table | Columns | Notes |
+|-------|---------|-------|
+| **student_progress** | `id`, `user_id`, `course_id`, `xp_points`, `streak_days`, `last_activity_date` (date), `quizzes_completed`, `flashcards_reviewed`, `speaking_sessions`, `badges` (JSON list) | Unique(`user_id`, `course_id`). Updated transactionally on every activity. |
+| **pronunciation_scores** | `id`, `user_id`, `course_id`, `language`, `target_text`, `audio_r2_key`, `overall_score` (numeric(5,2)), `accuracy_score`, `fluency_score`, `completeness_score`, `prosody_score`, `detailed_result` (JSON), `grading_provider` (azure/iflytek), `created_at` | Full Azure/iFlytek JSON result retained for rendering word-level heatmaps. |
+
+</details>
+
+<details>
+<summary><strong>Infrastructure</strong></summary>
+
+| Table | Columns | Notes |
+|-------|---------|-------|
+| **tasks** | `id`, `task_type`, `payload` (JSON), `status` (pending/running/completed/failed), `attempts`, `max_attempts`, `error_message`, `started_at`, `completed_at`, `created_at` | Consumed by worker via `SELECT FOR UPDATE SKIP LOCKED`. Task types: `process_document`, `revision_pool_replenish`. |
+| **api_usage** | `id`, `user_id`, `endpoint`, `tokens_used`, `model`, `created_at` | Backs per-user hourly rate limiting on `/api/rag/*`. |
+| **canvas_integrations** | `id`, `course_id` (unique FK), `canvas_course_id`, `canvas_base_url`, `access_token_encrypted`, `last_sync_at`, `sync_status`, `sync_config` (JSON), timestamps | One connection per Meli course. |
+
+</details>
+
+### Indexes
+
+| Index | Table | Type | Purpose |
+|-------|-------|------|---------|
+| `chunks_embedding_hnsw_idx` | `chunks.embedding` | HNSW (vector_cosine_ops) | Semantic search |
+| `chunks_tsvector_gin_idx` | `chunks.tsvector_content` | GIN | Full-text search |
+| `chunks_tsvector_trigger` | `chunks` | BEFORE INSERT/UPDATE | Auto-populate `tsvector_content` from `content` |
+| Unique constraints | `enrollments`, `flashcard_progress`, `bandit_models`, `scheduler_models`, `recalibration_stats`, `recalibration_models`, `student_progress`, `live_answers` | BTREE | Enforce per-entity uniqueness |
 
 ### Running migrations
 
