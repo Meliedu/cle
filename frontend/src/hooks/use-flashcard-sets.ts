@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, type ApiEnvelope } from "@/lib/api";
 
 export interface FlashcardCardResponse {
   readonly id: string;
@@ -24,11 +24,6 @@ export interface FlashcardSetDetailResponse {
   readonly title: string;
   readonly cards: readonly FlashcardCardResponse[];
   readonly created_at: string;
-}
-
-interface ApiEnvelope<T> {
-  readonly success: boolean;
-  readonly data: T;
 }
 
 export function useFlashcardSets(courseId: string) {

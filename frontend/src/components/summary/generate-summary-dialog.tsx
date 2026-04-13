@@ -46,7 +46,7 @@ export function GenerateSummaryDialog({
         "/rag/generate-summary",
         {
           method: "POST",
-          token: token!,
+          token,
           body: JSON.stringify({
             course_id: courseId,
             document_ids: selectedIds.length > 0 ? selectedIds : undefined,
@@ -151,10 +151,20 @@ export function GenerateSummaryDialog({
                 onClick={generateSummary}
                 disabled={selectedIds.length === 0}
                 className="w-full"
+                title={
+                  selectedIds.length === 0
+                    ? "Upload or select course materials first"
+                    : undefined
+                }
               >
                 <FileText className="size-4" />
                 Generate Summary
               </Button>
+              {selectedIds.length === 0 && (
+                <p className="text-center text-xs text-[var(--color-text-muted)]">
+                  Upload or select at least one document to enable generation.
+                </p>
+              )}
             </div>
           )}
         </div>

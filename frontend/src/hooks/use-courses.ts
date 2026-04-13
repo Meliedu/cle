@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, type ApiEnvelope } from "@/lib/api";
 
 export interface CourseResponse {
   readonly id: string;
@@ -13,11 +13,6 @@ export interface CourseResponse {
   readonly settings: Record<string, unknown>;
   readonly created_at: string;
   readonly updated_at: string;
-}
-
-interface ApiEnvelope<T> {
-  readonly success: boolean;
-  readonly data: T;
 }
 
 export function useCourses() {

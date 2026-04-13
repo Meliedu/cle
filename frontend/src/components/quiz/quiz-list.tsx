@@ -3,7 +3,8 @@
 import { useState, useCallback } from "react";
 import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuizzes } from "@/hooks/use-quizzes";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,14 +36,9 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { GenerateQuizDialog } from "@/components/quiz/generate-quiz-dialog";
+import type { QuizResponse } from "@/hooks/use-quizzes";
 
-interface Quiz {
-  readonly id: string;
-  readonly title: string;
-  readonly question_count: number;
-  readonly is_published: boolean;
-  readonly created_at: string;
-}
+type Quiz = QuizResponse;
 
 interface QuizListProps {
   readonly courseId: string;
@@ -91,32 +87,12 @@ function QuizCardSkeleton() {
 }
 
 export function QuizList({ courseId, isInstructor }: QuizListProps) {
-  const { getToken, isSignedIn } = useAuth();
+  const { getToken } = useAuth();
   const queryClient = useQueryClient();
   const [generateOpen, setGenerateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Quiz | null>(null);
 
-  const {
-    data: quizzes,
-    isLoading,
-    error,
-  } = useQuery<Quiz[]>({
-    queryKey: ["quizzes", courseId],
-    queryFn: async () => {
-      const token = await getToken();
-      if (!token) throw new Error("Not authenticated");
-      const response = await apiFetch<{ success: boolean; data: Quiz[] }>(
-        `/courses/${courseId}/quizzes`,
-        { token: token! }
-      );
-      return response.data;
-    },
-    enabled: isSignedIn === true,
-    retry: (count, error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
-      return count < 3;
-    },
-  });
+  const { data: quizzes, isLoading, error } = useQuizzes(courseId);
 
   const publishMutation = useMutation({
     mutationFn: async (quizId: string) => {
@@ -124,7 +100,7 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(`/quizzes/${quizId}/publish`, {
         method: "POST",
-        token: token!,
+        token,
       });
     },
     onSuccess: () => {
@@ -138,7 +114,7 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(`/quizzes/${quizId}`, {
         method: "DELETE",
-        token: token!,
+        token,
       });
     },
     onSuccess: () => {
