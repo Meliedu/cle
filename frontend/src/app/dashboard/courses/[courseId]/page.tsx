@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { Suspense, use, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useRole } from "@/hooks/use-role";
@@ -43,13 +43,13 @@ type DocumentStatus = "pending" | "processing" | "ready" | "failed";
 function statusBadgeClasses(status: DocumentStatus): string {
   switch (status) {
     case "ready":
-      return "bg-[oklch(90%_0.05_145)] text-[var(--color-success)] border-transparent";
+      return "bg-[var(--color-success-light)] text-[var(--color-success)] border-transparent";
     case "processing":
-      return "bg-[oklch(90%_0.05_260)] text-[var(--color-primary)] border-transparent";
+      return "bg-[var(--color-primary-light)] text-[var(--color-primary)] border-transparent";
     case "pending":
-      return "bg-[oklch(93%_0.05_75)] text-[var(--color-warning)] border-transparent";
+      return "bg-[var(--color-warning-light)] text-[var(--color-warning)] border-transparent";
     case "failed":
-      return "bg-[oklch(93%_0.05_25)] text-[var(--color-error)] border-transparent";
+      return "bg-[var(--color-error-light)] text-[var(--color-error)] border-transparent";
   }
 }
 
@@ -71,6 +71,14 @@ interface CourseDetailPageProps {
 }
 
 export default function CourseDetailPage({ params }: CourseDetailPageProps) {
+  return (
+    <Suspense fallback={null}>
+      <CourseDetailContent params={params} />
+    </Suspense>
+  );
+}
+
+function CourseDetailContent({ params }: CourseDetailPageProps) {
   const { courseId } = use(params);
   const searchParams = useSearchParams();
   const activeTab = searchParams.get("tab") || "overview";

@@ -119,7 +119,7 @@ export function CreateCourseDialog({
         if (!token) throw new Error("Not authenticated");
         await apiFetch<{ success: boolean; data: unknown }>("/courses", {
           method: "POST",
-          token: token!,
+          token,
           body: JSON.stringify({
             name: form.name.trim(),
             code: form.code.trim() || null,
@@ -178,9 +178,12 @@ export function CreateCourseDialog({
               value={form.name}
               onChange={(e) => updateField("name", e.target.value)}
               aria-invalid={!!errors.name}
+              aria-describedby={errors.name ? "course-name-error" : undefined}
             />
             {errors.name && (
-              <p className="text-xs text-[var(--color-error)]">{errors.name}</p>
+              <p id="course-name-error" className="text-xs text-[var(--color-error)]">
+                {errors.name}
+              </p>
             )}
           </div>
 
@@ -195,9 +198,12 @@ export function CreateCourseDialog({
               value={form.code}
               onChange={(e) => updateField("code", e.target.value)}
               aria-invalid={!!errors.code}
+              aria-describedby={errors.code ? "course-code-error" : undefined}
             />
             {errors.code && (
-              <p className="text-xs text-[var(--color-error)]">{errors.code}</p>
+              <p id="course-code-error" className="text-xs text-[var(--color-error)]">
+                {errors.code}
+              </p>
             )}
           </div>
 
@@ -210,7 +216,11 @@ export function CreateCourseDialog({
               value={form.language}
               onValueChange={(val) => updateField("language", val ?? "")}
             >
-              <SelectTrigger className="w-full" aria-invalid={!!errors.language}>
+              <SelectTrigger
+                className="w-full"
+                aria-invalid={!!errors.language}
+                aria-describedby={errors.language ? "course-language-error" : undefined}
+              >
                 <SelectValue placeholder="Select language" />
               </SelectTrigger>
               <SelectContent>
@@ -222,7 +232,7 @@ export function CreateCourseDialog({
               </SelectContent>
             </Select>
             {errors.language && (
-              <p className="text-xs text-[var(--color-error)]">
+              <p id="course-language-error" className="text-xs text-[var(--color-error)]">
                 {errors.language}
               </p>
             )}
@@ -239,9 +249,10 @@ export function CreateCourseDialog({
               value={form.semester}
               onChange={(e) => updateField("semester", e.target.value)}
               aria-invalid={!!errors.semester}
+              aria-describedby={errors.semester ? "course-semester-error" : undefined}
             />
             {errors.semester && (
-              <p className="text-xs text-[var(--color-error)]">
+              <p id="course-semester-error" className="text-xs text-[var(--color-error)]">
                 {errors.semester}
               </p>
             )}
