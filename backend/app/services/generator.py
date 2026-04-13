@@ -57,10 +57,14 @@ def _get_client() -> AsyncOpenAI:
 
 
 def _build_context(chunks: list[RetrievedChunk]) -> str:
-    """Format retrieved chunks into a labelled context block."""
+    """Format retrieved chunks into a labelled context block.
+
+    Uses ordinal source numbers rather than leaking internal document UUIDs
+    to the third-party LLM.
+    """
     parts: list[str] = []
     for idx, chunk in enumerate(chunks, start=1):
-        parts.append(f"[Source {idx}: {chunk.document_id}]\n{chunk.content}")
+        parts.append(f"[Source {idx}]\n{chunk.content}")
     return "\n\n".join(parts)
 
 

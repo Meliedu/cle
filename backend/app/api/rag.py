@@ -1,3 +1,4 @@
+import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -25,6 +26,20 @@ from app.services.generator import generate_flashcards, generate_quiz, generate_
 from app.services.retriever import fulltext_retrieve, hybrid_retrieve, retrieve_chunks
 
 router = APIRouter(prefix="/rag", tags=["rag"])
+
+_MAX_QUERY_CHARS = 2000
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _sanitize_query(raw: str) -> str:
+    """Strip control characters and bound length before feeding user text to
+    the LLM. Defence in depth against prompt injection payloads delivered via
+    the ``query``/``title`` fields (these get interpolated into LLM prompts)."""
+    cleaned = _CONTROL_CHARS_RE.sub(" ", raw or "")
+    cleaned = cleaned.strip()
+    if len(cleaned) > _MAX_QUERY_CHARS:
+        cleaned = cleaned[:_MAX_QUERY_CHARS]
+    return cleaned
 
 
 async def _verify_enrollment(
@@ -68,16 +83,23 @@ async def rag_query(
 ):
     await _verify_enrollment(db, body.course_id, user.id)
 
+    safe_query = _sanitize_query(body.query)
+    if not safe_query:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Query is empty after sanitization",
+        )
+
     if body.search_mode == "fulltext":
         chunks = await fulltext_retrieve(
             db,
             course_id=body.course_id,
-            query=body.query,
+            query=safe_query,
             top_k=body.top_k,
             document_ids=body.document_ids,
         )
     elif body.search_mode == "vector":
-        query_embedding = await embed_query(body.query)
+        query_embedding = await embed_query(safe_query)
         chunks = await retrieve_chunks(
             db,
             course_id=body.course_id,
@@ -86,11 +108,11 @@ async def rag_query(
             document_ids=body.document_ids,
         )
     else:  # hybrid (default)
-        query_embedding = await embed_query(body.query)
+        query_embedding = await embed_query(safe_query)
         chunks = await hybrid_retrieve(
             db,
             course_id=body.course_id,
-            query=body.query,
+            query=safe_query,
             query_embedding=query_embedding,
             top_k=body.top_k,
             document_ids=body.document_ids,
@@ -122,8 +144,9 @@ async def rag_generate_quiz(
     await _verify_enrollment(db, body.course_id, user.id)
     language = await _get_course_language(db, body.course_id)
 
-    log.info("generate-quiz: embedding query '%s'", body.title)
-    query_embedding = await embed_query(body.title)
+    safe_title = _sanitize_query(body.title)
+    log.info("generate-quiz: embedding query '%s'", safe_title)
+    query_embedding = await embed_query(safe_title)
 
     log.info("generate-quiz: retrieving chunks (doc_ids=%s)", body.document_ids)
     chunks = await retrieve_chunks(
@@ -205,8 +228,9 @@ async def rag_generate_quiz(
 async def rag_generate_summary(
     body: GenerateSummaryRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    user: User = Depends(get_current_user),
 ):
+    # Spec: any enrolled student may generate a summary for a course they're in.
     await _verify_enrollment(db, body.course_id, user.id)
     language = await _get_course_language(db, body.course_id)
 
@@ -230,12 +254,14 @@ async def rag_generate_summary(
 async def rag_generate_flashcards(
     body: GenerateFlashcardsRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    user: User = Depends(get_current_user),
 ):
+    # Spec: any enrolled student may generate a flashcard set for their course.
     await _verify_enrollment(db, body.course_id, user.id)
     language = await _get_course_language(db, body.course_id)
 
-    query_embedding = await embed_query(body.title)
+    safe_title = _sanitize_query(body.title)
+    query_embedding = await embed_query(safe_title)
     chunks = await retrieve_chunks(
         db,
         course_id=body.course_id,
