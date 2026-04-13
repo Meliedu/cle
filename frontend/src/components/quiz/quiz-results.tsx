@@ -13,7 +13,7 @@ interface QuestionResult {
   readonly your_answer: string;
   readonly correct_answer: string;
   readonly is_correct: boolean;
-  readonly explanation: string;
+  readonly explanation: string | null;
 }
 
 interface QuizAttemptResult {

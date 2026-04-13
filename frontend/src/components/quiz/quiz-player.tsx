@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useQuery } from "@tanstack/react-query";
+import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,7 +20,6 @@ import {
   ChevronRight,
   SendHorizontal,
 } from "lucide-react";
-import { apiFetch } from "@/lib/api";
 import { QuizResults } from "@/components/quiz/quiz-results";
 
 interface QuizOption {
@@ -45,7 +45,7 @@ interface QuestionResult {
   readonly your_answer: string;
   readonly correct_answer: string;
   readonly is_correct: boolean;
-  readonly explanation: string;
+  readonly explanation: string | null;
 }
 
 interface AttemptResponse {
@@ -64,6 +64,9 @@ interface QuizPlayerProps {
 export function QuizPlayer({ quizId, courseId }: QuizPlayerProps) {
   const { getToken, isSignedIn } = useAuth();
   const startTimeRef = useRef<number>(Date.now());
+  useEffect(() => {
+    startTimeRef.current = Date.now();
+  }, [quizId]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -78,14 +81,13 @@ export function QuizPlayer({ quizId, courseId }: QuizPlayerProps) {
     isLoading,
     error,
   } = useQuery<QuizDetail>({
-    queryKey: ["quiz", quizId],
+    queryKey: ["quizzes", "detail", quizId],
     queryFn: async () => {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
       startTimeRef.current = Date.now();
-      const res = await apiFetch<{
-        success: boolean;
-        data: {
+      const res = await apiFetch<
+        ApiEnvelope<{
           id: string;
           title: string;
           questions: {
@@ -94,8 +96,8 @@ export function QuizPlayer({ quizId, courseId }: QuizPlayerProps) {
             options: Record<string, string> | null;
             explanation: string | null;
           }[];
-        };
-      }>(`/quizzes/${quizId}`, { token: token! });
+        }>
+      >(`/quizzes/${quizId}`, { token });
 
       return {
         id: res.data.id,
@@ -112,7 +114,7 @@ export function QuizPlayer({ quizId, courseId }: QuizPlayerProps) {
     },
     enabled: isSignedIn === true,
     retry: (count, error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
+      if (isAuthError(error)) return false;
       return count < 3;
     },
   });
@@ -137,18 +139,18 @@ export function QuizPlayer({ quizId, courseId }: QuizPlayerProps) {
     try {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
-      const result = await apiFetch<AttemptResponse>(
+      const result = await apiFetch<ApiEnvelope<AttemptResponse>>(
         `/quizzes/${quizId}/attempt`,
         {
           method: "POST",
-          token: token!,
+          token,
           body: JSON.stringify({
             answers,
             time_taken_seconds: timeTaken,
           }),
         }
       );
-      setAttemptResult(result);
+      setAttemptResult(result.data);
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : "Failed to submit quiz";

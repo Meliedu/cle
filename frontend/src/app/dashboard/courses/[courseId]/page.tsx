@@ -40,6 +40,19 @@ import {
 
 type DocumentStatus = "pending" | "processing" | "ready" | "failed";
 
+const KNOWN_DOCUMENT_STATUSES: readonly DocumentStatus[] = [
+  "pending",
+  "processing",
+  "ready",
+  "failed",
+];
+
+function toDocumentStatus(status: string): DocumentStatus {
+  return (KNOWN_DOCUMENT_STATUSES as readonly string[]).includes(status)
+    ? (status as DocumentStatus)
+    : "pending";
+}
+
 function statusBadgeClasses(status: DocumentStatus): string {
   switch (status) {
     case "ready":
@@ -66,6 +79,36 @@ function statusLabel(status: DocumentStatus): string {
   }
 }
 
+const ALLOWED_TABS_STUDENT = [
+  "overview",
+  "materials",
+  "quizzes",
+  "flashcards",
+  "revision",
+  "pronunciation",
+  "live",
+  "progress",
+  "leaderboard",
+] as const;
+const ALLOWED_TABS_INSTRUCTOR = [
+  ...ALLOWED_TABS_STUDENT,
+  "students",
+  "recalibration",
+] as const;
+type AllowedTab =
+  | (typeof ALLOWED_TABS_STUDENT)[number]
+  | (typeof ALLOWED_TABS_INSTRUCTOR)[number];
+
+function resolveActiveTab(raw: string | null, isInstructor: boolean): AllowedTab {
+  const allowed = (
+    isInstructor ? ALLOWED_TABS_INSTRUCTOR : ALLOWED_TABS_STUDENT
+  ) as readonly string[];
+  if (raw && allowed.includes(raw)) {
+    return raw as AllowedTab;
+  }
+  return "overview";
+}
+
 interface CourseDetailPageProps {
   params: Promise<{ courseId: string }>;
 }
@@ -80,9 +123,33 @@ export default function CourseDetailPage({ params }: CourseDetailPageProps) {
 
 function CourseDetailContent({ params }: CourseDetailPageProps) {
   const { courseId } = use(params);
+  return (
+    <Suspense fallback={<CourseDetailSkeleton />}>
+      <CourseDetailContent courseId={courseId} />
+    </Suspense>
+  );
+}
+
+function CourseDetailSkeleton() {
+  return (
+    <div className="mx-auto max-w-5xl space-y-6">
+      <div className="space-y-2">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-4 w-40" />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-20 rounded-[var(--radius-lg)]" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CourseDetailContent({ courseId }: { courseId: string }) {
   const searchParams = useSearchParams();
-  const activeTab = searchParams.get("tab") || "overview";
   const { isInstructor, isLoaded: roleLoaded } = useRole();
+  const activeTab = resolveActiveTab(searchParams.get("tab"), isInstructor);
   const { data: course, isLoading: courseLoading } = useCourse(courseId);
   const { data: documents, isLoading: docsLoading } = useDocuments(courseId);
   const deleteDocument = useDeleteDocument(courseId);
@@ -286,10 +353,10 @@ function CourseDetailContent({ params }: CourseDetailPageProps) {
                       <div className="flex items-center gap-2">
                         <Badge
                           className={statusBadgeClasses(
-                            doc.status as DocumentStatus
+                            toDocumentStatus(doc.status)
                           )}
                         >
-                          {statusLabel(doc.status as DocumentStatus)}
+                          {statusLabel(toDocumentStatus(doc.status))}
                         </Badge>
                         {isInstructor && (
                           <button

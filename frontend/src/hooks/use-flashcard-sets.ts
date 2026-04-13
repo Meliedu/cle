@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 
 export interface FlashcardCardResponse {
   readonly id: string;
@@ -26,11 +26,6 @@ export interface FlashcardSetDetailResponse {
   readonly created_at: string;
 }
 
-interface ApiEnvelope<T> {
-  readonly success: boolean;
-  readonly data: T;
-}
-
 export function useFlashcardSets(courseId: string) {
   const { getToken, isSignedIn } = useAuth();
 
@@ -47,7 +42,7 @@ export function useFlashcardSets(courseId: string) {
     },
     enabled: isSignedIn === true && !!courseId,
     retry: (count, error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
+      if (isAuthError(error)) return false;
       return count < 3;
     },
   });
@@ -69,7 +64,7 @@ export function useFlashcardSet(setId: string) {
     },
     enabled: isSignedIn === true && !!setId,
     retry: (count, error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
+      if (isAuthError(error)) return false;
       return count < 3;
     },
   });

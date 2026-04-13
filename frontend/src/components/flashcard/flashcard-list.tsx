@@ -2,8 +2,9 @@
 
 import { useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { useFlashcardSets } from "@/hooks/use-flashcard-sets";
 import {
   Card,
   CardContent,
@@ -44,7 +45,7 @@ import { GenerateFlashcardsDialog } from "./generate-flashcards-dialog";
 interface FlashcardSet {
   readonly id: string;
   readonly title: string;
-  readonly is_published: boolean;
+  readonly is_published?: boolean;
   readonly card_count: number;
   readonly created_at: string;
 }
@@ -79,7 +80,7 @@ function FlashcardSetSkeleton() {
 }
 
 export function FlashcardList({ courseId, isInstructor }: FlashcardListProps) {
-  const { getToken, isSignedIn } = useAuth();
+  const { getToken } = useAuth();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<FlashcardSet | null>(null);
@@ -88,24 +89,11 @@ export function FlashcardList({ courseId, isInstructor }: FlashcardListProps) {
     data: flashcardSets,
     isLoading,
     error,
-  } = useQuery({
-    queryKey: ["flashcard-sets", courseId],
-    queryFn: async (): Promise<readonly FlashcardSet[]> => {
-      const token = await getToken();
-      if (!token) throw new Error("Not authenticated");
-      const result = await apiFetch<{
-        data: readonly FlashcardSet[];
-      }>(`/courses/${courseId}/flashcard-sets`, {
-        token: token!,
-      });
-      return result.data;
-    },
-    enabled: isSignedIn === true,
-    retry: (count, error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
-      return count < 3;
-    },
-  });
+  } = useFlashcardSets(courseId) as {
+    data: readonly FlashcardSet[] | undefined;
+    isLoading: boolean;
+    error: unknown;
+  };
 
   const publishMutation = useMutation({
     mutationFn: async (setId: string) => {
@@ -113,7 +101,7 @@ export function FlashcardList({ courseId, isInstructor }: FlashcardListProps) {
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(`/flashcard-sets/${setId}/publish`, {
         method: "POST",
-        token: token!,
+        token,
       });
     },
     onSuccess: () => {
@@ -127,7 +115,7 @@ export function FlashcardList({ courseId, isInstructor }: FlashcardListProps) {
       if (!token) throw new Error("Not authenticated");
       return apiFetch<{ success: boolean }>(`/flashcard-sets/${setId}`, {
         method: "DELETE",
-        token: token!,
+        token,
       });
     },
     onSuccess: () => {

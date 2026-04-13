@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, isAuthError } from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -196,8 +196,7 @@ export function useLiveSessions(courseId: string) {
     refetchInterval: 5000,
     retry: (count, error) => {
       if (
-        error.message.includes("401") ||
-        error.message.includes("Unauthorized")
+        isAuthError(error)
       )
         return false;
       return count < 3;
@@ -222,8 +221,7 @@ export function useLiveSession(sessionId: string) {
     enabled: isSignedIn === true && !!sessionId,
     retry: (count, error) => {
       if (
-        error.message.includes("401") ||
-        error.message.includes("Unauthorized")
+        isAuthError(error)
       )
         return false;
       return count < 3;

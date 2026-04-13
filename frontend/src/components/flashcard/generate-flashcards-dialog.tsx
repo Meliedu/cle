@@ -77,7 +77,7 @@ export function GenerateFlashcardsDialog({
         if (!token) throw new Error("Not authenticated");
         await apiFetch<{ success: boolean }>("/rag/generate-flashcards", {
           method: "POST",
-          token: token!,
+          token,
           body: JSON.stringify({
             course_id: courseId,
             title: title.trim(),
@@ -142,10 +142,18 @@ export function GenerateFlashcardsDialog({
               value={title}
               onChange={handleTitleChange}
               aria-invalid={!!titleError}
+              aria-describedby={
+                titleError ? "flashcard-title-error" : undefined
+              }
               disabled={isSubmitting}
             />
             {titleError && (
-              <p className="text-xs text-[var(--color-error)]">{titleError}</p>
+              <p
+                id="flashcard-title-error"
+                className="text-xs text-[var(--color-error)]"
+              >
+                {titleError}
+              </p>
             )}
           </div>
 
@@ -189,7 +197,15 @@ export function GenerateFlashcardsDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting || selectedIds.length === 0}>
+            <Button
+              type="submit"
+              disabled={isSubmitting || selectedIds.length === 0}
+              title={
+                selectedIds.length === 0
+                  ? "Upload or select course materials first"
+                  : undefined
+              }
+            >
               {isSubmitting && <Loader2 className="size-4 animate-spin" />}
               {isSubmitting ? "Generating..." : "Generate"}
             </Button>

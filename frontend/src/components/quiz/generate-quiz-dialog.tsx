@@ -97,7 +97,7 @@ export function GenerateQuizDialog({
         if (!token) throw new Error("Not authenticated");
         await apiFetch<{ success: boolean }>("/rag/generate-quiz", {
           method: "POST",
-          token: token!,
+          token,
           body: JSON.stringify({
             course_id: courseId,
             title: form.title.trim(),
@@ -118,6 +118,10 @@ export function GenerateQuizDialog({
             : "Failed to generate quiz";
         setSubmitError(message);
       } finally {
+        if (stepTimerRef.current) {
+          clearTimeout(stepTimerRef.current);
+          stepTimerRef.current = null;
+        }
         setIsGenerating(false);
         setGenerationStep(0);
       }
@@ -183,9 +187,13 @@ export function GenerateQuizDialog({
                     if (titleError) setTitleError(null);
                   }}
                   aria-invalid={!!titleError}
+                  aria-describedby={titleError ? "quiz-title-error" : undefined}
                 />
                 {titleError && (
-                  <p className="text-xs text-[var(--color-error)]">
+                  <p
+                    id="quiz-title-error"
+                    className="text-xs text-[var(--color-error)]"
+                  >
                     {titleError}
                   </p>
                 )}
@@ -235,10 +243,23 @@ export function GenerateQuizDialog({
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={selectedIds.length === 0}>
+                <Button
+                  type="submit"
+                  disabled={selectedIds.length === 0}
+                  title={
+                    selectedIds.length === 0
+                      ? "Upload or select course materials first"
+                      : undefined
+                  }
+                >
                   <Sparkles className="size-4" />
                   Generate
                 </Button>
+                {selectedIds.length === 0 && (
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    Upload or select at least one document to enable generation.
+                  </p>
+                )}
               </DialogFooter>
             </form>
           </>

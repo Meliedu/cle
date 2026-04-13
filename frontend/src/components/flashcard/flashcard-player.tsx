@@ -14,7 +14,7 @@ import {
   Check,
   Trophy,
 } from "lucide-react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 
 interface Flashcard {
   readonly id: string;
@@ -99,17 +99,19 @@ export function FlashcardPlayer({ setId, courseId }: FlashcardPlayerProps) {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ["flashcard-set", setId],
+    queryKey: ["flashcard-sets", "detail", setId],
     queryFn: async (): Promise<FlashcardSetDetail> => {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
-      return apiFetch<FlashcardSetDetail>(`/flashcard-sets/${setId}`, {
-        token: token!,
-      });
+      const res = await apiFetch<ApiEnvelope<FlashcardSetDetail>>(
+        `/flashcard-sets/${setId}`,
+        { token }
+      );
+      return res.data;
     },
     enabled: isSignedIn === true,
     retry: (count, error) => {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) return false;
+      if (isAuthError(error)) return false;
       return count < 3;
     },
   });
@@ -136,31 +138,36 @@ export function FlashcardPlayer({ setId, courseId }: FlashcardPlayerProps) {
         if (!token) throw new Error("Not authenticated");
         await apiFetch(`/flashcard-sets/${setId}/progress`, {
           method: "PUT",
-          token: token!,
+          token,
           body: JSON.stringify({
             card_id: currentCard.id,
             quality,
           }),
         });
-      } catch {
-        // Rating failure is non-blocking; the user can continue studying
+      } catch (err) {
+        // Non-blocking: user can keep studying; log for observability.
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.warn("[flashcard] progress rating failed", err);
+        }
       }
 
-      const nextStudied = cardsStudied + 1;
-      setCardsStudied(nextStudied);
+      setCardsStudied((prev) => prev + 1);
 
       // Brief delay before advancing to next card
       setTimeout(() => {
-        if (currentIndex + 1 >= totalCards) {
-          setIsComplete(true);
-        } else {
-          setCurrentIndex((prev) => prev + 1);
+        setCurrentIndex((prev) => {
+          if (prev + 1 >= totalCards) {
+            setIsComplete(true);
+            return prev;
+          }
           setIsFlipped(false);
           setHasRated(false);
-        }
+          return prev + 1;
+        });
       }, 300);
     },
-    [currentCard, currentIndex, totalCards, setId, getToken, cardsStudied]
+    [currentCard, totalCards, setId, getToken]
   );
 
   const handleKeyDown = useCallback(
