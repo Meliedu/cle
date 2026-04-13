@@ -1,7 +1,7 @@
 import logging
 
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -81,6 +81,9 @@ async def get_current_user(
                 detail="User provisioning failed",
             )
 
+    await db.execute(
+        text("SELECT set_config('app.current_user_id', :uid, true)").bindparams(uid=str(user.id))
+    )
     return user
 
 
