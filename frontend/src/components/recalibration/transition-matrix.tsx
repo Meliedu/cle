@@ -46,15 +46,23 @@ export function TransitionMatrix({ matrix, contentType }: TransitionMatrixProps)
         Rows = LLM label &nbsp;·&nbsp; Columns = observed difficulty
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
+        <table
+          className="w-full border-collapse text-sm"
+          aria-label={`Transition matrix for ${contentType}`}
+        >
+          <caption className="sr-only">
+            Difficulty transition matrix for {contentType}: rows show the LLM
+            label, columns show the observed student-derived difficulty.
+          </caption>
           <thead>
             <tr>
-              <th className="w-20 py-1 pr-3 text-right text-xs font-medium text-[var(--color-text-secondary)]">
+              <th scope="col" className="w-20 py-1 pr-3 text-right text-xs font-medium text-[var(--color-text-secondary)]">
                 LLM \ Real
               </th>
               {DIFFICULTY_LABELS.map((col) => (
                 <th
                   key={col}
+                  scope="col"
                   className="px-3 py-1 text-center text-xs font-medium capitalize text-[var(--color-text-secondary)]"
                 >
                   {col}
@@ -67,9 +75,9 @@ export function TransitionMatrix({ matrix, contentType }: TransitionMatrixProps)
               const rowData = matrix[row] ?? {};
               return (
                 <tr key={row}>
-                  <td className="py-1 pr-3 text-right text-xs font-medium capitalize text-[var(--color-text-secondary)]">
+                  <th scope="row" className="py-1 pr-3 text-right text-xs font-medium capitalize text-[var(--color-text-secondary)]">
                     {row}
-                  </td>
+                  </th>
                   {DIFFICULTY_LABELS.map((col) => {
                     const value = rowData[col] ?? 0;
                     const pct = Math.round(value * 100);

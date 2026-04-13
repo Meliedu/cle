@@ -30,36 +30,56 @@ export interface RecalibrationItemRow {
   readonly instructor_override: boolean;
 }
 
-interface ApiEnvelope<T> {
-  readonly success: boolean;
-  readonly data: T;
+export interface RecalibrationItemsPage {
+  readonly items: RecalibrationItemRow[];
+  readonly total: number;
+  readonly page: number;
+  readonly limit: number;
+  readonly pages: number;
 }
 
-// Hooks
+// Discriminated union so callers must check `success` before reading data.
+type ApiEnvelope<T> =
+  | { readonly success: true; readonly data: T; readonly error?: never }
+  | { readonly success: false; readonly data: null; readonly error: string };
+
+function unwrap<T>(env: ApiEnvelope<T>): T {
+  if (!env.success) {
+    throw new Error(env.error || "Request failed");
+  }
+  return env.data;
+}
+
+export interface RecalibrationItemsFilters {
+  content_type?: string;
+  llm_difficulty?: string;
+  recalibrated_only?: boolean;
+  page?: number;
+  limit?: number;
+}
+
+const STALE_MS = 60_000;
+
 export function useRecalibrationOverview(courseId: string) {
   const { getToken } = useAuth();
   return useQuery({
     queryKey: ["recalibration", "overview", courseId],
+    staleTime: STALE_MS,
     queryFn: async () => {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
       const res = await apiFetch<ApiEnvelope<RecalibrationOverview>>(
-        `/courses/${courseId}/recalibration/overview`, { token }
+        `/courses/${courseId}/recalibration/overview`,
+        { token },
       );
-      return res.data;
+      return unwrap(res);
     },
   });
 }
 
 export function useRecalibrationItems(
   courseId: string,
-  filters: {
-    content_type?: string;
-    llm_difficulty?: string;
-    recalibrated_only?: boolean;
-    page?: number;
-    limit?: number;
-  } = {}
+  filters: RecalibrationItemsFilters = {},
 ) {
   const { getToken } = useAuth();
   const params = new URLSearchParams();
@@ -71,14 +91,18 @@ export function useRecalibrationItems(
   const qs = params.toString();
 
   return useQuery({
-    queryKey: ["recalibration", "items", courseId, qs],
+    // Structured key — invalidating ["recalibration","items",courseId] still
+    // matches all filter variants thanks to TanStack Query prefix matching.
+    queryKey: ["recalibration", "items", courseId, filters],
+    staleTime: STALE_MS,
     queryFn: async () => {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
-      const res = await apiFetch<ApiEnvelope<{ items: RecalibrationItemRow[] }>>(
-        `/courses/${courseId}/recalibration/items?${qs}`, { token }
+      const res = await apiFetch<ApiEnvelope<RecalibrationItemsPage>>(
+        `/courses/${courseId}/recalibration/items?${qs}`,
+        { token },
       );
-      return res.data.items;
+      return unwrap(res);
     },
   });
 }
@@ -90,10 +114,11 @@ export function useToggleOverride(courseId: string) {
     mutationFn: async (itemId: string) => {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
-      return apiFetch<ApiEnvelope<Record<string, unknown>>>(
+      const res = await apiFetch<ApiEnvelope<Record<string, unknown>>>(
         `/courses/${courseId}/recalibration/items/${itemId}/override`,
-        { method: "POST", token }
+        { method: "POST", token },
       );
+      return unwrap(res);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["recalibration", "items", courseId] });

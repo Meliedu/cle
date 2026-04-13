@@ -108,6 +108,7 @@ function ItemRow({ item, onToggle, isToggling }: ItemRowProps) {
           disabled={isToggling}
           onClick={() => onToggle(item.pool_item_id)}
           className="text-xs"
+          aria-label={item.instructor_override ? "Unlock recalibration" : "Reset to LLM label"}
         >
           {item.instructor_override ? "Unlock" : "Reset"}
         </Button>
@@ -123,14 +124,28 @@ interface ItemTableProps {
 export function ItemTable({ courseId }: ItemTableProps) {
   const [contentType, setContentType] = useState("");
   const [page, setPage] = useState(1);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const { data: items, isLoading } = useRecalibrationItems(courseId, {
+  const { data, isLoading, error } = useRecalibrationItems(courseId, {
     content_type: contentType || undefined,
     page,
     limit: PAGE_LIMIT,
   });
+  const items = data?.items ?? [];
+  const totalPages = data?.pages ?? 1;
 
   const toggleOverride = useToggleOverride(courseId);
+  const togglingId = toggleOverride.isPending
+    ? (toggleOverride.variables as string | undefined)
+    : undefined;
+
+  const handleToggle = (id: string) => {
+    setErrorMessage(null);
+    toggleOverride.mutate(id, {
+      onError: (e) =>
+        setErrorMessage(e instanceof Error ? e.message : "Failed to toggle override"),
+    });
+  };
 
   const handleContentTypeChange = (value: string) => {
     setContentType(value);
@@ -140,42 +155,59 @@ export function ItemTable({ courseId }: ItemTableProps) {
   return (
     <div className="space-y-4">
       {/* Filter buttons */}
-      <div className="flex flex-wrap gap-2">
-        {CONTENT_TYPE_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => handleContentTypeChange(opt.value)}
-            className={[
-              "rounded-[var(--radius-md)] px-3 py-1.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]",
-              contentType === opt.value
-                ? "bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"
-                : "bg-[var(--color-surface-hover)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border-hover)]",
-            ].join(" ")}
-          >
-            {opt.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by content type">
+        {CONTENT_TYPE_OPTIONS.map((opt) => {
+          const active = contentType === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => handleContentTypeChange(opt.value)}
+              aria-pressed={active}
+              className={[
+                "rounded-[var(--radius-md)] px-3 py-1.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]",
+                active
+                  ? "bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"
+                  : "bg-[var(--color-surface-hover)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border-hover)]",
+              ].join(" ")}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
       </div>
+
+      {(error || errorMessage) && (
+        <div
+          role="alert"
+          className="rounded-[var(--radius-md)] border border-[var(--color-error)] bg-[oklch(96%_0.03_25)] px-3 py-2 text-sm text-[var(--color-error)]"
+        >
+          {errorMessage ?? (error instanceof Error ? error.message : "Failed to load items")}
+        </div>
+      )}
 
       {/* Table */}
       <div className="overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--color-border)]">
-        <table className="w-full">
+        <table className="w-full" aria-label="Pool items recalibration status">
+          <caption className="sr-only">
+            Per-item recalibration outcomes filtered by content type
+          </caption>
           <thead>
             <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-hover)]">
-              <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">Preview</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">Type</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">LLM Label</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">Recalibrated</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">Confidence</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">Attempts</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">Correct %</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">Override</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">Preview</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">Type</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">LLM Label</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">Recalibrated</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">Confidence</th>
+              <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">Attempts</th>
+              <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-[var(--color-text-muted)]">Correct %</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)]">Override</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i} className="border-b border-[var(--color-border)]">
+                <tr key={`skeleton-${i}`} className="border-b border-[var(--color-border)]">
                   {Array.from({ length: 8 }).map((__, j) => (
                     <td key={j} className="px-4 py-3">
                       <Skeleton className="h-4 w-full" />
@@ -183,7 +215,7 @@ export function ItemTable({ courseId }: ItemTableProps) {
                   ))}
                 </tr>
               ))
-            ) : !items || items.length === 0 ? (
+            ) : items.length === 0 ? (
               <tr>
                 <td
                   colSpan={8}
@@ -197,8 +229,8 @@ export function ItemTable({ courseId }: ItemTableProps) {
                 <ItemRow
                   key={item.pool_item_id}
                   item={item}
-                  onToggle={(id) => toggleOverride.mutate(id)}
-                  isToggling={toggleOverride.isPending}
+                  onToggle={handleToggle}
+                  isToggling={togglingId === item.pool_item_id}
                 />
               ))
             )}
@@ -217,12 +249,12 @@ export function ItemTable({ courseId }: ItemTableProps) {
           Previous
         </Button>
         <span className="text-sm text-[var(--color-text-secondary)]">
-          Page {page}
+          Page {page} of {totalPages || 1}
         </span>
         <Button
           variant="outline"
           size="sm"
-          disabled={isLoading || !items || items.length < PAGE_LIMIT}
+          disabled={isLoading || page >= totalPages}
           onClick={() => setPage((p) => p + 1)}
         >
           Next
