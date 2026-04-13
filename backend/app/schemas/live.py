@@ -17,6 +17,7 @@ class LiveSessionResponse(BaseModel):
     participant_count: int
     time_limit_seconds: int
     created_at: str
+    is_host: bool = False
 
 
 class LiveLeaderboardEntry(BaseModel):

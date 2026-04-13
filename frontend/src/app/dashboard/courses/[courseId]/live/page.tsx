@@ -4,7 +4,7 @@ import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRole } from "@/hooks/use-role";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -24,10 +24,13 @@ import {
   Clock,
   ArrowLeft,
   Zap,
+  Trash2,
 } from "lucide-react";
 import {
   useLiveSessions,
   useCreateLiveSession,
+  useDeleteLiveSession,
+  useFindLiveSessionByCode,
 } from "@/hooks/use-live-quiz";
 import { useQuizzes } from "@/hooks/use-quizzes";
 import { formatRelativeTime } from "@/lib/format";
@@ -46,11 +49,15 @@ export default function LiveSessionListPage({
     useLiveSessions(courseId);
   const { data: quizzes, isLoading: quizzesLoading } = useQuizzes(courseId);
   const createSession = useCreateLiveSession(courseId);
+  const deleteSession = useDeleteLiveSession(courseId);
+  const findByCode = useFindLiveSessionByCode();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedQuizId, setSelectedQuizId] = useState("");
   const [timeLimit, setTimeLimit] = useState("30");
   const [joinCodeInput, setJoinCodeInput] = useState("");
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const handleCreate = () => {
     if (!selectedQuizId) return;
@@ -68,6 +75,27 @@ export default function LiveSessionListPage({
         },
       }
     );
+  };
+
+  const handleJoinByCode = () => {
+    setJoinError(null);
+    if (joinCodeInput.length < 6) return;
+    findByCode.mutate(joinCodeInput, {
+      onSuccess: (session) => {
+        router.push(
+          `/dashboard/courses/${session.course_id}/live/${session.id}`
+        );
+      },
+      onError: () => {
+        setJoinError("No active session found for this code.");
+      },
+    });
+  };
+
+  const handleDelete = (sessionId: string) => {
+    deleteSession.mutate(sessionId, {
+      onSuccess: () => setDeleteConfirmId(null),
+    });
   };
 
   const publishedQuizzes = quizzes?.filter((q) => q.is_published);
@@ -108,31 +136,36 @@ export default function LiveSessionListPage({
         )}
       </div>
 
-      {/* Join by code (students) */}
-      {!isInstructor && (
-        <Card>
-          <CardContent className="flex items-center gap-3">
+      {/* Join by code */}
+      <Card>
+        <CardContent className="flex flex-col gap-2">
+          <div className="flex items-center gap-3">
             <Input
               placeholder="Enter join code..."
               value={joinCodeInput}
-              onChange={(e) =>
-                setJoinCodeInput(e.target.value.toUpperCase())
-              }
+              onChange={(e) => {
+                setJoinCodeInput(e.target.value.toUpperCase());
+                setJoinError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleJoinByCode();
+              }}
               maxLength={6}
               className="font-mono text-lg tracking-widest uppercase"
             />
             <Button
-              disabled={joinCodeInput.length < 6}
-              onClick={() => {
-                /* Join code lookup would go here — for now navigate */
-              }}
+              disabled={joinCodeInput.length < 6 || findByCode.isPending}
+              onClick={handleJoinByCode}
             >
               <Zap className="size-4" />
-              Join
+              {findByCode.isPending ? "Joining..." : "Join"}
             </Button>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+          {joinError && (
+            <p className="text-sm text-[var(--color-error)]">{joinError}</p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Active sessions */}
       <section className="space-y-3">
@@ -149,12 +182,15 @@ export default function LiveSessionListPage({
         ) : sessions && sessions.length > 0 ? (
           <div className="space-y-3">
             {sessions.map((session) => (
-              <Link
+              <Card
                 key={session.id}
-                href={`/dashboard/courses/${courseId}/live/${session.id}`}
+                className="transition-all duration-[var(--duration-fast)] hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)]"
               >
-                <Card className="transition-all duration-[var(--duration-fast)] hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)]">
-                  <CardContent className="flex items-center gap-4">
+                <CardContent className="flex items-center gap-4">
+                  <Link
+                    href={`/dashboard/courses/${courseId}/live/${session.id}`}
+                    className="flex min-w-0 flex-1 items-center gap-4"
+                  >
                     <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-success-light)]">
                       <Radio className="size-5 text-[var(--color-success)]" />
                     </div>
@@ -181,9 +217,22 @@ export default function LiveSessionListPage({
                         </span>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              </Link>
+                  </Link>
+                  {isInstructor && session.is_host && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setDeleteConfirmId(session.id);
+                      }}
+                      aria-label="Delete session"
+                    >
+                      <Trash2 className="size-4 text-[var(--color-error)]" />
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
             ))}
           </div>
         ) : (
@@ -273,6 +322,40 @@ export default function LiveSessionListPage({
               disabled={!selectedQuizId || createSession.isPending}
             >
               {createSession.isPending ? "Creating..." : "Create & Start"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <Dialog
+        open={deleteConfirmId !== null}
+        onOpenChange={(open) => !open && setDeleteConfirmId(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete live session?</DialogTitle>
+            <DialogDescription>
+              This will end the session for all participants and remove it
+              permanently. Past attempts and quiz content are kept.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteConfirmId(null)}
+              disabled={deleteSession.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() =>
+                deleteConfirmId && handleDelete(deleteConfirmId)
+              }
+              disabled={deleteSession.isPending}
+            >
+              {deleteSession.isPending ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

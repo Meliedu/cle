@@ -38,7 +38,9 @@ class LiveAnswerRequest(BaseModel):
     elapsed_seconds: float = 0.0
 
 
-def _session_to_response(session: LiveSession) -> LiveSessionResponse:
+def _session_to_response(
+    session: LiveSession, current_user_id: uuid.UUID | None = None
+) -> LiveSessionResponse:
     return LiveSessionResponse(
         id=str(session.id),
         quiz_id=str(session.quiz_id),
@@ -49,6 +51,7 @@ def _session_to_response(session: LiveSession) -> LiveSessionResponse:
         participant_count=session.participant_count,
         time_limit_seconds=session.time_limit_seconds or 30,
         created_at=session.created_at.isoformat(),
+        is_host=current_user_id is not None and session.host_id == current_user_id,
     )
 
 
@@ -109,7 +112,7 @@ async def create_live_session(
     )
 
     return APIResponse(
-        success=True, data=_session_to_response(session)
+        success=True, data=_session_to_response(session, user.id)
     )
 
 
@@ -134,8 +137,31 @@ async def list_live_sessions(
 
     return APIResponse(
         success=True,
-        data=[_session_to_response(s) for s in sessions],
+        data=[_session_to_response(s, user.id) for s in sessions],
     )
+
+
+@router.get("/live-sessions/by-code/{code}")
+async def get_live_session_by_code(
+    code: str,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse[LiveSessionResponse]:
+    """Look up an active live session by its join code. Student-facing."""
+    normalized = (code or "").strip().upper()
+    if len(normalized) != 6:
+        raise HTTPException(status_code=404, detail="Session not found")
+    result = await db.execute(
+        select(LiveSession).where(
+            LiveSession.join_code == normalized,
+            LiveSession.status.in_(["waiting", "active"]),
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    await verify_enrollment(db, session.course_id, user.id)
+    return APIResponse(success=True, data=_session_to_response(session, user.id))
 
 
 @router.get("/live-sessions/{session_id}")
@@ -147,7 +173,25 @@ async def get_live_session(
     """Get a single live session by ID."""
     session = await _get_session_or_404(db, session_id)
     await verify_enrollment(db, session.course_id, user.id)
-    return APIResponse(success=True, data=_session_to_response(session))
+    return APIResponse(success=True, data=_session_to_response(session, user.id))
+
+
+@router.delete("/live-sessions/{session_id}", response_model=APIResponse[None])
+async def delete_live_session(
+    session_id: str,
+    user=Depends(require_instructor),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse[None]:
+    """Delete a live session (host only)."""
+    session = await _get_session_or_404(db, session_id)
+    if session.host_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not session host"
+        )
+    await db.delete(session)
+    await db.commit()
+    manager.remove_session(session_id)
+    return APIResponse(success=True, data=None)
 
 
 @router.get("/live-sessions/{session_id}/state")

@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Users, Copy, Check, Loader2, Radio } from "lucide-react";
 import { useState, useCallback } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import type { LiveStatus } from "@/hooks/use-live-quiz";
 
 interface LobbyProps {
   readonly joinCode: string;
+  readonly joinUrl: string;
   readonly participantCount: number;
   readonly isHost: boolean;
   readonly status: LiveStatus;
@@ -17,22 +19,27 @@ interface LobbyProps {
 
 export function Lobby({
   joinCode,
+  joinUrl,
   participantCount,
   isHost,
   status,
   onStart,
 }: LobbyProps) {
-  const [copied, setCopied] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
-  const copyCode = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(joinCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard API not available
-    }
-  }, [joinCode]);
+  const copy = useCallback(
+    async (value: string, setter: (v: boolean) => void) => {
+      try {
+        await navigator.clipboard.writeText(value);
+        setter(true);
+        setTimeout(() => setter(false), 2000);
+      } catch {
+        // Clipboard API not available
+      }
+    },
+    []
+  );
 
   const isConnected = status === "connected";
 
@@ -51,7 +58,7 @@ export function Lobby({
         {isConnected ? "Connected" : "Connecting..."}
       </Badge>
 
-      {/* Join code card */}
+      {/* Join code + QR card */}
       <Card className="w-full">
         <CardHeader className="text-center">
           <CardTitle className="text-sm font-medium text-[var(--color-text-muted)]">
@@ -60,20 +67,49 @@ export function Lobby({
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-4">
           <button
-            onClick={copyCode}
+            onClick={() => copy(joinCode, setCopiedCode)}
             className="group flex items-center gap-3 rounded-[var(--radius-xl)] bg-[var(--color-surface-hover)] px-8 py-4 transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)]"
           >
             <span className="font-mono text-4xl font-bold tracking-[0.3em] text-[var(--color-text)]">
               {joinCode}
             </span>
-            {copied ? (
+            {copiedCode ? (
               <Check className="size-5 text-[var(--color-success)]" />
             ) : (
               <Copy className="size-5 text-[var(--color-text-muted)] transition-colors group-hover:text-[var(--color-primary)]" />
             )}
           </button>
+
+          {joinUrl && (
+            <>
+              <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-3">
+                <QRCodeSVG
+                  value={joinUrl}
+                  size={168}
+                  level="M"
+                  marginSize={0}
+                />
+              </div>
+              <button
+                onClick={() => copy(joinUrl, setCopiedUrl)}
+                className="flex items-center gap-2 text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-primary)]"
+              >
+                {copiedUrl ? (
+                  <>
+                    <Check className="size-3.5" />
+                    Link copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="size-3.5" />
+                    Copy join link
+                  </>
+                )}
+              </button>
+            </>
+          )}
           <p className="text-xs text-[var(--color-text-muted)]">
-            Share this code with your students
+            Students can scan the QR code or enter the code to join
           </p>
         </CardContent>
       </Card>

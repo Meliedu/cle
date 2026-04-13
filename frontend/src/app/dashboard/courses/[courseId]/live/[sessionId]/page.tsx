@@ -56,7 +56,12 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
   } = useLiveQuiz(sessionId, token);
 
   const { isInstructor } = useRole();
-  const isHost = session?.host_id === user?.id;
+  const isHost = session?.is_host ?? false;
+
+  const joinUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/dashboard/courses/${courseId}/live/${sessionId}`
+      : "";
 
   /* Track when each question arrives to compute elapsed answer time */
   const questionStartRef = useRef<number>(Date.now());
@@ -122,6 +127,7 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
       ) : status === "connecting" || status === "connected" ? (
         <Lobby
           joinCode={session?.join_code ?? "------"}
+          joinUrl={joinUrl}
           participantCount={participantCount}
           isHost={isHost}
           status={status}

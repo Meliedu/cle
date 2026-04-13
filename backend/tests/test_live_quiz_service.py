@@ -99,6 +99,15 @@ class TestSessionState:
         assert state.current_question_index == 1
         assert state.status == "active"
 
+    def test_next_question_from_waiting_starts_session(self):
+        """First call from waiting transitions to active without skipping Q1."""
+        state = SessionState(session_id="test", total_questions=5, time_limit=30)
+        assert state.status == "waiting"
+        state.next_question()
+        assert state.status == "active"
+        assert state.current_question_index == 0
+        assert state.question_started_at is not None
+
     def test_last_question_finishes(self):
         state = SessionState(session_id="test", total_questions=2, time_limit=30)
         state.start()

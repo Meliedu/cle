@@ -44,6 +44,10 @@ class SessionState:
         self.question_started_at = datetime.now(timezone.utc)
 
     def next_question(self) -> None:
+        if self.status == "waiting":
+            self.status = "active"
+            self.question_started_at = datetime.now(timezone.utc)
+            return
         self.current_question_index += 1
         if self.current_question_index >= self.total_questions:
             self.status = "finished"

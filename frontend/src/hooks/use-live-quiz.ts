@@ -17,6 +17,7 @@ export interface LiveSessionResponse {
   readonly participant_count: number;
   readonly time_limit_seconds: number;
   readonly created_at: string;
+  readonly is_host: boolean;
 }
 
 export interface LeaderboardEntry {
@@ -254,6 +255,44 @@ export function useCreateLiveSession(courseId: string) {
       queryClient.invalidateQueries({
         queryKey: ["live-sessions", courseId],
       });
+    },
+  });
+}
+
+export function useDeleteLiveSession(courseId: string) {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (sessionId: string) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      await apiFetch(`/live-sessions/${sessionId}`, {
+        method: "DELETE",
+        token,
+      });
+      return sessionId;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["live-sessions", courseId],
+      });
+    },
+  });
+}
+
+export function useFindLiveSessionByCode() {
+  const { getToken } = useAuth();
+
+  return useMutation({
+    mutationFn: async (code: string) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const response = await apiFetch<ApiEnvelope<LiveSessionResponse>>(
+        `/live-sessions/by-code/${encodeURIComponent(code.toUpperCase())}`,
+        { token }
+      );
+      return response.data;
     },
   });
 }
