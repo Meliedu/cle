@@ -1,7 +1,7 @@
 """course_summaries table for persisted AI course summaries
 
 Revision ID: b7d4a9e2c1f3
-Revises: 8231060f9c65
+Revises: 28236be3d7b3
 Create Date: 2026-04-13 09:00:00.000000
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision: str = "b7d4a9e2c1f3"
-down_revision: Union[str, None] = "8231060f9c65"
+down_revision: Union[str, None] = "28236be3d7b3"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
