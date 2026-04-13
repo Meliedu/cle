@@ -1,13 +1,12 @@
 """Per-user rate limiting middleware using the api_usage table.
 
-Counts requests per user per hour. Limits are configured via
-settings.student_rate_limit and settings.instructor_rate_limit.
+Counts requests per user per hour on the ``/api/rag/*`` endpoints. Limits are
+configured via ``settings.student_rate_limit`` and
+``settings.instructor_rate_limit``.
 
-The middleware relies on the Authorization header to identify users.  It
-decodes the Clerk JWT to extract the user's clerk_id, looks up the user
-in the database, and then counts their recent API usage rows.
-
-Paths outside /api/* and public paths are not rate-limited.
+Flow: decode the Clerk JWT to identify the user, count recent rows in
+``api_usage``, reject with 429 if over limit, otherwise call the wrapped app
+and record a new row on the way back out so future requests are counted.
 """
 
 import json
@@ -16,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from starlette.responses import Response
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.config import settings
 from app.database import async_session_factory
@@ -60,8 +59,18 @@ def _get_rate_limit(role: str) -> int:
     return settings.student_rate_limit
 
 
+async def _record_usage(user_id, endpoint: str) -> None:
+    """Write an ApiUsage row. Best-effort: never propagates exceptions."""
+    try:
+        async with async_session_factory() as session:
+            session.add(ApiUsage(user_id=user_id, endpoint=endpoint[:100]))
+            await session.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to record api_usage for user=%s", user_id)
+
+
 class RateLimitMiddleware:
-    """Enforce per-user hourly request limits on /api/* endpoints."""
+    """Enforce per-user hourly request limits on /api/rag/* endpoints."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -108,6 +117,7 @@ class RateLimitMiddleware:
             return
 
         # Look up user and check rate limit
+        user_id = None
         try:
             async with async_session_factory() as session:
                 result = await session.execute(
@@ -150,6 +160,8 @@ class RateLimitMiddleware:
                     await response(scope, receive, send)
                     return
 
+                user_id = user.id
+
         except Exception:
             # Fail closed: if we can't verify rate limits, deny rather than
             # silently allow unlimited requests through.
@@ -163,4 +175,16 @@ class RateLimitMiddleware:
             await response(scope, receive, send)
             return
 
-        await self.app(scope, receive, send)
+        # Wrap send so we can observe the final status code and only count
+        # successful requests against the quota (4xx/5xx should not burn it).
+        status_code: dict[str, int] = {"code": 0}
+
+        async def send_wrapper(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                status_code["code"] = int(message.get("status", 0))
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+        if user_id is not None and 200 <= status_code["code"] < 300:
+            await _record_usage(user_id, path)

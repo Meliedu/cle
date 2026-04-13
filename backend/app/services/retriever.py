@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import uuid
 from dataclasses import dataclass
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import async_session_factory
 from app.models.chunk import Chunk
+from app.models.document import Document
 
 
 @dataclass(frozen=True)
@@ -32,26 +35,26 @@ async def retrieve_chunks(
 ) -> list[RetrievedChunk]:
     """Return the *top_k* most similar chunks for *query_embedding*.
 
-    Uses pgvector's ``<=>`` (cosine distance) operator and converts to
-    cosine similarity via ``1 - distance``.
+    Uses pgvector's cosine-distance operator via SQLAlchemy's bound-parameter
+    mechanism (no raw-SQL interpolation of the embedding literal).
     """
-    embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
-
-    # 1 - cosine distance = cosine similarity
-    similarity_expr = text(
-        f"1 - (chunks.embedding <=> '{embedding_str}'::vector) AS similarity"
+    similarity = (1 - Chunk.embedding.cosine_distance(query_embedding)).label(
+        "similarity"
     )
 
+    # Join Document so soft-deleted documents' chunks drop out of results.
     stmt = (
-        select(Chunk, similarity_expr)
+        select(Chunk, similarity)
+        .join(Document, Document.id == Chunk.document_id)
         .where(Chunk.course_id == course_id)
         .where(Chunk.embedding.isnot(None))
+        .where(Document.deleted_at.is_(None))
     )
 
     if document_ids:
         stmt = stmt.where(Chunk.document_id.in_(document_ids))
 
-    stmt = stmt.order_by(text("similarity DESC")).limit(top_k)
+    stmt = stmt.order_by(similarity.desc()).limit(top_k)
 
     result = await db.execute(stmt)
     rows = result.all()
@@ -62,9 +65,9 @@ async def retrieve_chunks(
             content=chunk.content,
             document_id=chunk.document_id,
             page_number=chunk.page_number,
-            similarity_score=float(similarity),
+            similarity_score=float(score),
         )
-        for chunk, similarity in rows
+        for chunk, score in rows
     ]
 
 
@@ -85,9 +88,11 @@ async def fulltext_retrieve(
             Chunk.page_number,
             func.ts_rank(Chunk.tsvector_content, tsquery).label("rank"),
         )
+        .join(Document, Document.id == Chunk.document_id)
         .where(
             Chunk.course_id == course_id,
             Chunk.tsvector_content.op("@@")(tsquery),
+            Document.deleted_at.is_(None),
         )
         .order_by(text("rank DESC"))
         .limit(top_k)
@@ -142,14 +147,22 @@ def rrf_merge(
 # ---------------------------------------------------------------------------
 
 _ranker = None
+_ranker_lock = threading.Lock()
 
 
 def _get_ranker():
+    """Lazily initialize FlashRank with a double-checked lock so concurrent
+    threads can't race the expensive model load and burn extra memory."""
     global _ranker
     if _ranker is None:
-        from flashrank import Ranker
+        with _ranker_lock:
+            if _ranker is None:
+                from flashrank import Ranker
 
-        _ranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2", cache_dir="/tmp/flashrank")
+                _ranker = Ranker(
+                    model_name="ms-marco-MiniLM-L-12-v2",
+                    cache_dir="/tmp/flashrank",
+                )
     return _ranker
 
 
@@ -198,26 +211,34 @@ async def hybrid_retrieve(
     top_k: int = 10,
     document_ids: list[uuid.UUID] | None = None,
 ) -> list[RetrievedChunk]:
-    """Run vector + fulltext in parallel, merge via RRF, rerank with FlashRank."""
-    vector_task = asyncio.create_task(
-        retrieve_chunks(
-            db,
-            course_id,
-            query_embedding,
-            top_k=top_k * 2,
-            document_ids=document_ids,
-        )
-    )
-    text_task = asyncio.create_task(
-        fulltext_retrieve(
-            db,
-            course_id,
-            query,
-            top_k=top_k * 2,
-            document_ids=document_ids,
-        )
-    )
-    vector_results, text_results = await asyncio.gather(vector_task, text_task)
+    """Run vector + fulltext retrieval in parallel, merge via RRF, rerank.
+
+    Each branch runs in its own session so the two queries use separate
+    connections — SQLAlchemy's ``AsyncSession`` is not safe for concurrent
+    query execution on a single session instance.
+    """
+
+    async def _vector() -> list[RetrievedChunk]:
+        async with async_session_factory() as vs:
+            return await retrieve_chunks(
+                vs,
+                course_id,
+                query_embedding,
+                top_k=top_k * 2,
+                document_ids=document_ids,
+            )
+
+    async def _text() -> list[RetrievedChunk]:
+        async with async_session_factory() as ts:
+            return await fulltext_retrieve(
+                ts,
+                course_id,
+                query,
+                top_k=top_k * 2,
+                document_ids=document_ids,
+            )
+
+    vector_results, text_results = await asyncio.gather(_vector(), _text())
 
     # RRF merge — fetch extra candidates for the reranker to pick from
     merged = rrf_merge(vector_results, text_results, k=60, top_k=top_k * 2)
