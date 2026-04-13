@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_instructor
+from app.models.course import Course
 from app.models.recalibration import RecalibrationModel, RecalibrationStats
 from app.models.revision import RevisionPoolItem
 from app.models.user import User
@@ -19,6 +20,24 @@ from app.schemas.recalibration import (
 router = APIRouter(tags=["recalibration"])
 
 CONTENT_TYPES = ["quiz", "flashcard", "speaking"]
+
+
+async def _verify_course_ownership(
+    db: AsyncSession, course_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    """Verify that the user is the instructor owner of the course. Raises 404 if not."""
+    result = await db.execute(
+        select(Course.id).where(
+            Course.id == course_id,
+            Course.instructor_id == user_id,
+            Course.deleted_at.is_(None),
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found",
+        )
 
 
 def _truncate(text: str | None, length: int = 80) -> str:
@@ -45,6 +64,7 @@ async def get_recalibration_overview(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
+    await _verify_course_ownership(db, course_id, user.id)
     summaries: list[RecalibrationContentTypeSummary] = []
     transition_matrices: dict[str, dict[str, dict[str, float]]] = {}
 
@@ -117,6 +137,7 @@ async def get_recalibration_items(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
+    await _verify_course_ownership(db, course_id, user.id)
     # Build join query: recalibration_stats joined with revision_pool_items
     stmt = (
         select(RecalibrationStats, RevisionPoolItem)
@@ -181,6 +202,7 @@ async def toggle_instructor_override(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
+    await _verify_course_ownership(db, course_id, user.id)
     result = await db.execute(
         select(RevisionPoolItem).where(
             RevisionPoolItem.id == item_id,

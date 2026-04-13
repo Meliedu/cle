@@ -329,16 +329,20 @@ async def update_progress(
             progress.difficulty = difficulty
             sched_model.strategy = "fsrs"
 
+        # Coerce FSRS state to float (guard against Decimal leaking in from DB layer)
+        s_float = float(progress.stability) if progress.stability is not None else None
+        d_float = float(progress.difficulty) if progress.difficulty is not None else None
+
         # Online parameter update
-        if progress.stability is not None and elapsed > 0:
-            predicted_r = scheduler.compute_retrievability(elapsed, progress.stability)
+        if s_float is not None and elapsed > 0:
+            predicted_r = scheduler.compute_retrievability(elapsed, s_float)
             actual_recall = grade >= 2
             sched_model.parameters = update_parameters(
                 sched_model.parameters,
                 predicted_r,
                 actual_recall,
-                stability=progress.stability,
-                difficulty=progress.difficulty or 5.0,
+                stability=s_float,
+                difficulty=d_float if d_float is not None else 5.0,
                 elapsed_days=elapsed,
                 grade=grade,
             )
@@ -347,8 +351,8 @@ async def update_progress(
         # State transition
         new_s, new_d, interval = scheduler.next_state(
             grade=grade,
-            stability=progress.stability,
-            difficulty=progress.difficulty,
+            stability=s_float,
+            difficulty=d_float,
             elapsed_days=elapsed,
         )
         progress.stability = new_s

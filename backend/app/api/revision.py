@@ -210,9 +210,14 @@ async def _get_recent_attempts(
         .limit(limit)
     )
     result = await db.execute(stmt)
+    # Use the EFFECTIVE difficulty (corrected label if present, otherwise original LLM label)
+    # as the `difficulty` attribute. Downstream consumers (bandit.cold_start_select,
+    # bandit.is_degenerate, compute_state_vector) see the recalibrated difficulty without
+    # needing special-case handling. `corrected_difficulty` is preserved for consumers that
+    # want to distinguish the two (e.g., compute_state_vector fallback).
     return [
         SimpleNamespace(
-            difficulty=a.difficulty,
+            difficulty=a.corrected_difficulty or a.difficulty,
             corrected_difficulty=a.corrected_difficulty,
             score=float(a.score),
             created_at=a.created_at,

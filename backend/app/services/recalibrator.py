@@ -292,7 +292,16 @@ async def accumulate_stats(
     llm_difficulty: str,
     score: float,
 ) -> None:
-    """Upsert per-item recalibration stats. Called from the /answer hot path."""
+    """Upsert per-item recalibration stats. Called from the /answer hot path.
+
+    IMPORTANT — ``llm_difficulty`` contract:
+        This value MUST be the ORIGINAL LLM-assigned difficulty label for the pool
+        item (i.e., ``RevisionPoolItem.llm_difficulty``), NOT the recalibrated /
+        corrected label. The Dirichlet confusion matrix models
+        P(observed | LLM-label); passing a recalibrated label would feed the
+        matrix its own output back as input, poisoning the prior and causing
+        the recalibrator to converge to a degenerate fixed point over time.
+    """
     from uuid import UUID as _UUID  # noqa: F811
     from sqlalchemy.dialects.postgresql import insert
     from app.models.recalibration import RecalibrationStats
@@ -355,6 +364,22 @@ async def maybe_trigger_recalibration(
         model.total_attempts_since_last_run = total
 
     if total >= BATCH_TRIGGER_ATTEMPTS:
+        # Dedup: skip enqueue if a pending/running recalibration task already
+        # exists for this (course_id, content_type). Without this guard, each
+        # /answer call between enqueue and worker completion would re-enqueue,
+        # producing spam when no model exists yet (the total is recomputed from
+        # the stats sum each call instead of decremented).
+        existing_task_result = await db.execute(
+            select(Task).where(
+                Task.task_type == "recalibration",
+                Task.status.in_(["pending", "running"]),
+                Task.payload["course_id"].astext == str(course_id),
+                Task.payload["content_type"].astext == content_type,
+            )
+        )
+        if existing_task_result.scalar_one_or_none() is not None:
+            return
+
         # Race condition note: concurrent requests may each enqueue a
         # recalibration task before the counter resets.  This is harmless
         # because run_recalibration_job is idempotent — duplicate tasks
