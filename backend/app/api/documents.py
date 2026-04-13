@@ -1,5 +1,7 @@
+import asyncio
+import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from sqlalchemy import select
@@ -15,6 +17,8 @@ from app.schemas.common import APIResponse
 from app.schemas.document import DocumentResponse
 from app.services.storage import build_r2_key, upload_file
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/courses/{course_id}/documents", tags=["documents"])
 
 ALLOWED_TYPES = {
@@ -25,14 +29,28 @@ ALLOWED_TYPES = {
     "audio/mpeg": "mp3",
 }
 
+# Magic-byte signatures keyed by declared MIME. Each entry is a list of
+# acceptable prefixes — some formats have multiple legitimate variants.
+# mp4 is checked via the ftyp atom at offset 4.
+MAGIC_BYTES: dict[str, list[bytes]] = {
+    "application/pdf": [b"%PDF-"],
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"],
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": [b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"],
+    "audio/mpeg": [b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"],
+}
 
-@router.post("/upload", response_model=APIResponse[DocumentResponse], status_code=201)
-async def upload_document(
-    course_id: uuid.UUID,
-    file: UploadFile,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
-):
+
+def _matches_magic(content_type: str, file_data: bytes) -> bool:
+    if content_type == "video/mp4":
+        # mp4: "....ftyp" — ftyp atom at byte offset 4
+        return len(file_data) >= 12 and file_data[4:8] == b"ftyp"
+    signatures = MAGIC_BYTES.get(content_type, [])
+    return any(file_data.startswith(sig) for sig in signatures)
+
+
+async def _require_course_instructor(
+    db: AsyncSession, course_id: uuid.UUID, user: User
+) -> None:
     result = await db.execute(
         select(Enrollment).where(
             Enrollment.course_id == course_id,
@@ -42,6 +60,16 @@ async def upload_document(
     )
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not course instructor")
+
+
+@router.post("/upload", response_model=APIResponse[DocumentResponse], status_code=201)
+async def upload_document(
+    course_id: uuid.UUID,
+    file: UploadFile,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    await _require_course_instructor(db, course_id, user)
 
     content_type = file.content_type or ""
     if content_type not in ALLOWED_TYPES:
@@ -53,6 +81,12 @@ async def upload_document(
     file_data = await file.read()
     file_size = len(file_data)
 
+    if not _matches_magic(content_type, file_data):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File content does not match declared type",
+        )
+
     max_size = settings.max_upload_size_mb * 1024 * 1024
     if file_size > max_size:
         raise HTTPException(
@@ -63,6 +97,8 @@ async def upload_document(
     document_id = uuid.uuid4()
     r2_key = build_r2_key(course_id, document_id, file.filename or "unnamed")
 
+    # Persist DB row first so a failed R2 write leaves only a pending orphan
+    # that can be reconciled, rather than an unreferenced R2 object.
     document = Document(
         id=document_id,
         course_id=course_id,
@@ -74,17 +110,28 @@ async def upload_document(
         status="pending",
     )
     db.add(document)
+    await db.commit()
+    await db.refresh(document)
 
-    upload_file(r2_key, file_data, content_type)
+    # Upload to R2 off the event loop (boto3 is sync)
+    try:
+        await asyncio.to_thread(upload_file, r2_key, file_data, content_type)
+    except Exception:
+        # R2 failed — tombstone the DB row so it doesn't sit forever
+        document.status = "failed"
+        await db.commit()
+        logger.exception("R2 upload failed for document %s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="File storage upload failed",
+        )
 
     task = Task(
         task_type="process_document",
         payload={"document_id": str(document_id)},
     )
     db.add(task)
-
     await db.commit()
-    await db.refresh(document)
 
     return APIResponse(success=True, data=DocumentResponse.model_validate(document))
 
@@ -122,6 +169,8 @@ async def delete_document(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
+    await _require_course_instructor(db, course_id, user)
+
     result = await db.execute(
         select(Document).where(
             Document.id == document_id,
@@ -133,6 +182,6 @@ async def delete_document(
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-    doc.deleted_at = datetime.now()
+    doc.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     return APIResponse(success=True, data=None)

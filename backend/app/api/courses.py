@@ -1,14 +1,14 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.models.course import Course, Enrollment
 from app.models.user import User
-from app.schemas.common import APIResponse
+from app.schemas.common import APIResponse, PaginatedResponse, PaginationMeta
 from app.schemas.course import CourseCreate, CourseResponse, CourseUpdate
 
 router = APIRouter(prefix="/courses", tags=["courses"])
@@ -40,20 +40,41 @@ async def create_course(
     return APIResponse(success=True, data=CourseResponse.model_validate(course))
 
 
-@router.get("", response_model=APIResponse[list[CourseResponse]])
+@router.get("", response_model=PaginatedResponse[CourseResponse])
 async def list_courses(
+    page: int = 1,
+    limit: int = 20,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
+    if page < 1 or limit < 1 or limit > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid pagination: page >= 1, 1 <= limit <= 100",
+        )
+
+    base = (
         select(Course)
         .join(Enrollment, Enrollment.course_id == Course.id)
         .where(Enrollment.user_id == user.id, Course.deleted_at.is_(None))
     )
+
+    count_result = await db.execute(
+        select(func.count()).select_from(base.subquery())
+    )
+    total = int(count_result.scalar() or 0)
+
+    result = await db.execute(
+        base.order_by(Course.created_at.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
     courses = result.scalars().all()
-    return APIResponse(
+    pages = (total + limit - 1) // limit if total else 0
+    return PaginatedResponse(
         success=True,
         data=[CourseResponse.model_validate(c) for c in courses],
+        meta=PaginationMeta(total=total, page=page, limit=limit, pages=pages),
     )
 
 
@@ -125,7 +146,7 @@ async def delete_course(
     if not course:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
 
-    course.deleted_at = datetime.now()
+    course.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     return APIResponse(success=True, data=None)
 

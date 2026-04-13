@@ -5,8 +5,7 @@ import { useAuth } from "@clerk/nextjs";
 import { useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, X, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+import { API_URL } from "@/lib/api";
 
 const ACCEPTED_TYPES = [
   "application/pdf",
@@ -14,7 +13,6 @@ const ACCEPTED_TYPES = [
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "video/mp4",
   "audio/mpeg",
-  "audio/mp3",
 ] as const;
 
 const ACCEPTED_EXTENSIONS = [".pdf", ".docx", ".pptx", ".mp4", ".mp3"];

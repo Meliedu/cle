@@ -1,9 +1,7 @@
 "use client";
 
-import {
-  QueryClient,
-  QueryClientProvider,
-} from "@tanstack/react-query";
+import { useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 function makeQueryClient(): QueryClient {
   return new QueryClient({
@@ -15,19 +13,22 @@ function makeQueryClient(): QueryClient {
   });
 }
 
-let browserQueryClient: QueryClient | undefined = undefined;
+let browserQueryClient: QueryClient | undefined;
 
 function getQueryClient(): QueryClient {
   if (typeof window === "undefined") {
+    // Server: always a fresh client, never shared across requests.
     return makeQueryClient();
-  } else {
-    if (!browserQueryClient) browserQueryClient = makeQueryClient();
-    return browserQueryClient;
   }
+  // Browser: reuse one client for the life of the tab.
+  if (!browserQueryClient) browserQueryClient = makeQueryClient();
+  return browserQueryClient;
 }
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
-  const queryClient = getQueryClient();
+  // useState guarantees the client is created once per component lifecycle
+  // and not re-created on parent re-renders.
+  const [queryClient] = useState(getQueryClient);
 
   return (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>

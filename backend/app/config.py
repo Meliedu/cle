@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     # Clerk
     clerk_secret_key: str = ""
     clerk_jwks_url: str = ""
+    # Comma-separated list of authorized parties (azp claim) expected in JWTs.
+    clerk_allowed_azp: str = ""
+    # Optional audience (aud) to enforce when Clerk JWT templates set it.
+    clerk_audience: str = ""
 
     # Cloudflare R2
     r2_account_id: str = ""

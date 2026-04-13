@@ -1,3 +1,5 @@
+import os
+import re
 import uuid
 
 import boto3
@@ -6,6 +8,18 @@ from botocore.config import Config
 from app.config import settings
 
 _s3_client = None
+
+_FILENAME_SANITIZE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_MAX_FILENAME_LEN = 200
+
+
+def _sanitize_filename(filename: str) -> str:
+    base = os.path.basename(filename.replace("\\", "/")).strip()
+    if not base or base in {".", ".."}:
+        return "unnamed"
+    cleaned = _FILENAME_SANITIZE_RE.sub("_", base)
+    cleaned = re.sub(r"_+", "_", cleaned).strip("._") or "unnamed"
+    return cleaned[:_MAX_FILENAME_LEN]
 
 
 def get_s3_client():
@@ -23,7 +37,8 @@ def get_s3_client():
 
 
 def build_r2_key(course_id: uuid.UUID, document_id: uuid.UUID, filename: str) -> str:
-    return f"courses/{course_id}/documents/{document_id}/{filename}"
+    safe_name = _sanitize_filename(filename)
+    return f"courses/{course_id}/documents/{document_id}/{safe_name}"
 
 
 def upload_file(r2_key: str, file_data: bytes, content_type: str) -> None:
