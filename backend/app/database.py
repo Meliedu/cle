@@ -7,8 +7,6 @@ async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_o
 
 
 async def get_db():
+    # `async with` already handles close() on exit — no explicit finally needed.
     async with async_session_factory() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+        yield session

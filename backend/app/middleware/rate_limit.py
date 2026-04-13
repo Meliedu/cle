@@ -39,6 +39,17 @@ def _rate_limit_response(retry_after_seconds: int) -> dict:
         "error": {
             "code": "RATE_LIMITED",
             "message": "Rate limit exceeded. Please try again later.",
+            "retry_after": retry_after_seconds,
+        },
+    }
+
+
+def _service_unavailable_response() -> dict:
+    return {
+        "success": False,
+        "error": {
+            "code": "SERVICE_UNAVAILABLE",
+            "message": "Rate limit service is temporarily unavailable.",
         },
     }
 
@@ -121,9 +132,10 @@ class RateLimitMiddleware:
                 request_count = count_result.scalar_one()
 
                 if request_count >= limit:
+                    # Log only opaque identifiers, not PII.
                     logger.warning(
-                        "Rate limit exceeded for user %s (%s): %d/%d",
-                        user.email,
+                        "Rate limit exceeded for user_id=%s role=%s: %d/%d",
+                        user.id,
                         user.role,
                         request_count,
                         limit,
@@ -139,6 +151,16 @@ class RateLimitMiddleware:
                     return
 
         except Exception:
-            logger.exception("Rate limit check failed — allowing request")
+            # Fail closed: if we can't verify rate limits, deny rather than
+            # silently allow unlimited requests through.
+            logger.exception("Rate limit check failed — denying request")
+            body = json.dumps(_service_unavailable_response()).encode("utf-8")
+            response = Response(
+                content=body,
+                status_code=503,
+                media_type="application/json",
+            )
+            await response(scope, receive, send)
+            return
 
         await self.app(scope, receive, send)
