@@ -115,13 +115,13 @@ interface CourseDetailPageProps {
 
 export default function CourseDetailPage({ params }: CourseDetailPageProps) {
   return (
-    <Suspense fallback={null}>
-      <CourseDetailContent params={params} />
+    <Suspense fallback={<CourseDetailSkeleton />}>
+      <CourseDetailResolver params={params} />
     </Suspense>
   );
 }
 
-function CourseDetailContent({ params }: CourseDetailPageProps) {
+function CourseDetailResolver({ params }: CourseDetailPageProps) {
   const { courseId } = use(params);
   return (
     <Suspense fallback={<CourseDetailSkeleton />}>
