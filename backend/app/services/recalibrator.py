@@ -345,6 +345,7 @@ async def maybe_trigger_recalibration(
     a lost-update.
     """
     from sqlalchemy import func, select, update
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
     from app.models.recalibration import RecalibrationModel, RecalibrationStats
     from app.models.task import Task
 
@@ -359,23 +360,38 @@ async def maybe_trigger_recalibration(
     if model_id is None:
         # Bootstrap a model row so future calls hit the cheap atomic-increment
         # path instead of re-summing recalibration_stats every request.
+        # Use ON CONFLICT DO UPDATE so concurrent bootstraps for the same
+        # (course_id, content_type) can't produce IntegrityError — the
+        # losing request becomes an atomic increment on the winning row.
         sum_result = await db.execute(
             select(func.coalesce(func.sum(RecalibrationStats.attempt_count), 0)).where(
                 RecalibrationStats.course_id == course_id,
                 RecalibrationStats.content_type == content_type,
             )
         )
-        total = int(sum_result.scalar_one() or 0)
-        db.add(
-            RecalibrationModel(
+        bootstrap_total = int(sum_result.scalar_one() or 0)
+        initial_dirichlet = build_initial_dirichlet()
+        stmt = (
+            pg_insert(RecalibrationModel)
+            .values(
                 course_id=course_id,
                 content_type=content_type,
-                dirichlet_params=build_initial_dirichlet(),
-                transition_matrix=compute_transition_matrix(build_initial_dirichlet()),
+                dirichlet_params=initial_dirichlet,
+                transition_matrix=compute_transition_matrix(initial_dirichlet),
                 items_used=0,
-                total_attempts_since_last_run=total,
+                total_attempts_since_last_run=bootstrap_total,
             )
+            .on_conflict_do_update(
+                index_elements=["course_id", "content_type"],
+                set_={
+                    "total_attempts_since_last_run": (
+                        RecalibrationModel.total_attempts_since_last_run + 1
+                    )
+                },
+            )
+            .returning(RecalibrationModel.total_attempts_since_last_run)
         )
+        total = (await db.execute(stmt)).scalar_one()
     else:
         upd = (
             update(RecalibrationModel)
