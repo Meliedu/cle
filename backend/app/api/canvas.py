@@ -7,10 +7,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._helpers import verify_enrollment
 from app.api.deps import get_db, require_instructor
 from app.models.integration import CanvasIntegration
 from app.models.user import User
 from app.schemas.common import APIResponse
+from app.services.crypto import decrypt_secret, encrypt_secret
+from app.services.url_safety import validate_canvas_base_url
 
 router = APIRouter(prefix="/courses/{course_id}/canvas", tags=["canvas"])
 
@@ -33,7 +36,20 @@ async def connect_canvas(
     user: User = Depends(require_instructor),
 ):
     """Connect a Meli course to a Canvas course."""
-    # Check if already connected
+    await verify_enrollment(db, course_id, user.id)
+
+    try:
+        normalized_url = validate_canvas_base_url(body.canvas_base_url)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        )
+
+    if not body.access_token.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="access_token is required"
+        )
+
     existing = await db.execute(
         select(CanvasIntegration).where(
             CanvasIntegration.course_id == course_id
@@ -48,8 +64,8 @@ async def connect_canvas(
     integration = CanvasIntegration(
         course_id=course_id,
         canvas_course_id=body.canvas_course_id,
-        canvas_base_url=body.canvas_base_url,
-        access_token_encrypted=body.access_token,  # TODO: encrypt before storing
+        canvas_base_url=normalized_url,
+        access_token_encrypted=encrypt_secret(body.access_token),
     )
     db.add(integration)
     await db.commit()
@@ -63,6 +79,8 @@ async def list_canvas_files(
     user: User = Depends(require_instructor),
 ):
     """List files available in the connected Canvas course."""
+    await verify_enrollment(db, course_id, user.id)
+
     result = await db.execute(
         select(CanvasIntegration).where(
             CanvasIntegration.course_id == course_id
@@ -75,12 +93,30 @@ async def list_canvas_files(
             detail="Canvas not connected for this course",
         )
 
+    try:
+        validate_canvas_base_url(integration.canvas_base_url)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Stored Canvas URL is no longer permitted: {exc}",
+        )
+
+    if not integration.access_token_encrypted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Canvas integration is missing access token",
+        )
+    try:
+        access_token = decrypt_secret(integration.access_token_encrypted)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Canvas access token cannot be decrypted",
+        )
+
     from app.services.canvas import CanvasClient
 
-    client = CanvasClient(
-        integration.canvas_base_url,
-        integration.access_token_encrypted or "",
-    )
+    client = CanvasClient(integration.canvas_base_url, access_token)
     try:
         files = await client.list_course_files(integration.canvas_course_id)
         return APIResponse(success=True, data=files)

@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     iflytek_api_key: str = ""
     iflytek_api_secret: str = ""
 
+    # Symmetric key for encrypting third-party tokens at rest (Canvas, etc.).
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    integrations_encryption_key: str = ""
+
+    # Allowlist of permitted Canvas LMS hostnames (comma-separated).
+    # Example: "canvas.ust.hk,hkust.instructure.com". Empty in dev permits HTTPS to any non-private host.
+    canvas_allowed_hosts: str = ""
+
     # App
     backend_url: str = "http://localhost:8000"
     frontend_url: str = "http://localhost:3000"
@@ -66,6 +74,10 @@ class Settings(BaseSettings):
         if self.environment == "production" and self.database_url == _LOCAL_DB_DEFAULT:
             raise ValueError(
                 "DATABASE_URL must be set explicitly when ENVIRONMENT=production"
+            )
+        if self.environment == "production" and not self.integrations_encryption_key:
+            raise ValueError(
+                "INTEGRATIONS_ENCRYPTION_KEY must be set when ENVIRONMENT=production"
             )
         return self
 
