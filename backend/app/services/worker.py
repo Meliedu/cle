@@ -24,7 +24,11 @@ async def _reset_stuck_tasks(session: AsyncSession) -> None:
     cutoff = datetime.now(timezone.utc) - STUCK_TASK_TIMEOUT
     await session.execute(
         update(Task)
-        .where(Task.status == "running", Task.started_at < cutoff)
+        .where(
+            Task.status == "running",
+            Task.started_at.is_not(None),
+            Task.started_at < cutoff,
+        )
         .values(status="pending")
     )
     await session.commit()
@@ -142,7 +146,13 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
                 async with async_session_factory() as process_session:
                     reloaded = await process_session.get(Task, task_id)
                     if reloaded is None:
-                        logger.warning("Task %s disappeared mid-flight", task_id)
+                        # Row vanished between claim and process. There's no row
+                        # left to leave "running", but log loudly — this is
+                        # unexpected outside of explicit admin deletion.
+                        logger.error(
+                            "Task %s disappeared after claim; skipping",
+                            task_id,
+                        )
                         continue
                     await process_task(process_session, reloaded)
 
