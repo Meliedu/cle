@@ -1,7 +1,10 @@
+import uuid
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._helpers import verify_enrollment
 from app.api.deps import get_current_user, get_db
 from app.models.score import StudentProgress
 from app.models.user import User
@@ -20,6 +23,7 @@ async def get_my_progress(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[ProgressResponse]:
+    await verify_enrollment(db, uuid.UUID(course_id), user.id)
     stmt = select(StudentProgress).where(
         StudentProgress.user_id == user.id,
         StudentProgress.course_id == course_id,
@@ -68,6 +72,7 @@ async def get_leaderboard(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[LeaderboardEntry]:
+    await verify_enrollment(db, uuid.UUID(course_id), user.id)
     count_stmt = (
         select(func.count())
         .select_from(StudentProgress)

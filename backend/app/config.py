@@ -1,9 +1,15 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+_LOCAL_DB_DEFAULT = "postgresql+asyncpg://postgres:postgres@localhost:5432/langassistant"
 
 
 class Settings(BaseSettings):
+    # Runtime environment (development | production)
+    environment: str = "development"
+
     # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/langassistant"
+    database_url: str = _LOCAL_DB_DEFAULT
 
     # Clerk
     clerk_secret_key: str = ""
@@ -54,6 +60,14 @@ class Settings(BaseSettings):
     instructor_rate_limit: int = 50
 
     model_config = {"env_file": ".env", "extra": "ignore"}
+
+    @model_validator(mode="after")
+    def _require_prod_database_url(self) -> "Settings":
+        if self.environment == "production" and self.database_url == _LOCAL_DB_DEFAULT:
+            raise ValueError(
+                "DATABASE_URL must be set explicitly when ENVIRONMENT=production"
+            )
+        return self
 
 
 settings = Settings()
