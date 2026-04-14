@@ -68,8 +68,13 @@ export function HostPanel({
   const questionIndex = currentQuestion?.index ?? 0;
   const isLastQuestion = questionIndex >= totalQuestions - 1;
 
-  /* Build answer distribution from leaderboard data */
-  const distribution: Record<string, number> = { A: 0, B: 0, C: 0, D: 0 };
+  /* Build answer distribution skeleton keyed by this question's actual option
+   * keys so true_false (T/F) renders correctly, not hardcoded A/B/C/D. */
+  const distribution: Record<string, number> = Object.fromEntries(
+    Object.keys(questionData?.options ?? { A: "", B: "", C: "", D: "" }).map(
+      (k) => [k, 0]
+    )
+  );
   const totalAnswers = leaderboard.length;
 
   return (

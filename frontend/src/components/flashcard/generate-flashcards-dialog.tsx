@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +26,17 @@ import {
   DocumentSelector,
   useDocumentSelection,
 } from "@/components/documents/document-selector";
+import { useGenerationJobs } from "@/hooks/use-generation-jobs";
+
+interface EnqueueResponse {
+  readonly success: boolean;
+  readonly data: {
+    readonly job_id: string;
+    readonly kind: "generate_flashcards";
+    readonly course_id: string;
+    readonly title: string | null;
+  };
+}
 
 interface GenerateFlashcardsDialogProps {
   readonly courseId: string;
@@ -42,7 +52,7 @@ export function GenerateFlashcardsDialog({
   onOpenChange,
 }: GenerateFlashcardsDialogProps) {
   const { getToken } = useAuth();
-  const queryClient = useQueryClient();
+  const { trackJob } = useGenerationJobs();
   const { selectedIds, setSelectedIds } = useDocumentSelection(courseId);
   const [title, setTitle] = useState("");
   const [numCards, setNumCards] = useState("10");
@@ -75,18 +85,24 @@ export function GenerateFlashcardsDialog({
       try {
         const token = await getToken({ template: "backend" });
         if (!token) throw new Error("Not authenticated");
-        await apiFetch<{ success: boolean }>("/rag/generate-flashcards", {
-          method: "POST",
-          token,
-          body: JSON.stringify({
-            course_id: courseId,
-            title: title.trim(),
-            num_cards: Number(numCards),
-            document_ids: selectedIds.length > 0 ? selectedIds : undefined,
-          }),
-        });
-        await queryClient.invalidateQueries({
-          queryKey: ["flashcard-sets", courseId],
+        const response = await apiFetch<EnqueueResponse>(
+          "/rag/generate-flashcards",
+          {
+            method: "POST",
+            token,
+            body: JSON.stringify({
+              course_id: courseId,
+              title: title.trim(),
+              num_cards: Number(numCards),
+              document_ids: selectedIds.length > 0 ? selectedIds : undefined,
+            }),
+          }
+        );
+        trackJob({
+          jobId: response.data.job_id,
+          kind: "generate_flashcards",
+          courseId,
+          title: title.trim(),
         });
         onOpenChange(false);
         setTitle("");
@@ -96,13 +112,13 @@ export function GenerateFlashcardsDialog({
         const message =
           error instanceof Error
             ? error.message
-            : "Failed to generate flashcards";
+            : "Failed to start generation";
         setSubmitError(message);
       } finally {
         setIsSubmitting(false);
       }
     },
-    [title, numCards, courseId, selectedIds, onOpenChange, getToken, queryClient]
+    [title, numCards, courseId, selectedIds, onOpenChange, getToken, trackJob]
   );
 
   const handleOpenChange = useCallback(

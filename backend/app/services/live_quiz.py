@@ -54,11 +54,18 @@ class SessionState:
         else:
             self.question_started_at = datetime.now(timezone.utc)
 
-    def record_answer(self, user_id: str, answer: str, points: int) -> None:
-        if user_id not in self.player_answers:
-            self.player_answers[user_id] = {}
-        self.player_answers[user_id][self.current_question_index] = answer
+    def record_answer(self, user_id: str, answer: str, points: int) -> bool:
+        """Record a player's answer for the current question.
+
+        Returns True if recorded, False if the player has already answered this
+        question (prevents score inflation from duplicate submissions).
+        """
+        user_answers = self.player_answers.setdefault(user_id, {})
+        if self.current_question_index in user_answers:
+            return False
+        user_answers[self.current_question_index] = answer
         self.player_scores[user_id] = self.player_scores.get(user_id, 0) + points
+        return True
 
     def get_leaderboard(self, top_n: int = 10) -> list[dict]:
         sorted_players = sorted(

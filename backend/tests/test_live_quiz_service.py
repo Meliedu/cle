@@ -115,12 +115,22 @@ class TestSessionState:
         state.next_question()  # index becomes 2, past total_questions
         assert state.status == "finished"
 
-    def test_record_answer_accumulates_points(self):
+    def test_record_answer_accumulates_across_questions(self):
         state = SessionState(session_id="test", total_questions=5, time_limit=30)
         state.start()
-        state.record_answer("user1", "A", 1000)
-        state.record_answer("user1", "B", 500)
+        assert state.record_answer("user1", "A", 1000) is True
+        state.next_question()
+        assert state.record_answer("user1", "B", 500) is True
         assert state.player_scores["user1"] == 1500
+
+    def test_record_answer_rejects_duplicate_for_same_question(self):
+        """Same user submitting twice for the same question must not double-score."""
+        state = SessionState(session_id="test", total_questions=5, time_limit=30)
+        state.start()
+        assert state.record_answer("user1", "A", 1000) is True
+        assert state.record_answer("user1", "B", 500) is False
+        assert state.player_scores["user1"] == 1000
+        assert state.player_answers["user1"] == {0: "A"}
 
     def test_record_answer_stores_answer_per_question(self):
         state = SessionState(session_id="test", total_questions=5, time_limit=30)

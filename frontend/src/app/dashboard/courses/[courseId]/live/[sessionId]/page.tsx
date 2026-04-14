@@ -156,6 +156,7 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
           currentQuestion={currentQuestion}
           questionText={currentQuestionData?.question_text}
           options={currentQuestionData?.options ?? undefined}
+          questionType={currentQuestionData?.type}
           onAnswer={handleAnswer}
         />
       )}

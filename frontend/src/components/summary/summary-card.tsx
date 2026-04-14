@@ -115,7 +115,7 @@ export function SummaryCard({ courseId, isInstructor }: SummaryCardProps) {
                 {generate.isPending ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
-                    Generating...
+                    Starting…
                   </>
                 ) : (
                   <>

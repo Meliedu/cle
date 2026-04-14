@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +26,7 @@ import {
   DocumentSelector,
   useDocumentSelection,
 } from "@/components/documents/document-selector";
+import { useGenerationJobs } from "@/hooks/use-generation-jobs";
 
 interface GenerateQuizDialogProps {
   readonly courseId: string;
@@ -46,10 +46,15 @@ const initialForm: FormState = {
 
 const questionCounts = ["5", "10", "15", "20", "30"] as const;
 
-const generationMessages = [
-  "Analyzing course materials...",
-  "Generating questions...",
-] as const;
+interface EnqueueResponse {
+  readonly success: boolean;
+  readonly data: {
+    readonly job_id: string;
+    readonly kind: "generate_quiz";
+    readonly course_id: string;
+    readonly title: string | null;
+  };
+}
 
 export function GenerateQuizDialog({
   courseId,
@@ -57,27 +62,12 @@ export function GenerateQuizDialog({
   onOpenChange,
 }: GenerateQuizDialogProps) {
   const { getToken } = useAuth();
-  const queryClient = useQueryClient();
+  const { trackJob } = useGenerationJobs();
   const { selectedIds, setSelectedIds } = useDocumentSelection(courseId);
   const [form, setForm] = useState<FormState>(initialForm);
   const [titleError, setTitleError] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generationStep, setGenerationStep] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const stepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (isGenerating && generationStep === 0) {
-      stepTimerRef.current = setTimeout(() => {
-        setGenerationStep(1);
-      }, 4000);
-    }
-    return () => {
-      if (stepTimerRef.current) {
-        clearTimeout(stepTimerRef.current);
-      }
-    };
-  }, [isGenerating, generationStep]);
 
   const handleSubmit = useCallback(
     async (e: { preventDefault: () => void }) => {
@@ -88,26 +78,33 @@ export function GenerateQuizDialog({
         return;
       }
 
-      setIsGenerating(true);
-      setGenerationStep(0);
+      setIsSubmitting(true);
       setSubmitError(null);
 
       try {
         const token = await getToken({ template: "backend" });
         if (!token) throw new Error("Not authenticated");
-        await apiFetch<{ success: boolean }>("/rag/generate-quiz", {
-          method: "POST",
-          token,
-          body: JSON.stringify({
-            course_id: courseId,
-            title: form.title.trim(),
-            num_questions: Number(form.numQuestions),
-            document_ids: selectedIds.length > 0 ? selectedIds : undefined,
-          }),
+        const response = await apiFetch<EnqueueResponse>(
+          "/rag/generate-quiz",
+          {
+            method: "POST",
+            token,
+            body: JSON.stringify({
+              course_id: courseId,
+              title: form.title.trim(),
+              num_questions: Number(form.numQuestions),
+              document_ids: selectedIds.length > 0 ? selectedIds : undefined,
+            }),
+          }
+        );
+
+        trackJob({
+          jobId: response.data.job_id,
+          kind: "generate_quiz",
+          courseId,
+          title: form.title.trim(),
         });
-        await queryClient.invalidateQueries({
-          queryKey: ["quizzes", courseId],
-        });
+
         onOpenChange(false);
         setForm(initialForm);
         setTitleError(null);
@@ -115,65 +112,42 @@ export function GenerateQuizDialog({
         const message =
           error instanceof Error
             ? error.message
-            : "Failed to generate quiz";
+            : "Failed to start generation";
         setSubmitError(message);
       } finally {
-        if (stepTimerRef.current) {
-          clearTimeout(stepTimerRef.current);
-          stepTimerRef.current = null;
-        }
-        setIsGenerating(false);
-        setGenerationStep(0);
+        setIsSubmitting(false);
       }
     },
-    [form, courseId, selectedIds, onOpenChange, getToken, queryClient]
+    [form, courseId, selectedIds, onOpenChange, getToken, trackJob]
   );
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
-      if (!nextOpen && !isGenerating) {
+      if (isSubmitting) return;
+      if (!nextOpen) {
         setForm(initialForm);
         setTitleError(null);
         setSubmitError(null);
       }
-      if (!isGenerating) {
-        onOpenChange(nextOpen);
-      }
+      onOpenChange(nextOpen);
     },
-    [onOpenChange, isGenerating]
+    [onOpenChange, isSubmitting]
   );
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
-        {isGenerating ? (
-          <div className="flex flex-col items-center py-8">
-            <div className="relative mb-6 flex size-16 items-center justify-center">
-              <div className="absolute inset-0 animate-ping rounded-full bg-[var(--color-primary-light)] opacity-75" />
-              <div className="relative flex size-16 items-center justify-center rounded-full bg-[var(--color-primary-light)]">
-                <Sparkles className="size-7 text-[var(--color-primary)]" />
-              </div>
-            </div>
-            <p className="text-sm font-medium text-[var(--color-text)]">
-              {generationMessages[generationStep]}
-            </p>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-              This may take up to 20 seconds
-            </p>
-            <div className="mt-6 h-1.5 w-48 overflow-hidden rounded-full bg-[var(--color-border)]">
-              <div className="h-full animate-pulse rounded-full bg-[var(--color-primary)] transition-all duration-1000" />
-            </div>
-          </div>
-        ) : (
-          <>
-            <DialogHeader>
-              <DialogTitle>Generate Quiz</DialogTitle>
-              <DialogDescription>
-                Create a quiz from your course materials using AI.
-              </DialogDescription>
-            </DialogHeader>
+        <>
+          <DialogHeader>
+            <DialogTitle>Generate Quiz</DialogTitle>
+            <DialogDescription>
+              Create a quiz from your course materials using AI. You can keep
+              browsing while it generates; we&apos;ll notify you when it&apos;s
+              ready.
+            </DialogDescription>
+          </DialogHeader>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="quiz-title">
                   Title <span className="text-[var(--color-error)]">*</span>
@@ -235,35 +209,35 @@ export function GenerateQuizDialog({
                 </p>
               )}
 
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => handleOpenChange(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={selectedIds.length === 0}
-                  title={
-                    selectedIds.length === 0
-                      ? "Upload or select course materials first"
-                      : undefined
-                  }
-                >
-                  <Sparkles className="size-4" />
-                  Generate
-                </Button>
-                {selectedIds.length === 0 && (
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                    Upload or select at least one document to enable generation.
-                  </p>
-                )}
-              </DialogFooter>
-            </form>
-          </>
-        )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleOpenChange(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={selectedIds.length === 0 || isSubmitting}
+                title={
+                  selectedIds.length === 0
+                    ? "Upload or select course materials first"
+                    : undefined
+                }
+              >
+                <Sparkles className="size-4" />
+                {isSubmitting ? "Starting…" : "Generate"}
+              </Button>
+              {selectedIds.length === 0 && (
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  Upload or select at least one document to enable generation.
+                </p>
+              )}
+            </DialogFooter>
+          </form>
+        </>
       </DialogContent>
     </Dialog>
   );
