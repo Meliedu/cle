@@ -12,14 +12,17 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.courses import _generate_enroll_code
+from app.api.deps import get_current_user, require_instructor
 from app.config import settings
 from app.database import get_db
 from app.models import CanvasIntegration, CanvasUserCredential, User
+from app.models.course import Course, Enrollment
 from app.schemas.common import APIResponse
 from app.services import canvas_client as canvas_client_svc
 from app.services import canvas_oauth
 from app.services.crypto import encrypt_secret
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/canvas", tags=["canvas-oauth"])
@@ -189,6 +192,105 @@ async def list_canvas_courses(
             for c in courses
         ],
     )
+
+
+@router.post(
+    "/courses/{canvas_course_id}/link", response_model=APIResponse[dict]
+)
+async def link_canvas_course(
+    canvas_course_id: str,
+    user: User = Depends(require_instructor),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse[dict]:
+    """Link a Canvas course to a newly-created Meli course.
+
+    The caller must currently hold a Teacher or TA enrollment on the Canvas
+    side. Refuses to relink an already-linked (canvas_base_url, canvas_course_id)
+    pair.
+    """
+    try:
+        client = await canvas_client_svc.get_client_for_user(db, user.id)
+    except canvas_client_svc.CanvasNotConnected:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "canvas_not_connected"},
+        )
+    except canvas_client_svc.CanvasReauthRequired:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "canvas_reauth_required"},
+        )
+
+    enrollments = await client.list_course_enrollments(canvas_course_id)
+    cred_canvas_user_id = client._cred.canvas_user_id
+    teacher_like = {"TeacherEnrollment", "TaEnrollment"}
+    caller_roles = {
+        e.get("type")
+        for e in enrollments
+        if str(e.get("user_id")) == str(cred_canvas_user_id)
+    }
+    if not (caller_roles & teacher_like):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not a teacher or TA on this course",
+        )
+
+    existing = (
+        await db.execute(
+            select(CanvasIntegration).where(
+                CanvasIntegration.canvas_course_id == canvas_course_id,
+                CanvasIntegration.canvas_base_url == client._cred.canvas_base_url,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Course already linked to Meli",
+        )
+
+    canvas_course = await client.get_course(canvas_course_id)
+
+    # Retry on the (vanishingly rare) enroll_code collision.
+    meli_course: Course | None = None
+    for _ in range(5):
+        meli_course = Course(
+            name=canvas_course.get("name") or f"Canvas Course {canvas_course_id}",
+            code=canvas_course.get("course_code"),
+            language="english",
+            instructor_id=user.id,
+            enroll_code=_generate_enroll_code(),
+        )
+        db.add(meli_course)
+        try:
+            await db.flush()
+            break
+        except IntegrityError:
+            await db.rollback()
+            meli_course = None
+            continue
+
+    if meli_course is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not allocate enrollment code, please retry",
+        )
+
+    db.add(
+        CanvasIntegration(
+            course_id=meli_course.id,
+            connected_by_user_id=user.id,
+            canvas_course_id=canvas_course_id,
+            canvas_base_url=client._cred.canvas_base_url,
+            sync_status="active",
+        )
+    )
+    db.add(
+        Enrollment(course_id=meli_course.id, user_id=user.id, role="instructor")
+    )
+    await db.commit()
+
+    return APIResponse(success=True, data={"meli_course_id": str(meli_course.id)})
 
 
 @router.get("/connection", response_model=APIResponse[dict])
