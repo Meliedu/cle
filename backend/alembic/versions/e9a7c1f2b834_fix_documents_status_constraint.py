@@ -1,7 +1,7 @@
 """fix documents status constraint to allow 'ready'
 
 Revision ID: e9a7c1f2b834
-Revises: c2e5f8a1b3d9
+Revises: d3e7b8f2a9c4
 Create Date: 2026-04-14
 
 The phase1a_hardening migration (a1b2c3d4e5f6) was edited in place to change
@@ -14,7 +14,7 @@ from alembic import op
 
 
 revision = "e9a7c1f2b834"
-down_revision = "c2e5f8a1b3d9"
+down_revision = "d3e7b8f2a9c4"
 branch_labels = None
 depends_on = None
 
