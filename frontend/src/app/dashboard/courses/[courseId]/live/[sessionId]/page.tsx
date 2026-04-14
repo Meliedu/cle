@@ -133,7 +133,7 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
           status={status}
           onStart={nextQuestion}
         />
-      ) : isHost || isInstructor ? (
+      ) : isHost ? (
         <HostPanel
           status={status}
           currentQuestion={currentQuestion}

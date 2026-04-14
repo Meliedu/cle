@@ -140,6 +140,26 @@ class TestSessionState:
         state.record_answer("user1", "C", 500)
         assert state.player_answers["user1"] == {0: "A", 1: "C"}
 
+    def test_record_answer_adds_to_participants(self):
+        state = SessionState(session_id="test", total_questions=5, time_limit=30)
+        state.start()
+        state.record_answer("user1", "A", 1000)
+        assert "user1" in state.participants
+
+    def test_record_answer_tracks_correctness(self):
+        state = SessionState(session_id="test", total_questions=5, time_limit=30)
+        state.start()
+        state.record_answer("user1", "A", 1000, is_correct=True)
+        state.next_question()
+        state.record_answer("user1", "B", 0, is_correct=False)
+        assert state.player_correct["user1"] == {0: True, 1: False}
+
+    def test_add_participant_dedup(self):
+        state = SessionState(session_id="test", total_questions=5, time_limit=30)
+        assert state.add_participant("u1") is True
+        assert state.add_participant("u1") is False
+        assert state.participants == {"u1"}
+
     def test_get_leaderboard_sorted(self):
         state = SessionState(session_id="test", total_questions=5, time_limit=30)
         state.player_scores = {"u1": 300, "u2": 900, "u3": 600}

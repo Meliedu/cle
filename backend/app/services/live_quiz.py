@@ -38,6 +38,15 @@ class SessionState:
     question_started_at: datetime | None = None
     player_scores: dict[str, int] = field(default_factory=dict)
     player_answers: dict[str, dict[int, str]] = field(default_factory=dict)
+    player_correct: dict[str, dict[int, bool]] = field(default_factory=dict)
+    participants: set[str] = field(default_factory=set)
+
+    def add_participant(self, user_id: str) -> bool:
+        """Mark a user as present in the session. Returns True if newly added."""
+        if user_id in self.participants:
+            return False
+        self.participants.add(user_id)
+        return True
 
     def start(self) -> None:
         self.status = "active"
@@ -54,7 +63,13 @@ class SessionState:
         else:
             self.question_started_at = datetime.now(timezone.utc)
 
-    def record_answer(self, user_id: str, answer: str, points: int) -> bool:
+    def record_answer(
+        self,
+        user_id: str,
+        answer: str,
+        points: int,
+        is_correct: bool = False,
+    ) -> bool:
         """Record a player's answer for the current question.
 
         Returns True if recorded, False if the player has already answered this
@@ -64,7 +79,11 @@ class SessionState:
         if self.current_question_index in user_answers:
             return False
         user_answers[self.current_question_index] = answer
+        self.player_correct.setdefault(user_id, {})[
+            self.current_question_index
+        ] = is_correct
         self.player_scores[user_id] = self.player_scores.get(user_id, 0) + points
+        self.participants.add(user_id)
         return True
 
     def get_leaderboard(self, top_n: int = 10) -> list[dict]:

@@ -237,11 +237,20 @@ async def get_live_state(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Poll the current in-memory state of a live session."""
+    """Poll the current in-memory state of a live session. Non-host pollers
+    are registered as participants on first poll, so the lobby participant
+    count updates the instant a student opens the page (no explicit join
+    endpoint needed)."""
     session = await _get_session_or_404(db, session_id)
     await verify_enrollment(db, session.course_id, user.id)
 
     state = await _get_or_rehydrate_state(db, session)
+
+    if user.id != session.host_id and state.add_participant(str(user.id)):
+        new_count = len(state.participants)
+        if session.participant_count != new_count:
+            session.participant_count = new_count
+            await db.commit()
 
     return APIResponse(
         success=True,
@@ -250,7 +259,7 @@ async def get_live_state(
             "current_question_index": state.current_question_index,
             "time_limit": state.time_limit,
             "leaderboard": state.get_leaderboard(),
-            "participant_count": len(state.player_scores),
+            "participant_count": len(state.participants),
         },
     )
 
@@ -306,7 +315,9 @@ async def live_answer(
 
     is_correct = _answer_is_correct(body.answer, question.correct_answer)
     points = calculate_points(is_correct, body.elapsed_seconds, state.time_limit)
-    recorded = state.record_answer(str(user.id), body.answer, points)
+    recorded = state.record_answer(
+        str(user.id), body.answer, points, is_correct=is_correct
+    )
 
     return APIResponse(
         success=True,
@@ -355,18 +366,23 @@ async def _persist_session_activity(
     attempt for this quiz from this session (idempotent across retries).
     """
     total_questions = state.total_questions or 0
-    if total_questions == 0 or not state.player_scores:
+    # Persist anyone who joined, even if they never answered — activity counts
+    # participation, not just engagement.
+    user_ids = set(state.participants) | set(state.player_scores.keys())
+    if total_questions == 0 or not user_ids:
         return
 
     now = datetime.now(timezone.utc)
-    for user_id_str, score in state.player_scores.items():
+    for user_id_str in user_ids:
+        score = state.player_scores.get(user_id_str, 0)
         try:
             user_uuid = uuid.UUID(user_id_str)
         except ValueError:
             continue
 
         answers = state.player_answers.get(user_id_str, {})
-        correct_count = sum(1 for v in answers.values() if v)
+        correctness = state.player_correct.get(user_id_str, {})
+        correct_count = sum(1 for ok in correctness.values() if ok)
         percent = (
             Decimal(correct_count * 100) / Decimal(total_questions)
             if total_questions > 0
@@ -526,7 +542,9 @@ async def websocket_live(
 
                 is_correct = _answer_is_correct(answer, question.correct_answer)
                 points = calculate_points(is_correct, elapsed, state.time_limit)
-                state.record_answer(str(user.id), answer, points)
+                state.record_answer(
+                    str(user.id), answer, points, is_correct=is_correct
+                )
 
                 await manager.broadcast(
                     session_id,

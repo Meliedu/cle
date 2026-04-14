@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { CheckCircle2, Loader2, Clock } from "lucide-react";
 import type { QuestionMessage } from "@/hooks/use-live-quiz";
 
@@ -30,7 +29,6 @@ export function PlayerView({
 }: PlayerViewProps) {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState(0);
-  const [answerStartTime, setAnswerStartTime] = useState<number>(0);
 
   /* Reset state when a new question arrives.
    *
@@ -43,7 +41,6 @@ export function PlayerView({
     if (questionIndex >= 0) {
       setSelectedAnswer(null);
       setTimeRemaining(questionTimeLimit);
-      setAnswerStartTime(Date.now());
     }
   }, [questionIndex, questionTimeLimit]);
 
