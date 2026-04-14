@@ -27,7 +27,7 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_documents_status_valid",
         "documents",
-        "status IN ('pending', 'processing', 'completed', 'failed')",
+        "status IN ('pending', 'processing', 'ready', 'failed')",
     )
 
     # The rate-limit query filters by (user_id, created_at) without endpoint,
