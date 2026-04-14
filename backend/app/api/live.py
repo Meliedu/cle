@@ -1,5 +1,7 @@
 import logging
 import uuid
+from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import (
     APIRouter,
@@ -19,13 +21,19 @@ from app.api._helpers import verify_enrollment
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.database import async_session_factory
 from app.models.course import Enrollment
-from app.models.quiz import Question, Quiz
+from app.models.quiz import Question, Quiz, QuizAttempt
 from app.models.session import LiveSession
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.schemas.live import CreateLiveSessionRequest, LiveSessionResponse
 from app.services.auth import verify_clerk_token
-from app.services.live_quiz import calculate_points, generate_join_code, manager
+from app.services.gamification import award_xp
+from app.services.live_quiz import (
+    SessionState,
+    calculate_points,
+    generate_join_code,
+    manager,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +73,35 @@ async def _get_session_or_404(db: AsyncSession, session_id: str) -> LiveSession:
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+async def _get_or_rehydrate_state(
+    db: AsyncSession, session: LiveSession
+) -> SessionState:
+    """Fetch in-memory session state; rehydrate from DB if lost (e.g. after
+    a backend restart). Scores accrued before the restart are not recovered —
+    the session resumes from the DB-persisted status/question index."""
+    session_id = str(session.id)
+    state = manager.get_session(session_id)
+    if state is not None:
+        return state
+
+    q_result = await db.execute(
+        select(Quiz)
+        .options(selectinload(Quiz.questions))
+        .where(Quiz.id == session.quiz_id)
+    )
+    quiz = q_result.scalar_one_or_none()
+    total_questions = len(quiz.questions) if quiz else 0
+
+    state = manager.create_session(
+        session_id,
+        total_questions=total_questions,
+        time_limit=session.time_limit_seconds or 30,
+    )
+    state.status = session.status or "waiting"
+    state.current_question_index = session.current_question_index or 0
+    return state
 
 
 @router.post("/courses/{course_id}/live-sessions")
@@ -204,9 +241,7 @@ async def get_live_state(
     session = await _get_session_or_404(db, session_id)
     await verify_enrollment(db, session.course_id, user.id)
 
-    state = manager.get_session(session_id)
-    if not state:
-        raise HTTPException(status_code=404, detail="Session state not found")
+    state = await _get_or_rehydrate_state(db, session)
 
     return APIResponse(
         success=True,
@@ -233,11 +268,15 @@ async def live_next_question(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not session host"
         )
 
-    state = manager.get_session(session_id)
-    if not state:
-        raise HTTPException(status_code=404, detail="Session state not found")
-
+    state = await _get_or_rehydrate_state(db, session)
     state.next_question()
+
+    session.status = state.status
+    session.current_question_index = state.current_question_index
+    if state.status == "active" and session.started_at is None:
+        session.started_at = datetime.now(timezone.utc)
+    await db.commit()
+
     return APIResponse(
         success=True,
         data={
@@ -259,9 +298,7 @@ async def live_answer(
     session = await _get_session_or_404(db, session_id)
     await verify_enrollment(db, session.course_id, user.id)
 
-    state = manager.get_session(session_id)
-    if not state:
-        raise HTTPException(status_code=404, detail="Session state not found")
+    state = await _get_or_rehydrate_state(db, session)
 
     question = await _load_question(db, session.quiz_id, body.question_index)
     if question is None:
@@ -269,11 +306,15 @@ async def live_answer(
 
     is_correct = _answer_is_correct(body.answer, question.correct_answer)
     points = calculate_points(is_correct, body.elapsed_seconds, state.time_limit)
-    state.record_answer(str(user.id), body.answer, points)
+    recorded = state.record_answer(str(user.id), body.answer, points)
 
     return APIResponse(
         success=True,
-        data={"is_correct": is_correct, "points": points},
+        data={
+            "is_correct": is_correct,
+            "points": points if recorded else 0,
+            "already_answered": not recorded,
+        },
     )
 
 
@@ -283,22 +324,74 @@ async def live_end_session(
     user=Depends(require_instructor),
     db: AsyncSession = Depends(get_db),
 ):
-    """End the session (host only)."""
+    """End the session (host only) and persist participant activity."""
     session = await _get_session_or_404(db, session_id)
     if session.host_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not session host"
         )
 
-    state = manager.get_session(session_id)
-    if not state:
-        raise HTTPException(status_code=404, detail="Session state not found")
-
+    state = await _get_or_rehydrate_state(db, session)
     state.status = "finished"
+
+    await _persist_session_activity(db, session, state)
+
+    session.status = "finished"
+    session.ended_at = datetime.now(timezone.utc)
+    await db.commit()
+
     return APIResponse(
         success=True,
         data={"final_leaderboard": state.get_leaderboard()},
     )
+
+
+async def _persist_session_activity(
+    db: AsyncSession, session: LiveSession, state: SessionState
+) -> None:
+    """Create a QuizAttempt row and award XP for each participant.
+
+    Called once when a live session ends. Skips users that already have an
+    attempt for this quiz from this session (idempotent across retries).
+    """
+    total_questions = state.total_questions or 0
+    if total_questions == 0 or not state.player_scores:
+        return
+
+    now = datetime.now(timezone.utc)
+    for user_id_str, score in state.player_scores.items():
+        try:
+            user_uuid = uuid.UUID(user_id_str)
+        except ValueError:
+            continue
+
+        answers = state.player_answers.get(user_id_str, {})
+        correct_count = sum(1 for v in answers.values() if v)
+        percent = (
+            Decimal(correct_count * 100) / Decimal(total_questions)
+            if total_questions > 0
+            else Decimal(0)
+        ).quantize(Decimal("0.01"))
+
+        attempt = QuizAttempt(
+            quiz_id=session.quiz_id,
+            user_id=user_uuid,
+            answers={str(k): v for k, v in answers.items()},
+            score=percent,
+            total_questions=total_questions,
+            correct_count=correct_count,
+            completed_at=now,
+        )
+        db.add(attempt)
+
+        await award_xp(
+            db,
+            user_id=user_uuid,
+            course_id=session.course_id,
+            xp=int(score),
+            activity="quiz",
+            quiz_score=float(percent),
+        )
 
 
 async def _load_question(
@@ -381,13 +474,8 @@ async def websocket_live(
         while True:
             data = await websocket.receive_json()
             msg_type = data.get("type")
-            state = manager.get_session(session_id)
-
-            if not state:
-                await websocket.send_json(
-                    {"type": "error", "message": "Session not found"}
-                )
-                continue
+            async with async_session_factory() as db:
+                state = await _get_or_rehydrate_state(db, session)
 
             if msg_type == "next_question":
                 if not is_host:
@@ -456,6 +544,12 @@ async def websocket_live(
                     )
                     continue
                 state.status = "finished"
+                async with async_session_factory() as db:
+                    db_session = await _get_session_or_404(db, session_id)
+                    await _persist_session_activity(db, db_session, state)
+                    db_session.status = "finished"
+                    db_session.ended_at = datetime.now(timezone.utc)
+                    await db.commit()
                 await manager.broadcast(
                     session_id,
                     {
