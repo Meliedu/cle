@@ -17,6 +17,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import CanvasIntegration, CanvasUserCredential, User
 from app.schemas.common import APIResponse
+from app.services import canvas_client as canvas_client_svc
 from app.services import canvas_oauth
 from app.services.crypto import encrypt_secret
 
@@ -119,6 +120,75 @@ async def disconnect_canvas(
     )
     await db.commit()
     return APIResponse(success=True, data=None)
+
+
+@router.get("/courses", response_model=APIResponse[list[dict]])
+async def list_canvas_courses(
+    role: str = Query("student", pattern="^(student|teacher)$"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse[list[dict]]:
+    """List the caller's Canvas courses for either a teacher or student role.
+
+    For ``role=teacher`` the result includes both Teacher- and TA-enrolled
+    courses, deduplicated by Canvas id. Each row is annotated with the
+    matching Meli course id when one already exists for the same
+    (canvas_base_url, canvas_course_id) pair.
+    """
+    if role == "teacher" and user.role != "instructor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Instructor access required",
+        )
+
+    try:
+        client = await canvas_client_svc.get_client_for_user(db, user.id)
+    except canvas_client_svc.CanvasNotConnected:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "canvas_not_connected"},
+        )
+    except canvas_client_svc.CanvasReauthRequired:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "canvas_reauth_required"},
+        )
+
+    enrollment_type = "teacher" if role == "teacher" else "student"
+    courses = await client.list_my_courses(enrollment_type)
+
+    if role == "teacher":
+        ta_courses = await client.list_my_courses("ta")
+        seen_ids = {c["id"] for c in courses}
+        courses.extend(c for c in ta_courses if c["id"] not in seen_ids)
+
+    canvas_ids = [str(c["id"]) for c in courses]
+    if canvas_ids:
+        rows = (
+            await db.execute(
+                select(CanvasIntegration).where(
+                    CanvasIntegration.canvas_course_id.in_(canvas_ids),
+                    CanvasIntegration.canvas_base_url == client._cred.canvas_base_url,
+                    CanvasIntegration.sync_status != "disconnected",
+                )
+            )
+        ).scalars().all()
+        linked = {row.canvas_course_id: str(row.course_id) for row in rows}
+    else:
+        linked = {}
+
+    return APIResponse(
+        success=True,
+        data=[
+            {
+                "canvas_course_id": str(c["id"]),
+                "name": c.get("name"),
+                "course_code": c.get("course_code"),
+                "already_linked_meli_course_id": linked.get(str(c["id"])),
+            }
+            for c in courses
+        ],
+    )
 
 
 @router.get("/connection", response_model=APIResponse[dict])
