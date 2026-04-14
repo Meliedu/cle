@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { useEnrollByCode } from "@/hooks/use-courses";
 import { ApiError } from "@/lib/api";
 import { StudentCanvasCourses } from "@/components/canvas/student-canvas-courses";
+import { CANVAS_ENABLED } from "@/lib/features";
 
 interface JoinCourseDialogProps {
   readonly open: boolean;
@@ -85,20 +86,24 @@ export function JoinCourseDialog({ open, onOpenChange }: JoinCourseDialogProps) 
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2">
-          <h3 className="text-sm font-semibold text-[var(--color-text)]">
-            My Canvas courses
-          </h3>
-          <StudentCanvasCourses onJoined={() => handleOpenChange(false)} />
-        </div>
+        {CANVAS_ENABLED && (
+          <>
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                My Canvas courses
+              </h3>
+              <StudentCanvasCourses onJoined={() => handleOpenChange(false)} />
+            </div>
 
-        <div className="relative my-2 flex items-center gap-2">
-          <div className="h-px flex-1 bg-[var(--color-border)]" />
-          <span className="text-xs uppercase tracking-wider text-[var(--color-text-muted)]">
-            or
-          </span>
-          <div className="h-px flex-1 bg-[var(--color-border)]" />
-        </div>
+            <div className="relative my-2 flex items-center gap-2">
+              <div className="h-px flex-1 bg-[var(--color-border)]" />
+              <span className="text-xs uppercase tracking-wider text-[var(--color-text-muted)]">
+                or
+              </span>
+              <div className="h-px flex-1 bg-[var(--color-border)]" />
+            </div>
+          </>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">

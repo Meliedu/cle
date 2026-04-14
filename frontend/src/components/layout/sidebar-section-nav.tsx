@@ -15,6 +15,7 @@ import {
   Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CANVAS_ENABLED } from "@/lib/features";
 
 interface SectionItem {
   readonly label: string;
@@ -68,7 +69,9 @@ const SECTION_GROUPS: readonly SectionGroup[] = [
   {
     label: "Integrations",
     items: [
-      { label: "Canvas", value: "canvas", icon: Link2, instructorOnly: true },
+      ...(CANVAS_ENABLED
+        ? ([{ label: "Canvas", value: "canvas", icon: Link2, instructorOnly: true }] as const)
+        : []),
     ],
   },
 ];
