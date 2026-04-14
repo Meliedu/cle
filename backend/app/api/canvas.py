@@ -12,64 +12,14 @@ from app.api.deps import get_db, require_instructor
 from app.models.integration import CanvasIntegration
 from app.models.user import User
 from app.schemas.common import APIResponse
-from app.services.crypto import decrypt_secret, encrypt_secret
+from app.services.crypto import decrypt_secret
 from app.services.url_safety import validate_canvas_base_url
 
 router = APIRouter(prefix="/courses/{course_id}/canvas", tags=["canvas"])
 
 
-class CanvasConnectRequest(BaseModel):
-    canvas_base_url: str
-    canvas_course_id: str
-    access_token: str
-
-
 class CanvasImportRequest(BaseModel):
     file_ids: list[str]
-
-
-@router.post("/connect", response_model=APIResponse[None], status_code=201)
-async def connect_canvas(
-    course_id: uuid.UUID,
-    body: CanvasConnectRequest,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
-):
-    """Connect a Meli course to a Canvas course."""
-    await verify_enrollment(db, course_id, user.id)
-
-    try:
-        normalized_url = validate_canvas_base_url(body.canvas_base_url)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        )
-
-    if not body.access_token.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="access_token is required"
-        )
-
-    existing = await db.execute(
-        select(CanvasIntegration).where(
-            CanvasIntegration.course_id == course_id
-        )
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Canvas already connected for this course",
-        )
-
-    integration = CanvasIntegration(
-        course_id=course_id,
-        canvas_course_id=body.canvas_course_id,
-        canvas_base_url=normalized_url,
-        access_token_encrypted=encrypt_secret(body.access_token),
-    )
-    db.add(integration)
-    await db.commit()
-    return APIResponse(success=True, data=None)
 
 
 @router.get("/files", response_model=APIResponse[list])
