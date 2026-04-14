@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.api import api_router
 from app.config import settings
 from app.middleware import AuthMiddleware, RateLimitMiddleware
+from app.services.canvas_sync import run_scheduler as run_canvas_scheduler
 from app.services.worker import worker_loop
 
 logging.basicConfig(
@@ -24,13 +25,16 @@ for _noisy in ("botocore", "boto3", "urllib3", "s3transfer", "httpx", "httpcore"
 async def lifespan(app: FastAPI):
     shutdown_event = asyncio.Event()
     worker_task = asyncio.create_task(worker_loop(shutdown_event))
+    scheduler_task = asyncio.create_task(run_canvas_scheduler(shutdown_event))
     yield
     shutdown_event.set()
     worker_task.cancel()
-    try:
-        await worker_task
-    except asyncio.CancelledError:
-        pass
+    scheduler_task.cancel()
+    for task in (worker_task, scheduler_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 _is_production = settings.environment == "production"

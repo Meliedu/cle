@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models import Enrollment, PendingEnrollment
 from app.models.user import User
 from app.services.auth import detect_role_from_email, verify_clerk_token
 
@@ -80,6 +81,32 @@ async def get_current_user(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="User provisioning failed",
             )
+
+    # Claim any PendingEnrollment rows pre-provisioned for this email by a
+    # Canvas roster sync. Runs on every authenticated request — cheap (indexed
+    # email lookup) and safe because rows are deleted as they're claimed.
+    pending_rows = (
+        await db.execute(
+            select(PendingEnrollment).where(
+                PendingEnrollment.email == user.email.lower()
+            )
+        )
+    ).scalars().all()
+    if pending_rows:
+        for row in pending_rows:
+            db.add(
+                Enrollment(
+                    course_id=row.course_id, user_id=user.id, role=row.role
+                )
+            )
+            await db.delete(row)
+        try:
+            await db.commit()
+        except Exception:
+            # If the user already has an Enrollment row for any of these
+            # courses (race or duplicate claim), just roll back — the pending
+            # rows will be revisited on a later request.
+            await db.rollback()
 
     await db.execute(
         text("SELECT set_config('app.current_user_id', :uid, true)").bindparams(uid=str(user.id))

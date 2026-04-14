@@ -31,3 +31,5 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     page_count: Mapped[int | None] = mapped_column(Integer)
     word_count: Mapped[int | None] = mapped_column(Integer)
     metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
+    canvas_file_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    canvas_file_etag: Mapped[str | None] = mapped_column(String(100), nullable=True)

@@ -12,8 +12,10 @@ import {
   TrendingUp,
   Trophy,
   Users,
+  Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CANVAS_ENABLED } from "@/lib/features";
 
 interface SectionItem {
   readonly label: string;
@@ -62,6 +64,14 @@ const SECTION_GROUPS: readonly SectionGroup[] = [
       { label: "Progress", value: "progress", icon: TrendingUp, studentOnly: true },
       { label: "Leaderboard", value: "leaderboard", icon: Trophy, studentOnly: true },
       { label: "Students", value: "students", icon: Users, instructorOnly: true },
+    ],
+  },
+  {
+    label: "Integrations",
+    items: [
+      ...(CANVAS_ENABLED
+        ? ([{ label: "Canvas", value: "canvas", icon: Link2, instructorOnly: true }] as const)
+        : []),
     ],
   },
 ];

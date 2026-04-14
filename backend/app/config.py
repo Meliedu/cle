@@ -52,6 +52,24 @@ class Settings(BaseSettings):
     # Example: "canvas.ust.hk,hkust.instructure.com". Empty in dev permits HTTPS to any non-private host.
     canvas_allowed_hosts: str = ""
 
+    # Canvas OAuth 2.0 (Phase 1)
+    canvas_client_id: str = ""
+    canvas_client_secret: str = ""
+    canvas_base_url: str = "https://canvas.ust.hk"
+    canvas_redirect_uri: str = "http://localhost:8000/api/canvas/oauth/callback"
+    # Signing key for OAuth state JWT; 32+ random bytes.
+    # Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+    canvas_state_secret: str = ""
+    canvas_scopes: str = (
+        "url:GET|/api/v1/users/self "
+        "url:GET|/api/v1/users/self/courses "
+        "url:GET|/api/v1/users/self/enrollments "
+        "url:GET|/api/v1/courses/:id "
+        "url:GET|/api/v1/courses/:id/enrollments "
+        "url:GET|/api/v1/courses/:id/files "
+        "url:GET|/api/v1/files/:id"
+    )
+
     # App
     backend_url: str = "http://localhost:8000"
     frontend_url: str = "http://localhost:3000"

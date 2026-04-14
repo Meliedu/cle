@@ -28,6 +28,8 @@ import { Leaderboard } from "@/components/gamification/leaderboard";
 import { BadgeDisplay } from "@/components/gamification/badge-display";
 import { SummaryCard } from "@/components/summary/summary-card";
 import { EnrollCodeCard } from "@/components/course/enroll-code-card";
+import { CanvasTab } from "@/components/canvas/canvas-tab";
+import { CANVAS_ENABLED } from "@/lib/features";
 import { CourseAnalytics } from "@/components/analytics/course-analytics";
 import { RecalibrationOverview } from "@/components/recalibration/overview";
 import { useCourse } from "@/hooks/use-courses";
@@ -95,6 +97,7 @@ const ALLOWED_TABS_INSTRUCTOR = [
   ...ALLOWED_TABS_STUDENT,
   "students",
   "recalibration",
+  ...(CANVAS_ENABLED ? (["canvas"] as const) : []),
 ] as const;
 type AllowedTab =
   | (typeof ALLOWED_TABS_STUDENT)[number]
@@ -469,6 +472,10 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
 
       {activeTab === "recalibration" && isInstructor && (
         <RecalibrationOverview courseId={courseId} />
+      )}
+
+      {CANVAS_ENABLED && activeTab === "canvas" && isInstructor && (
+        <CanvasTab meliCourseId={courseId} />
       )}
 
     </div>

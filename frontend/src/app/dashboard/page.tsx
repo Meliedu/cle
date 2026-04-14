@@ -11,6 +11,8 @@ import { useCourses, type CourseResponse } from "@/hooks/use-courses";
 import { useRole } from "@/hooks/use-role";
 import { CreateCourseDialog } from "@/components/course/create-course-dialog";
 import { JoinCourseDialog } from "@/components/course/join-course-dialog";
+import { CanvasCoursePicker } from "@/components/canvas/canvas-course-picker";
+import { CANVAS_ENABLED } from "@/lib/features";
 import { formatRelativeTime } from "@/lib/format";
 
 export default function DashboardPage() {
@@ -52,6 +54,8 @@ export default function DashboardPage() {
           </Button>
         )}
       </div>
+
+      {isInstructor && CANVAS_ENABLED && <CanvasCoursePicker />}
 
       {courseList.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
