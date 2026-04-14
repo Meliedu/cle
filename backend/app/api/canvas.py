@@ -190,6 +190,7 @@ async def import_canvas_roster_endpoint(
         course_id,
         integration.canvas_course_id,
         body.send_invite_emails,
+        preserve_user_ids={integration.connected_by_user_id},
     )
     integration.last_roster_sync_at = datetime.now(timezone.utc)
     await db.commit()
