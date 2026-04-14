@@ -53,6 +53,7 @@ async def sync_roster(
     meli_course_id: uuid.UUID,
     canvas_course_id: str,
     send_invite_emails: bool,
+    preserve_user_ids: set[uuid.UUID] | None = None,
 ) -> RosterDiff:
     """Reconcile a Meli course's enrollments with its Canvas roster.
 
@@ -64,7 +65,11 @@ async def sync_roster(
       hard-delete. Quiz/flashcard history references ``user_id`` directly,
       so it is preserved.
     - Off-domain emails are counted but never auto-provisioned.
+    - ``preserve_user_ids`` enrollments are never dropped — typically used to
+      protect the instructor who linked the course from being removed if
+      Canvas omits them from the enrollment list.
     """
+    preserve_user_ids = preserve_user_ids or set()
     diff = RosterDiff()
     enrollments = await client.list_course_enrollments(canvas_course_id)
     allowed = _allowed_domains()
@@ -98,6 +103,9 @@ async def sync_roster(
         )
     ).all()
     existing_by_email = {u.email.lower(): enr for enr, u in existing_rows}
+    preserved_emails = {
+        u.email.lower() for _, u in existing_rows if u.id in preserve_user_ids
+    }
 
     existing_pending = (
         await db.execute(
@@ -159,7 +167,7 @@ async def sync_roster(
 
     diff.unchanged = len(want_emails & have_active)
 
-    dropped_emails = have_active - want_emails
+    dropped_emails = (have_active - want_emails) - preserved_emails
     for email in dropped_emails:
         enr = existing_by_email[email]
         await db.execute(

@@ -70,9 +70,9 @@ async def test_roster_import_matches_and_pre_provisions(
     assert d["added"] == 2  # alice + ta
     assert d["pending"] == 1  # bob
     assert d["skipped_off_domain"] == 1  # observer's parent email (designer is on-domain but skipped role)
-    # logged_in_user is enrolled as instructor on the linked course but is not
-    # present in the fake Canvas roster — they get dropped.
-    assert d["dropped"] == 1
+    # logged_in_user is the connected instructor — preserve_user_ids keeps
+    # their enrollment even though Canvas omits them from the roster.
+    assert d["dropped"] == 0
 
     alice_enr = (
         await db_session.execute(
@@ -137,14 +137,20 @@ async def test_roster_import_hard_deletes_drops(
         json={"send_invite_emails": False},
     )
     assert resp.status_code == 200, resp.text
-    # logged_in_user is the instructor on this course — they must NOT be dropped
-    # because they're not in the desired Canvas roster (fake returns []). The
-    # endpoint must scope drops only to roles imported from Canvas, OR the
-    # instructor's own enrollment must be preserved by some mechanism.
-    # The plan's behaviour: drops everyone not in desired. We reflect that —
-    # the test fixture seeds the instructor too; we expect them dropped and
-    # carol dropped. Adjust assertion to count all drops.
-    assert resp.json()["data"]["dropped"] >= 1
+    # logged_in_user is the connected instructor — preserved. Only carol is
+    # dropped (Canvas roster is empty).
+    assert resp.json()["data"]["dropped"] == 1
+
+    # Instructor enrollment must still exist.
+    inst_enr = (
+        await db_session.execute(
+            select(Enrollment).where(
+                Enrollment.user_id == logged_in_user.id,
+                Enrollment.course_id == course.id,
+            )
+        )
+    ).scalar_one_or_none()
+    assert inst_enr is not None
 
     # Carol's enrollment should be hard-deleted
     carol_enr_after = (
