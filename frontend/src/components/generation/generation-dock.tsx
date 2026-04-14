@@ -186,16 +186,6 @@ function IndeterminateBar() {
   return (
     <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-[var(--color-border)]">
       <div className="h-full w-1/3 animate-[generation-dock-progress_1.4s_ease-in-out_infinite] rounded-full bg-[var(--color-primary)]" />
-      <style jsx>{`
-        @keyframes generation-dock-progress {
-          0% {
-            margin-left: -33%;
-          }
-          100% {
-            margin-left: 100%;
-          }
-        }
-      `}</style>
     </div>
   );
 }

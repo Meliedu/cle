@@ -139,3 +139,12 @@
     display: none;
   }
 }
+
+@keyframes generation-dock-progress {
+  0% {
+    margin-left: -33%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
