@@ -54,6 +54,8 @@ interface GenerationJobStore {
     title: string | null;
   }) => void;
   readonly dismissJob: (jobId: string) => void;
+  /** Remove all completed / failed jobs from the dock. Leaves active ones. */
+  readonly dismissAllFinished: () => void;
 }
 
 const POLL_INTERVAL_MS = 2000;
@@ -67,7 +69,8 @@ const KIND_LABEL: Record<GenerationJobKind, string> = {
 type Action =
   | { type: "add"; job: GenerationJob }
   | { type: "update"; jobId: string; patch: Partial<GenerationJob> }
-  | { type: "dismiss"; jobId: string };
+  | { type: "dismiss"; jobId: string }
+  | { type: "dismiss-finished" };
 
 function reducer(
   state: readonly GenerationJob[],
@@ -84,6 +87,10 @@ function reducer(
       );
     case "dismiss":
       return state.filter((j) => j.jobId !== action.jobId);
+    case "dismiss-finished":
+      return state.filter(
+        (j) => j.status === "pending" || j.status === "running"
+      );
   }
 }
 
@@ -139,6 +146,12 @@ export function GenerationJobsProvider({ children }: { children: ReactNode }) {
     },
     []
   );
+
+  const dismissAllFinished = useCallback<
+    GenerationJobStore["dismissAllFinished"]
+  >(() => {
+    dispatch({ type: "dismiss-finished" });
+  }, []);
 
   // Start / stop pollers as jobs enter and leave the store.
   useEffect(() => {
@@ -263,8 +276,8 @@ export function GenerationJobsProvider({ children }: { children: ReactNode }) {
   }, [jobs, queryClient]);
 
   const value = useMemo<GenerationJobStore>(
-    () => ({ jobs, trackJob, dismissJob }),
-    [jobs, trackJob, dismissJob]
+    () => ({ jobs, trackJob, dismissJob, dismissAllFinished }),
+    [jobs, trackJob, dismissJob, dismissAllFinished]
   );
 
   return (
