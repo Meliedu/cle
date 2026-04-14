@@ -490,7 +490,20 @@ Or as a JDBC URL for DBeaver's "URL" mode:
 jdbc:postgresql://hopper.proxy.rlwy.net:21531/railway?sslmode=require
 ```
 
-> ⚠️ **Never share the `postgres` superuser password.** The backend connects as `meli_app` (NOBYPASSRLS, CRUD-only). Teammates should always use `meli_readonly`. If someone needs write access for a one-off migration, use the superuser temporarily via the Railway dashboard and rotate the password afterward.
+#### Full-access role (read/write + DDL)
+
+For migrations, schema tweaks, or data edits. Use `meli_admin` — full privileges on the `railway` database, bypasses RLS. **Not** a cluster superuser.
+
+| Field    | Value                          |
+|----------|--------------------------------|
+| Host     | `hopper.proxy.rlwy.net`        |
+| Port     | `21531`                        |
+| Database | `railway`                      |
+| Username | `meli_admin`                   |
+| Password | `lycVPYQNDYQJCGLGvAZfAAky`      |
+| SSL      | `require`                      |
+
+> ⚠️ **Never share the `postgres` superuser password.** The backend connects as `meli_app` (NOBYPASSRLS, CRUD-only). Default to `meli_readonly`; use `meli_admin` only when you need to write or alter schema.
 
 ### 6. Testing
 
