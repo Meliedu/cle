@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Trophy,
   Users,
+  Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -62,6 +63,12 @@ const SECTION_GROUPS: readonly SectionGroup[] = [
       { label: "Progress", value: "progress", icon: TrendingUp, studentOnly: true },
       { label: "Leaderboard", value: "leaderboard", icon: Trophy, studentOnly: true },
       { label: "Students", value: "students", icon: Users, instructorOnly: true },
+    ],
+  },
+  {
+    label: "Integrations",
+    items: [
+      { label: "Canvas", value: "canvas", icon: Link2, instructorOnly: true },
     ],
   },
 ];
