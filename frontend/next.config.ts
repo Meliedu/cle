@@ -3,6 +3,16 @@ import createNextIntlPlugin from "next-intl/plugin";
 
 const isDev = process.env.NODE_ENV !== "production";
 
+const apiOrigin = (() => {
+  const raw = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (!raw) return "";
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return "";
+  }
+})();
+
 // Clerk requires script + connect to its FAPI + worker; img-src for avatars.
 // Tighten further by replacing 'unsafe-inline' on script-src once Next/Clerk
 // expose nonce-based bootstrapping in this version.
@@ -12,7 +22,7 @@ const cspDirectives = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' https://fonts.gstatic.com data:",
-  "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://api.clerk.com wss: https://openrouter.ai",
+  `connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://api.clerk.com wss: https://openrouter.ai${apiOrigin ? ` ${apiOrigin}` : ""}`,
   "frame-src 'self' https://challenges.cloudflare.com https://*.clerk.accounts.dev",
   "worker-src 'self' blob:",
   "object-src 'none'",
