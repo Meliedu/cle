@@ -176,3 +176,53 @@ async def test_sync_marks_disconnected_when_credential_missing(
 
     await db_session.refresh(integration)
     assert integration.sync_status == "disconnected"
+
+
+@pytest.mark.asyncio
+async def test_manual_sync_triggers_events(
+    async_client, logged_in_user, linked_course_fixture, db_session, monkeypatch
+):
+    """POST /api/courses/{id}/canvas/sync runs a sync and writes events;
+    GET /api/courses/{id}/canvas/sync-events returns them newest-first."""
+    course = linked_course_fixture["meli_course"]
+
+    async def fake_enrollments(self, cid):
+        return [
+            {
+                "user_id": 200,
+                "type": "StudentEnrollment",
+                "user": {"email": "newstu@connect.ust.hk", "name": "New Stu"},
+            }
+        ]
+
+    async def fake_files(self, cid):
+        return [{"id": 7, "display_name": "slides.pdf"}]
+
+    monkeypatch.setattr(
+        canvas_client_svc.CanvasClient,
+        "list_course_enrollments",
+        fake_enrollments,
+    )
+    monkeypatch.setattr(
+        canvas_client_svc.CanvasClient, "list_course_files", fake_files
+    )
+
+    resp = await async_client.post(f"/api/courses/{course.id}/canvas/sync")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["sync_status"] == "active"
+    assert data["last_roster_sync_at"] is not None
+    assert data["last_file_scan_at"] is not None
+
+    events_resp = await async_client.get(
+        f"/api/courses/{course.id}/canvas/sync-events?limit=20"
+    )
+    assert events_resp.status_code == 200, events_resp.text
+    events = events_resp.json()["data"]
+    types = {e["event_type"] for e in events}
+    assert "roster_diff" in types
+    assert "file_scan" in types
+
+    # Newest-first ordering: created_at descending.
+    timestamps = [e["created_at"] for e in events]
+    assert timestamps == sorted(timestamps, reverse=True)
