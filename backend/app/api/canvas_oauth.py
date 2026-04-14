@@ -16,7 +16,7 @@ from app.api.courses import _generate_enroll_code
 from app.api.deps import get_current_user, require_instructor
 from app.config import settings
 from app.database import get_db
-from app.models import CanvasIntegration, CanvasUserCredential, User
+from app.models import CanvasIntegration, CanvasUserCredential, PendingEnrollment, User
 from app.models.course import Course, Enrollment
 from app.schemas.common import APIResponse
 from app.services import canvas_client as canvas_client_svc
@@ -291,6 +291,91 @@ async def link_canvas_course(
     await db.commit()
 
     return APIResponse(success=True, data={"meli_course_id": str(meli_course.id)})
+
+
+@router.post(
+    "/courses/{canvas_course_id}/join", response_model=APIResponse[dict]
+)
+async def join_canvas_course(
+    canvas_course_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse[dict]:
+    """Self-service student join via Canvas enrollment.
+
+    The caller must currently hold a ``StudentEnrollment`` on the Canvas
+    course. Returns 404 if no instructor has linked the course to Meli yet.
+    """
+    try:
+        client = await canvas_client_svc.get_client_for_user(db, user.id)
+    except canvas_client_svc.CanvasNotConnected:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "canvas_not_connected"},
+        )
+    except canvas_client_svc.CanvasReauthRequired:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "canvas_reauth_required"},
+        )
+
+    enrollments = await client.list_course_enrollments(canvas_course_id)
+    cred_canvas_user_id = client._cred.canvas_user_id
+    caller_types = {
+        e.get("type")
+        for e in enrollments
+        if str(e.get("user_id")) == str(cred_canvas_user_id)
+    }
+    if "StudentEnrollment" not in caller_types:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not a student on this Canvas course",
+        )
+
+    integration = (
+        await db.execute(
+            select(CanvasIntegration).where(
+                CanvasIntegration.canvas_course_id == canvas_course_id,
+                CanvasIntegration.canvas_base_url == client._cred.canvas_base_url,
+                CanvasIntegration.sync_status != "disconnected",
+            )
+        )
+    ).scalar_one_or_none()
+    if integration is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Instructor hasn't enabled Meli for this course",
+        )
+
+    existing = (
+        await db.execute(
+            select(Enrollment).where(
+                Enrollment.course_id == integration.course_id,
+                Enrollment.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(
+            Enrollment(
+                course_id=integration.course_id,
+                user_id=user.id,
+                role="student",
+            )
+        )
+
+    # Clean up any matching pre-provisioned pending row.
+    await db.execute(
+        delete(PendingEnrollment).where(
+            PendingEnrollment.course_id == integration.course_id,
+            PendingEnrollment.email == user.email.lower(),
+        )
+    )
+    await db.commit()
+
+    return APIResponse(
+        success=True, data={"meli_course_id": str(integration.course_id)}
+    )
 
 
 @router.get("/connection", response_model=APIResponse[dict])
