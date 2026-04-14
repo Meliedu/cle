@@ -1,4 +1,6 @@
-"""Canvas LMS integration endpoints — import course files from Canvas."""
+"""Canvas LMS course-scoped endpoints — file listing/import + roster."""
+
+from __future__ import annotations
 
 import uuid
 
@@ -9,11 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._helpers import verify_enrollment
 from app.api.deps import get_db, require_instructor
-from app.models.integration import CanvasIntegration
+from app.models import CanvasIntegration, Document
 from app.models.user import User
 from app.schemas.common import APIResponse
-from app.services.crypto import decrypt_secret
-from app.services.url_safety import validate_canvas_base_url
+from app.services import canvas_client as canvas_client_svc
 
 router = APIRouter(prefix="/courses/{course_id}/canvas", tags=["canvas"])
 
@@ -22,70 +23,119 @@ class CanvasImportRequest(BaseModel):
     file_ids: list[str]
 
 
-@router.get("/files", response_model=APIResponse[list])
+def _file_to_dto(f: dict) -> dict:
+    return {
+        "canvas_file_id": str(f["id"]),
+        "display_name": f.get("display_name"),
+        "size": f.get("size"),
+        "content_type": f.get("content-type") or f.get("content_type"),
+        "download_url": f.get("url"),
+        "updated_at": f.get("updated_at"),
+    }
+
+
+@router.get("/files", response_model=APIResponse[dict])
 async def list_canvas_files(
     course_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
-):
-    """List files available in the connected Canvas course."""
+) -> APIResponse[dict]:
+    """Return Canvas files split into available vs already-imported buckets."""
     await verify_enrollment(db, course_id, user.id)
 
-    result = await db.execute(
-        select(CanvasIntegration).where(
-            CanvasIntegration.course_id == course_id
+    integration = (
+        await db.execute(
+            select(CanvasIntegration).where(CanvasIntegration.course_id == course_id)
         )
-    )
-    integration = result.scalar_one_or_none()
-    if not integration:
+    ).scalar_one_or_none()
+    if integration is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Canvas not connected for this course",
         )
 
     try:
-        validate_canvas_base_url(integration.canvas_base_url)
-    except ValueError as exc:
+        client = await canvas_client_svc.get_client_for_user(
+            db, integration.connected_by_user_id
+        )
+    except canvas_client_svc.CanvasNotConnected:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Stored Canvas URL is no longer permitted: {exc}",
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "canvas_reauth_required"},
+        )
+    except canvas_client_svc.CanvasReauthRequired:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "canvas_reauth_required"},
         )
 
-    if not integration.access_token_encrypted:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Canvas integration is missing access token",
+    files = await client.list_course_files(integration.canvas_course_id)
+
+    imported = (
+        await db.execute(
+            select(Document.canvas_file_id).where(
+                Document.course_id == course_id,
+                Document.canvas_file_id.is_not(None),
+            )
         )
-    try:
-        access_token = decrypt_secret(integration.access_token_encrypted)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Canvas access token cannot be decrypted",
-        )
+    ).scalars().all()
+    imported_ids = {str(i) for i in imported}
 
-    from app.services.canvas import CanvasClient
+    available = [_file_to_dto(f) for f in files if str(f["id"]) not in imported_ids]
+    already = [_file_to_dto(f) for f in files if str(f["id"]) in imported_ids]
 
-    client = CanvasClient(integration.canvas_base_url, access_token)
-    try:
-        files = await client.list_course_files(integration.canvas_course_id)
-        return APIResponse(success=True, data=files)
-    finally:
-        await client.close()
+    return APIResponse(
+        success=True,
+        data={"available": available, "already_imported": already},
+    )
 
 
-@router.post("/import", response_model=APIResponse[None])
-async def import_canvas_files(
+@router.post("/files/import", response_model=APIResponse[dict])
+async def import_canvas_files_endpoint(
     course_id: uuid.UUID,
     body: CanvasImportRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
-):
-    """Import selected files from Canvas into Meli.
+) -> APIResponse[dict]:
+    """Import selected Canvas files into Meli — download → R2 → enqueue process."""
+    await verify_enrollment(db, course_id, user.id)
 
-    Flow: download from Canvas → upload to R2 → create document record → create processing task.
-    """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Canvas file import not yet implemented",
+    integration = (
+        await db.execute(
+            select(CanvasIntegration).where(CanvasIntegration.course_id == course_id)
+        )
+    ).scalar_one_or_none()
+    if integration is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Canvas not connected for this course",
+        )
+
+    try:
+        client = await canvas_client_svc.get_client_for_user(
+            db, integration.connected_by_user_id
+        )
+    except canvas_client_svc.CanvasNotConnected:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "canvas_reauth_required"},
+        )
+    except canvas_client_svc.CanvasReauthRequired:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "canvas_reauth_required"},
+        )
+
+    from app.services.canvas_files import import_canvas_files
+
+    result = await import_canvas_files(
+        db, client, course_id, body.file_ids, uploaded_by=user.id
+    )
+    return APIResponse(
+        success=True,
+        data={
+            "imported": result.imported,
+            "skipped": result.skipped,
+            "errors": result.errors,
+        },
     )
