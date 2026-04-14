@@ -1,0 +1,6 @@
+[run]
+concurrency = thread,greenlet
+
+[report]
+show_missing = True
+precision = 1
