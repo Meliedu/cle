@@ -1,5 +1,6 @@
 from app.models.api_usage import ApiUsage
 from app.models.base import Base
+from app.models.canvas import CanvasSyncEvent, CanvasUserCredential, PendingEnrollment
 from app.models.integration import CanvasIntegration
 from app.models.chunk import Chunk
 from app.models.course import Course, Enrollment
@@ -47,6 +48,9 @@ __all__ = [
     "Task",
     "ApiUsage",
     "CanvasIntegration",
+    "CanvasSyncEvent",
+    "CanvasUserCredential",
+    "PendingEnrollment",
     "RevisionSession",
     "RevisionPoolItem",
     "RevisionAttempt",
