@@ -1,6 +1,7 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
 import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
+import { useGenerationJobs } from "@/hooks/use-generation-jobs";
 
 export interface CourseSummary {
   readonly id: string;
@@ -38,15 +39,27 @@ interface GenerateArgs {
   readonly documentIds?: readonly string[];
 }
 
+interface EnqueueSummaryResponse {
+  readonly job_id: string;
+  readonly kind: "generate_summary";
+  readonly course_id: string;
+  readonly title: string | null;
+}
+
+/**
+ * Fire-and-forget summary generation. Returns quickly after the backend
+ * enqueues a job; the GenerationJobs provider takes care of polling for
+ * completion and invalidating this query's cache.
+ */
 export function useGenerateCourseSummary(courseId: string) {
   const { getToken } = useAuth();
-  const queryClient = useQueryClient();
+  const { trackJob } = useGenerationJobs();
 
-  return useMutation<CourseSummary, Error, GenerateArgs>({
+  return useMutation<EnqueueSummaryResponse, Error, GenerateArgs>({
     mutationFn: async ({ documentIds }) => {
       const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
-      const response = await apiFetch<ApiEnvelope<CourseSummary>>(
+      const response = await apiFetch<ApiEnvelope<EnqueueSummaryResponse>>(
         "/rag/generate-summary",
         {
           method: "POST",
@@ -61,7 +74,12 @@ export function useGenerateCourseSummary(courseId: string) {
       return response.data;
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(["course-summary", courseId], data);
+      trackJob({
+        jobId: data.job_id,
+        kind: "generate_summary",
+        courseId,
+        title: null,
+      });
     },
   });
 }

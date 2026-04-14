@@ -1,8 +1,11 @@
 "use client";
 
+import { Toaster } from "sonner";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { GenerationDock } from "@/components/generation/generation-dock";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRole } from "@/hooks/use-role";
+import { GenerationJobsProvider } from "@/hooks/use-generation-jobs";
 
 export default function DashboardLayout({
   children,
@@ -22,5 +25,11 @@ export default function DashboardLayout({
     );
   }
 
-  return <DashboardShell>{children}</DashboardShell>;
+  return (
+    <GenerationJobsProvider>
+      <DashboardShell>{children}</DashboardShell>
+      <GenerationDock />
+      <Toaster position="bottom-right" richColors closeButton />
+    </GenerationJobsProvider>
+  );
 }
