@@ -15,7 +15,14 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = logging.getLogger(__name__)
 
-_PUBLIC_PATH_PREFIXES = ("/health", "/docs", "/openapi.json", "/redoc")
+_PUBLIC_PATH_PREFIXES = (
+    "/health",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    # OAuth redirect from Canvas — browser GET, no Bearer token possible.
+    "/api/canvas/oauth/callback",
+)
 
 
 def _is_public_path(path: str) -> bool:
