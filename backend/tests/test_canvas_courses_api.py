@@ -159,6 +159,76 @@ async def test_list_courses_student_role(async_client, db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_list_courses_student_role_marks_already_linked(
+    async_client, db_session, monkeypatch
+):
+    """Student listing must surface ``already_linked_meli_course_id`` for
+    courses an instructor has already linked, and leave it null otherwise."""
+    student = User(
+        clerk_id="clerk_stu_linked",
+        email="stu-linked@connect.ust.hk",
+        full_name="Stu Linked",
+        role="student",
+    )
+    db_session.add(student)
+    await db_session.commit()
+    await db_session.refresh(student)
+    await _seed_credential(db_session, student)
+
+    # An instructor user already linked Canvas course 777 to a Meli course.
+    instructor = User(
+        clerk_id="clerk_inst_linked",
+        email="inst-linked@ust.hk",
+        full_name="Inst",
+        role="instructor",
+    )
+    db_session.add(instructor)
+    await db_session.flush()
+    linked_course = Course(
+        name="Linked Meli",
+        language="english",
+        instructor_id=instructor.id,
+        enroll_code="STULINK1",
+    )
+    db_session.add(linked_course)
+    await db_session.flush()
+    db_session.add(
+        CanvasIntegration(
+            course_id=linked_course.id,
+            connected_by_user_id=instructor.id,
+            canvas_course_id="777",
+            canvas_base_url="https://canvas.ust.hk",
+            sync_status="active",
+        )
+    )
+    await db_session.commit()
+
+    from app.api.deps import get_current_user
+    from app.main import app as fastapi_app
+
+    async def override_user():
+        return student
+
+    fastapi_app.dependency_overrides[get_current_user] = override_user
+
+    async def fake_list(self, enrollment_type):
+        assert enrollment_type == "student"
+        return [
+            {"id": 777, "name": "Already-linked", "course_code": "L1"},
+            {"id": 888, "name": "Not-yet-linked", "course_code": "N1"},
+        ]
+
+    monkeypatch.setattr(canvas_client_svc.CanvasClient, "list_my_courses", fake_list)
+
+    resp = await async_client.get("/api/canvas/courses?role=student")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    by_id = {c["canvas_course_id"]: c for c in data}
+    assert by_id["777"]["already_linked_meli_course_id"] == str(linked_course.id)
+    assert by_id["888"]["already_linked_meli_course_id"] is None
+
+
+@pytest.mark.asyncio
 async def test_student_requesting_teacher_role_forbidden(
     async_client, db_session, monkeypatch
 ):
