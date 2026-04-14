@@ -12,10 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._helpers import verify_enrollment
 from app.api.deps import get_db, require_instructor
-from app.models import CanvasIntegration, Document
+from app.models import CanvasIntegration, CanvasSyncEvent, Document
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.services import canvas_client as canvas_client_svc
+from app.services import canvas_sync
 
 router = APIRouter(prefix="/courses/{course_id}/canvas", tags=["canvas"])
 
@@ -205,4 +206,75 @@ async def import_canvas_roster_endpoint(
             "skipped_off_domain": diff.skipped_off_domain,
             "errors": diff.errors,
         },
+    )
+
+
+@router.post("/sync", response_model=APIResponse[dict])
+async def trigger_manual_sync(
+    course_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+) -> APIResponse[dict]:
+    """Run a roster diff + file scan immediately for this course's integration."""
+    await verify_enrollment(db, course_id, user.id)
+
+    integration = (
+        await db.execute(
+            select(CanvasIntegration).where(CanvasIntegration.course_id == course_id)
+        )
+    ).scalar_one_or_none()
+    if integration is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Canvas not connected for this course",
+        )
+
+    await canvas_sync.sync_integration(db, integration)
+    await db.refresh(integration)
+
+    return APIResponse(
+        success=True,
+        data={
+            "sync_status": integration.sync_status,
+            "last_roster_sync_at": integration.last_roster_sync_at.isoformat()
+            if integration.last_roster_sync_at
+            else None,
+            "last_file_scan_at": integration.last_file_scan_at.isoformat()
+            if integration.last_file_scan_at
+            else None,
+        },
+    )
+
+
+@router.get("/sync-events", response_model=APIResponse[list[dict]])
+async def list_sync_events(
+    course_id: uuid.UUID,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+) -> APIResponse[list[dict]]:
+    """Return the most recent CanvasSyncEvent rows for a course, newest first."""
+    await verify_enrollment(db, course_id, user.id)
+    limit = max(1, min(limit, 200))
+
+    rows = (
+        await db.execute(
+            select(CanvasSyncEvent)
+            .where(CanvasSyncEvent.course_id == course_id)
+            .order_by(CanvasSyncEvent.created_at.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+
+    return APIResponse(
+        success=True,
+        data=[
+            {
+                "id": str(row.id),
+                "event_type": row.event_type,
+                "payload": row.payload,
+                "created_at": row.created_at.isoformat(),
+            }
+            for row in rows
+        ],
     )
