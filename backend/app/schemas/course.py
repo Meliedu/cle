@@ -30,11 +30,16 @@ class CourseResponse(BaseModel):
     language: str
     semester: str | None
     instructor_id: uuid.UUID
+    enroll_code: str
     settings: dict
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class EnrollByCodeRequest(BaseModel):
+    enroll_code: str
 
 
 class EnrollmentCreate(BaseModel):

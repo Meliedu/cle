@@ -19,6 +19,9 @@ class Course(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     instructor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
+    enroll_code: Mapped[str] = mapped_column(
+        String(16), nullable=False, unique=True, index=True
+    )
     settings: Mapped[dict] = mapped_column(JSON, default=dict)
 
     instructor: Mapped["User"] = relationship("User", lazy="selectin")

@@ -31,6 +31,7 @@ async def seed():
             language="chinese",
             semester="2026-fall",
             instructor_id=instructor.id,
+            enroll_code="DEMO2345",
         )
         session.add(course)
         await session.flush()
