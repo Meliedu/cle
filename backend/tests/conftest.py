@@ -107,6 +107,66 @@ async def logged_in_user(db_session: AsyncSession) -> User:
 
 
 @pytest_asyncio.fixture
+async def canvas_connected_instructor(db_session: AsyncSession, logged_in_user: User):
+    """The default ``logged_in_user`` plus an active CanvasUserCredential row."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models import CanvasUserCredential
+    from app.services.crypto import encrypt_secret
+
+    cred = CanvasUserCredential(
+        user_id=logged_in_user.id,
+        canvas_base_url="https://canvas.ust.hk",
+        canvas_user_id="42",
+        access_token_encrypted=encrypt_secret("at"),
+        refresh_token_encrypted=encrypt_secret("rt"),
+        access_token_expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        scopes="x",
+        status="active",
+    )
+    db_session.add(cred)
+    await db_session.commit()
+    await db_session.refresh(cred)
+    return cred
+
+
+@pytest_asyncio.fixture
+async def linked_course_fixture(
+    db_session: AsyncSession,
+    logged_in_user: User,
+    canvas_connected_instructor,
+):
+    """A Meli Course + CanvasIntegration linked to canvas_course_id=222."""
+    from app.models import CanvasIntegration
+    from app.models.course import Course, Enrollment
+
+    course = Course(
+        name="Phonetics",
+        code="LING220",
+        language="english",
+        instructor_id=logged_in_user.id,
+        enroll_code="LINKED01",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    db_session.add(
+        Enrollment(course_id=course.id, user_id=logged_in_user.id, role="instructor")
+    )
+    integration = CanvasIntegration(
+        course_id=course.id,
+        connected_by_user_id=logged_in_user.id,
+        canvas_course_id="222",
+        canvas_base_url="https://canvas.ust.hk",
+        sync_status="active",
+    )
+    db_session.add(integration)
+    await db_session.commit()
+    await db_session.refresh(course)
+    await db_session.refresh(integration)
+    return {"meli_course": course, "integration": integration}
+
+
+@pytest_asyncio.fixture
 async def async_client(
     db_session: AsyncSession, logged_in_user: User
 ) -> AsyncGenerator[AsyncClient, None]:

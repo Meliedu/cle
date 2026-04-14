@@ -100,6 +100,9 @@ class CanvasClient:
             {"enrollment_type": enrollment_type, "state[]": "available"},
         )
 
+    async def get_course(self, canvas_course_id: str) -> dict:
+        return (await self._request("GET", f"/courses/{canvas_course_id}")).json()
+
     async def list_course_files(self, canvas_course_id: str) -> list[dict]:
         return await self._paginate(f"/courses/{canvas_course_id}/files")
 
