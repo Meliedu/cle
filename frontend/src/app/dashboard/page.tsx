@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { BookOpen, Plus } from "lucide-react";
+import { BookOpen, Plus, KeyRound } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,12 +10,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCourses, type CourseResponse } from "@/hooks/use-courses";
 import { useRole } from "@/hooks/use-role";
 import { CreateCourseDialog } from "@/components/course/create-course-dialog";
+import { JoinCourseDialog } from "@/components/course/join-course-dialog";
 import { formatRelativeTime } from "@/lib/format";
 
 export default function DashboardPage() {
   const { isInstructor } = useRole();
   const { data: courses, isLoading } = useCourses();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
 
   const courseList: readonly CourseResponse[] = courses ?? [];
 
@@ -38,10 +40,15 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-[var(--color-text)]">
           Your Courses
         </h1>
-        {isInstructor && (
+        {isInstructor ? (
           <Button onClick={() => setDialogOpen(true)}>
             <Plus className="size-4" />
             New Course
+          </Button>
+        ) : (
+          <Button onClick={() => setJoinOpen(true)}>
+            <KeyRound className="size-4" />
+            Join Course
           </Button>
         )}
       </div>
@@ -87,12 +94,17 @@ export default function DashboardPage() {
             <p className="mt-2 max-w-sm text-sm text-[var(--color-text-muted)]">
               {isInstructor
                 ? "Create your first course to start uploading materials and generating quizzes."
-                : "You haven't been enrolled in any courses yet. Ask your instructor for an enrollment link."}
+                : "Ask your instructor for the 8-character course code, then enter it to join."}
             </p>
-            {isInstructor && (
+            {isInstructor ? (
               <Button className="mt-6" onClick={() => setDialogOpen(true)}>
                 <Plus className="size-4" />
                 Create Your First Course
+              </Button>
+            ) : (
+              <Button className="mt-6" onClick={() => setJoinOpen(true)}>
+                <KeyRound className="size-4" />
+                Enter Enrollment Code
               </Button>
             )}
           </CardContent>
@@ -100,6 +112,7 @@ export default function DashboardPage() {
       )}
 
       <CreateCourseDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <JoinCourseDialog open={joinOpen} onOpenChange={setJoinOpen} />
     </div>
   );
 }

@@ -27,6 +27,7 @@ import { ProgressCard } from "@/components/gamification/progress-card";
 import { Leaderboard } from "@/components/gamification/leaderboard";
 import { BadgeDisplay } from "@/components/gamification/badge-display";
 import { SummaryCard } from "@/components/summary/summary-card";
+import { EnrollCodeCard } from "@/components/course/enroll-code-card";
 import { CourseAnalytics } from "@/components/analytics/course-analytics";
 import { RecalibrationOverview } from "@/components/recalibration/overview";
 import { useCourse } from "@/hooks/use-courses";
@@ -256,6 +257,9 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
               </p>
             </CardContent>
           </Card>
+
+          {/* Enrollment code — instructors only */}
+          {isInstructor && <EnrollCodeCard enrollCode={course.enroll_code} />}
 
           {/* AI Summary */}
           <SummaryCard courseId={courseId} isInstructor={isInstructor} />

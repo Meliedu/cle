@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
 import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 
@@ -10,6 +10,7 @@ export interface CourseResponse {
   readonly language: string;
   readonly semester: string | null;
   readonly instructor_id: string;
+  readonly enroll_code: string;
   readonly settings: Record<string, unknown>;
   readonly created_at: string;
   readonly updated_at: string;
@@ -33,6 +34,30 @@ export function useCourses() {
     retry: (count, error) => {
       if (isAuthError(error)) return false;
       return count < 3;
+    },
+  });
+}
+
+export function useEnrollByCode() {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (enrollCode: string) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const response = await apiFetch<ApiEnvelope<CourseResponse>>(
+        "/courses/enroll-by-code",
+        {
+          method: "POST",
+          token,
+          body: JSON.stringify({ enroll_code: enrollCode }),
+        }
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["courses"] });
     },
   });
 }
