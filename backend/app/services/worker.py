@@ -58,13 +58,20 @@ async def claim_task(session: AsyncSession) -> Task | None:
     return task
 
 
-async def complete_task(session: AsyncSession, task_id) -> None:
-    result = await session.execute(select(Task).where(Task.id == task_id))
-    task = result.scalar_one_or_none()
+async def complete_task(
+    session: AsyncSession,
+    task_id,
+    result: dict | None = None,
+) -> None:
+    result_row = await session.execute(select(Task).where(Task.id == task_id))
+    task = result_row.scalar_one_or_none()
     if task is None:
         return
     task.status = "completed"
     task.completed_at = _utcnow()
+    if result is not None:
+        # Reassign the whole dict so SQLAlchemy sees the JSON column as dirty.
+        task.payload = {**(task.payload or {}), "result": result}
     await session.commit()
 
 
@@ -105,16 +112,19 @@ async def fail_task(session: AsyncSession, task_id, error: str) -> None:
     await session.commit()
 
 
-async def process_task(session: AsyncSession, task: Task) -> None:
+async def process_task(session: AsyncSession, task: Task) -> dict | None:
+    """Execute a task. Returns an optional result dict for completed jobs."""
     if task.task_type == "process_document":
         from app.services.pipeline import process_document_pipeline
         document_id = task.payload.get("document_id")
         if not document_id:
             raise ValueError("Missing document_id in task payload")
         await process_document_pipeline(session, document_id)
+        return None
     elif task.task_type == "revision_pool_replenish":
         from app.services.pool import replenish_pool
         await replenish_pool(session, task.payload)
+        return None
     elif task.task_type == "recalibration":
         from app.services.recalibrator import run_recalibration_job
         course_id = task.payload.get("course_id")
@@ -122,6 +132,12 @@ async def process_task(session: AsyncSession, task: Task) -> None:
         if not course_id or not content_type:
             raise ValueError("Missing course_id or content_type in recalibration payload")
         await run_recalibration_job(session, uuid.UUID(course_id), content_type)
+        return None
+    elif task.task_type in {"generate_quiz", "generate_flashcards", "generate_summary"}:
+        from app.services.jobs import run_generation_job
+        result = await run_generation_job(session, task.task_type, task.payload)
+        await session.commit()
+        return result
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
 
@@ -160,6 +176,7 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
             # commits (and any rollback they trigger) can't leave the claim
             # session in an undefined state that breaks fail_task.
             try:
+                task_result: dict | None = None
                 async with async_session_factory() as process_session:
                     reloaded = await process_session.get(Task, task_id)
                     if reloaded is None:
@@ -171,10 +188,10 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
                             task_id,
                         )
                         continue
-                    await process_task(process_session, reloaded)
+                    task_result = await process_task(process_session, reloaded)
 
                 async with async_session_factory() as complete_session:
-                    await complete_task(complete_session, task_id)
+                    await complete_task(complete_session, task_id, task_result)
                 logger.info("Task %s completed", task_id)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Task %s failed", task_id)

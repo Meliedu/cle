@@ -1,30 +1,28 @@
 import re
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.models.course import Course, Enrollment
-from app.models.flashcard import FlashcardCard, FlashcardSet, FlashcardSetDocument
-from app.models.quiz import Question, Quiz, QuizDocument
 from app.models.summary import CourseSummary
+from app.models.task import Task
 from app.models.user import User
 from app.schemas.common import APIResponse
-from app.schemas.flashcard import FlashcardCardResponse, FlashcardSetDetailResponse
-from app.schemas.quiz import QuestionResponse, QuizDetailResponse
 from app.schemas.rag import (
     ChunkResult,
     CourseSummaryResponse,
     GenerateFlashcardsRequest,
     GenerateQuizRequest,
     GenerateSummaryRequest,
+    JobAcceptedResponse,
+    JobStatusResponse,
     RAGQueryRequest,
     RAGQueryResponse,
 )
 from app.services.embedder import embed_query
-from app.services.generator import generate_flashcards, generate_quiz, generate_summary
 from app.services.retriever import fulltext_retrieve, hybrid_retrieve, retrieve_chunks
 
 router = APIRouter(prefix="/rag", tags=["rag"])
@@ -134,108 +132,95 @@ async def rag_query(
     return APIResponse(success=True, data=RAGQueryResponse(chunks=chunk_results))
 
 
-@router.post("/generate-quiz", response_model=APIResponse[QuizDetailResponse])
+async def _enqueue_generation_job(
+    db: AsyncSession,
+    *,
+    task_type: str,
+    course_id: uuid.UUID,
+    user_id: uuid.UUID,
+    title: str | None,
+    extra: dict,
+) -> Task:
+    """Create a Task row that the background worker will pick up."""
+    payload = {
+        "course_id": str(course_id),
+        "user_id": str(user_id),
+        **({"title": title} if title is not None else {}),
+        **extra,
+    }
+    task = Task(task_type=task_type, payload=payload)
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+
+def _task_to_status_response(task: Task) -> JobStatusResponse:
+    payload = task.payload or {}
+    course_id = uuid.UUID(payload["course_id"]) if payload.get("course_id") else None
+    title = payload.get("title")
+    result = payload.get("result")
+    return JobStatusResponse(
+        job_id=task.id,
+        kind=task.task_type,  # type: ignore[arg-type]
+        status=task.status,  # type: ignore[arg-type]
+        course_id=course_id,  # type: ignore[arg-type]
+        title=title,
+        result=result if isinstance(result, dict) else None,
+        error=task.error_message,
+        created_at=task.created_at,
+        completed_at=task.completed_at,
+    )
+
+
+@router.post(
+    "/generate-quiz",
+    response_model=APIResponse[JobAcceptedResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def rag_generate_quiz(
     body: GenerateQuizRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
-    import logging
-    log = logging.getLogger(__name__)
-
     await _verify_enrollment(db, body.course_id, user.id)
-    language = await _get_course_language(db, body.course_id)
+    await _get_course_language(db, body.course_id)  # validates course exists
 
-    safe_title = _sanitize_query(body.title)
-    log.info("generate-quiz: embedding query '%s'", safe_title)
-    query_embedding = await embed_query(safe_title)
-
-    log.info("generate-quiz: retrieving chunks (doc_ids=%s)", body.document_ids)
-    chunks = await retrieve_chunks(
+    task = await _enqueue_generation_job(
         db,
+        task_type="generate_quiz",
         course_id=body.course_id,
-        query_embedding=query_embedding,
-        top_k=20,
-        document_ids=body.document_ids,
-    )
-    log.info("generate-quiz: got %d chunks", len(chunks))
-
-    log.info("generate-quiz: calling LLM for %d questions", body.num_questions)
-    generated = await generate_quiz(
-        chunks,
-        num_questions=body.num_questions,
-        language=language,
-    )
-    log.info("generate-quiz: LLM returned %d questions", len(generated))
-
-    quiz = Quiz(
-        course_id=body.course_id,
-        created_by=user.id,
+        user_id=user.id,
         title=body.title,
-        quiz_type="multiple_choice",
-        is_published=False,
+        extra={
+            "num_questions": body.num_questions,
+            "document_ids": [str(d) for d in (body.document_ids or [])] or None,
+        },
     )
-    db.add(quiz)
-    await db.flush()
-
-    questions: list[Question] = []
-    for idx, gq in enumerate(generated):
-        question = Question(
-            quiz_id=quiz.id,
-            question_index=idx,
-            type="multiple_choice",
-            question_text=gq.question_text,
-            options=gq.options,
-            correct_answer=gq.correct_answer,
-            explanation=gq.explanation,
-        )
-        db.add(question)
-        questions.append(question)
-
-    if body.document_ids:
-        for doc_id in body.document_ids:
-            db.add(QuizDocument(quiz_id=quiz.id, document_id=doc_id))
-
-    await db.commit()
-    await db.refresh(quiz)
-
-    question_responses = [
-        QuestionResponse(
-            id=q.id,
-            question_index=q.question_index,
-            type=q.type,
-            question_text=q.question_text,
-            options=q.options,
-            explanation=q.explanation,
-        )
-        for q in questions
-    ]
-
+    response.status_code = status.HTTP_202_ACCEPTED
     return APIResponse(
         success=True,
-        data=QuizDetailResponse(
-            id=quiz.id,
-            course_id=quiz.course_id,
-            title=quiz.title,
-            description=quiz.description,
-            quiz_type=quiz.quiz_type,
-            is_published=quiz.is_published,
-            questions=question_responses,
-            created_at=quiz.created_at,
+        data=JobAcceptedResponse(
+            job_id=task.id,
+            kind="generate_quiz",
+            course_id=body.course_id,
+            title=body.title,
         ),
     )
 
 
 @router.post(
-    "/generate-summary", response_model=APIResponse[CourseSummaryResponse]
+    "/generate-summary",
+    response_model=APIResponse[JobAcceptedResponse],
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def rag_generate_summary(
     body: GenerateSummaryRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
-    # Summary is a course-wide artifact; only the instructor can (re)generate it.
-    # Students see the persisted result inline on the course overview.
     course_result = await db.execute(
         select(Course).where(
             Course.id == body.course_id, Course.deleted_at.is_(None)
@@ -252,41 +237,24 @@ async def rag_generate_summary(
             detail="Only the course instructor can generate a summary",
         )
 
-    query_embedding = await embed_query("comprehensive summary of all material")
-    chunks = await retrieve_chunks(
+    task = await _enqueue_generation_job(
         db,
+        task_type="generate_summary",
         course_id=body.course_id,
-        query_embedding=query_embedding,
-        top_k=20,
-        document_ids=body.document_ids,
+        user_id=user.id,
+        title=None,
+        extra={
+            "document_ids": [str(d) for d in (body.document_ids or [])] or None,
+        },
     )
-
-    summary_text = await generate_summary(chunks, language=course.language)
-
-    existing = await db.execute(
-        select(CourseSummary).where(CourseSummary.course_id == body.course_id)
-    )
-    record = existing.scalar_one_or_none()
-    doc_ids_json = (
-        [str(d) for d in body.document_ids] if body.document_ids else None
-    )
-    if record is None:
-        record = CourseSummary(
-            course_id=body.course_id,
-            summary_text=summary_text,
-            document_ids=doc_ids_json,
-            generated_by=user.id,
-        )
-        db.add(record)
-    else:
-        record.summary_text = summary_text
-        record.document_ids = doc_ids_json
-        record.generated_by = user.id
-    await db.commit()
-    await db.refresh(record)
-
+    response.status_code = status.HTTP_202_ACCEPTED
     return APIResponse(
-        success=True, data=CourseSummaryResponse.model_validate(record)
+        success=True,
+        data=JobAcceptedResponse(
+            job_id=task.id,
+            kind="generate_summary",
+            course_id=body.course_id,
+        ),
     )
 
 
@@ -315,79 +283,67 @@ async def rag_get_course_summary(
 
 @router.post(
     "/generate-flashcards",
-    response_model=APIResponse[FlashcardSetDetailResponse],
+    response_model=APIResponse[JobAcceptedResponse],
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def rag_generate_flashcards(
     body: GenerateFlashcardsRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     # Spec: any enrolled student may generate a flashcard set for their course.
     await _verify_enrollment(db, body.course_id, user.id)
-    language = await _get_course_language(db, body.course_id)
+    await _get_course_language(db, body.course_id)
 
-    safe_title = _sanitize_query(body.title)
-    query_embedding = await embed_query(safe_title)
-    chunks = await retrieve_chunks(
+    task = await _enqueue_generation_job(
         db,
+        task_type="generate_flashcards",
         course_id=body.course_id,
-        query_embedding=query_embedding,
-        top_k=20,
-        document_ids=body.document_ids,
-    )
-
-    generated = await generate_flashcards(
-        chunks,
-        num_cards=body.num_cards,
-        language=language,
-    )
-
-    fc_set = FlashcardSet(
-        course_id=body.course_id,
-        created_by=user.id,
+        user_id=user.id,
         title=body.title,
-        is_published=False,
+        extra={
+            "num_cards": body.num_cards,
+            "document_ids": [str(d) for d in (body.document_ids or [])] or None,
+        },
     )
-    db.add(fc_set)
-    await db.flush()
-
-    cards: list[FlashcardCard] = []
-    for idx, gc in enumerate(generated):
-        card = FlashcardCard(
-            flashcard_set_id=fc_set.id,
-            card_index=idx,
-            front=gc.front,
-            back=gc.back,
-        )
-        db.add(card)
-        cards.append(card)
-
-    if body.document_ids:
-        for doc_id in body.document_ids:
-            db.add(FlashcardSetDocument(flashcard_set_id=fc_set.id, document_id=doc_id))
-
-    await db.commit()
-    await db.refresh(fc_set)
-
-    card_responses = [
-        FlashcardCardResponse(
-            id=c.id,
-            card_index=c.card_index,
-            front=c.front,
-            back=c.back,
-            created_at=c.created_at,
-        )
-        for c in cards
-    ]
-
+    response.status_code = status.HTTP_202_ACCEPTED
     return APIResponse(
         success=True,
-        data=FlashcardSetDetailResponse(
-            id=fc_set.id,
-            course_id=fc_set.course_id,
-            title=fc_set.title,
-            is_published=fc_set.is_published,
-            cards=card_responses,
-            created_at=fc_set.created_at,
+        data=JobAcceptedResponse(
+            job_id=task.id,
+            kind="generate_flashcards",
+            course_id=body.course_id,
+            title=body.title,
         ),
     )
+
+
+@router.get(
+    "/jobs/{job_id}",
+    response_model=APIResponse[JobStatusResponse],
+)
+async def rag_get_job_status(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Poll the status of a generation job.
+
+    Ownership is enforced by matching the caller's user_id against the value
+    stored in ``payload.user_id`` at enqueue time.
+    """
+    row = await db.execute(select(Task).where(Task.id == job_id))
+    task = row.scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if task.task_type not in {"generate_quiz", "generate_flashcards", "generate_summary"}:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    payload = task.payload or {}
+    if str(payload.get("user_id")) != str(user.id):
+        # Do not leak existence of another user's job.
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return APIResponse(success=True, data=_task_to_status_response(task))
