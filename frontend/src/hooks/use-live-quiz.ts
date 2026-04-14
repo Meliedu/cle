@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
 import { apiFetch, isAuthError } from "@/lib/api";
@@ -81,10 +81,20 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
         ? "active"
         : "connected";
 
-  const currentQuestion: QuestionMessage | null =
-    state && state.status === "active"
-      ? { index: state.current_question_index, time_limit: state.time_limit }
-      : null;
+  /* Memoize so consumers depending on `currentQuestion` don't re-fire effects
+   * every 1.5s poll — a new object literal each tick used to reset submitted
+   * answer state in PlayerView and drive infinite score inflation. */
+  const activeIndex =
+    state?.status === "active" ? state.current_question_index : null;
+  const activeTimeLimit =
+    state?.status === "active" ? state.time_limit : null;
+  const currentQuestion: QuestionMessage | null = useMemo(
+    () =>
+      activeIndex !== null && activeTimeLimit !== null
+        ? { index: activeIndex, time_limit: activeTimeLimit }
+        : null,
+    [activeIndex, activeTimeLimit]
+  );
 
   const leaderboard = state?.leaderboard ?? [];
   const participantCount = state?.participant_count ?? 0;

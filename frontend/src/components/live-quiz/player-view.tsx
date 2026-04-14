@@ -6,19 +6,18 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2, Loader2, Clock } from "lucide-react";
 import type { QuestionMessage } from "@/hooks/use-live-quiz";
 
-const OPTION_LABELS = ["A", "B", "C", "D"] as const;
-
-const OPTION_BUTTON_STYLES: Record<string, string> = {
-  A: "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-text-on-primary)]",
-  B: "bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white",
-  C: "bg-[var(--color-success)] hover:bg-[oklch(58%_0.17_155)] text-white",
-  D: "bg-[var(--color-warning)] hover:bg-[oklch(65%_0.16_75)] text-[var(--color-text-on-primary)]",
-};
+const POSITIONAL_BUTTON_STYLES: readonly string[] = [
+  "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-text-on-primary)]",
+  "bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white",
+  "bg-[var(--color-success)] hover:bg-[oklch(58%_0.17_155)] text-white",
+  "bg-[var(--color-warning)] hover:bg-[oklch(65%_0.16_75)] text-[var(--color-text-on-primary)]",
+];
 
 interface PlayerViewProps {
   readonly currentQuestion: QuestionMessage | null;
   readonly questionText?: string;
   readonly options?: Record<string, string>;
+  readonly questionType?: string;
   readonly onAnswer: (answer: string) => void;
 }
 
@@ -26,20 +25,27 @@ export function PlayerView({
   currentQuestion,
   questionText,
   options,
+  questionType,
   onAnswer,
 }: PlayerViewProps) {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [answerStartTime, setAnswerStartTime] = useState<number>(0);
 
-  /* Reset state when a new question arrives */
+  /* Reset state when a new question arrives.
+   *
+   * Depend on index + time_limit only — the hook creates a new wrapping object
+   * on every 1.5s poll, so using the object as the dep would reset the submitted
+   * state every tick and allow the student to re-submit → score inflation. */
+  const questionIndex = currentQuestion?.index ?? -1;
+  const questionTimeLimit = currentQuestion?.time_limit ?? 0;
   useEffect(() => {
-    if (currentQuestion) {
+    if (questionIndex >= 0) {
       setSelectedAnswer(null);
-      setTimeRemaining(currentQuestion.time_limit);
+      setTimeRemaining(questionTimeLimit);
       setAnswerStartTime(Date.now());
     }
-  }, [currentQuestion]);
+  }, [questionIndex, questionTimeLimit]);
 
   /* Countdown timer */
   useEffect(() => {
@@ -150,28 +156,42 @@ export function PlayerView({
           </CardContent>
         </Card>
       ) : (
-        /* Answer buttons */
-        <div className="grid grid-cols-2 gap-3">
-          {OPTION_LABELS.map((label) => {
-            const optionText = options?.[label];
-            const style = OPTION_BUTTON_STYLES[label] ?? "";
+        /* Answer buttons — labels derived from actual option keys so
+         * true_false questions show T/F, not A/B/C/D. */
+        (() => {
+          const keys = options ? Object.keys(options) : [];
+          const isTrueFalse =
+            questionType === "true_false" ||
+            (keys.length === 2 &&
+              keys.every((k) => ["T", "F", "True", "False"].includes(k)));
+          const gridCols = isTrueFalse || keys.length <= 2 ? "grid-cols-2" : "grid-cols-2";
+          return (
+            <div className={`grid ${gridCols} gap-3`}>
+              {keys.map((label, i) => {
+                const optionText = options?.[label];
+                const style = POSITIONAL_BUTTON_STYLES[i] ?? POSITIONAL_BUTTON_STYLES[0];
+                const displayLabel = isTrueFalse
+                  ? label.charAt(0).toUpperCase()
+                  : label;
 
-            return (
-              <button
-                key={label}
-                onClick={() => handleAnswer(label)}
-                className={`flex flex-col items-center justify-center gap-1 rounded-[var(--radius-xl)] px-4 py-6 text-center font-semibold transition-all duration-[var(--duration-fast)] active:scale-95 ${style}`}
-              >
-                <span className="text-2xl">{label}</span>
-                {optionText && (
-                  <span className="text-xs font-normal opacity-90">
-                    {optionText}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+                return (
+                  <button
+                    key={label}
+                    onClick={() => handleAnswer(label)}
+                    className={`flex flex-col items-center justify-center gap-1 rounded-[var(--radius-xl)] px-4 py-6 text-center font-semibold transition-all duration-[var(--duration-fast)] active:scale-95 ${style}`}
+                  >
+                    <span className="text-2xl">{displayLabel}</span>
+                    {optionText && optionText !== label && (
+                      <span className="text-xs font-normal opacity-90">
+                        {optionText}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()
       )}
     </div>
   );
