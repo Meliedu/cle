@@ -377,6 +377,9 @@ async def live_answer(
 
     state = await _get_or_rehydrate_state(db, session)
 
+    if state.status != "active":
+        raise HTTPException(status_code=409, detail="session_not_active")
+
     if body.question_index != state.current_question_index:
         raise HTTPException(
             status_code=409, detail="question_index_mismatch"
@@ -660,6 +663,11 @@ async def websocket_live(
                     question = await _load_question(
                         db, session.quiz_id, question_index
                     )
+                if state.status != "active":
+                    await websocket.send_json(
+                        {"type": "error", "message": "session_not_active"}
+                    )
+                    continue
                 if question_index != state.current_question_index:
                     await websocket.send_json(
                         {
