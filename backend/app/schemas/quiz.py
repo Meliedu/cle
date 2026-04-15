@@ -12,6 +12,9 @@ class QuestionResponse(BaseModel):
     question_text: str
     options: dict | None
     explanation: str | None
+    # Populated only for instructors / quiz creators on endpoints that return
+    # a full quiz detail. Students always see None.
+    correct_answer: str | None = None
 
     model_config = {"from_attributes": True}
 

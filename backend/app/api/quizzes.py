@@ -115,6 +115,10 @@ async def get_quiz(
             detail="Quiz not found",
         )
 
+    # Only instructors or the quiz creator get correct_answer. Students always
+    # receive None so the answer key never leaks to the client during live
+    # quizzes or regular quiz attempts.
+    include_answers = user.role == "instructor" or quiz.created_by == user.id
     question_responses = [
         QuestionResponse(
             id=q.id,
@@ -123,6 +127,7 @@ async def get_quiz(
             question_text=q.question_text,
             options=q.options,
             explanation=q.explanation,
+            correct_answer=q.correct_answer if include_answers else None,
         )
         for q in quiz.questions
     ]
@@ -713,25 +718,70 @@ async def import_to_live(
 # Quiz folders
 # ---------------------------------------------------------------------------
 
+# Maximum nesting depth for folder trees. Prevents unbounded recursion / DoS
+# via deeply nested structures and keeps UI breadcrumbs sane.
+MAX_FOLDER_DEPTH = 10
+
 
 async def _folder_descendant_ids(
     db: AsyncSession, root_id: uuid.UUID
 ) -> set[uuid.UUID]:
-    """Return all descendant folder ids of root_id (inclusive)."""
-    result: set[uuid.UUID] = {root_id}
-    frontier = [root_id]
-    while frontier:
-        rows = (
-            await db.execute(
-                select(QuizFolder.id).where(
-                    QuizFolder.parent_id.in_(frontier),
-                    QuizFolder.deleted_at.is_(None),
-                )
-            )
-        ).scalars().all()
-        frontier = [r for r in rows if r not in result]
-        result.update(frontier)
-    return result
+    """Return all descendant folder ids of root_id (inclusive) via a recursive CTE."""
+    base = (
+        select(QuizFolder.id.label("id"))
+        .where(QuizFolder.id == root_id, QuizFolder.deleted_at.is_(None))
+        .cte(name="quiz_folder_descendants", recursive=True)
+    )
+    recursive = select(QuizFolder.id).where(
+        QuizFolder.parent_id == base.c.id,
+        QuizFolder.deleted_at.is_(None),
+    )
+    cte = base.union_all(recursive)
+    rows = (await db.execute(select(cte.c.id))).scalars().all()
+    return set(rows)
+
+
+async def _quiz_folder_ancestor_depth(
+    db: AsyncSession, parent_id: uuid.UUID
+) -> int:
+    """Return the depth of ``parent_id`` (root = depth 1). Guards against cycles."""
+    depth = 1
+    current: uuid.UUID | None = parent_id
+    visited: set[uuid.UUID] = set()
+    while current is not None:
+        if current in visited:
+            # Cycle detected — treat as max depth so callers reject the op.
+            return MAX_FOLDER_DEPTH + 1
+        visited.add(current)
+        parent = await db.get(QuizFolder, current)
+        if parent is None or parent.deleted_at is not None:
+            break
+        if parent.parent_id is None:
+            break
+        depth += 1
+        if depth > MAX_FOLDER_DEPTH:
+            return depth
+        current = parent.parent_id
+    return depth
+
+
+async def _quiz_folder_first_live_ancestor(
+    db: AsyncSession, folder: QuizFolder
+) -> uuid.UUID | None:
+    """Walk up ancestors, returning the first non-deleted ancestor id or None (root)."""
+    current = folder.parent_id
+    visited: set[uuid.UUID] = set()
+    while current is not None:
+        if current in visited:
+            return None
+        visited.add(current)
+        ancestor = await db.get(QuizFolder, current)
+        if ancestor is None:
+            return None
+        if ancestor.deleted_at is None:
+            return ancestor.id
+        current = ancestor.parent_id
+    return None
 
 
 @router.get(
@@ -794,6 +844,12 @@ async def create_quiz_folder(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Subfolder purpose must match its parent",
+            )
+        parent_depth = await _quiz_folder_ancestor_depth(db, parent.id)
+        if parent_depth >= MAX_FOLDER_DEPTH:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Folder nesting exceeds maximum depth of {MAX_FOLDER_DEPTH}",
             )
     folder = QuizFolder(
         course_id=course_id,
@@ -868,6 +924,12 @@ async def move_quiz_folder(
         descendants = await _folder_descendant_ids(db, folder_id)
         if body.parent_id in descendants:
             raise HTTPException(status_code=400, detail="Cannot move folder into its own descendant")
+        parent_depth = await _quiz_folder_ancestor_depth(db, parent.id)
+        if parent_depth >= MAX_FOLDER_DEPTH:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Folder nesting exceeds maximum depth of {MAX_FOLDER_DEPTH}",
+            )
 
     folder.parent_id = body.parent_id
     await db.commit()
@@ -889,28 +951,25 @@ async def delete_quiz_folder(
         raise HTTPException(status_code=404, detail="Folder not found")
     await _verify_enrollment(db, folder.course_id, user.id)
 
-    # Reparent to this folder's parent, but only if the parent is still live.
-    # If a concurrent request soft-deleted the grandparent, fall back to root
-    # so children don't get stranded under an invisible ancestor.
-    new_parent: uuid.UUID | None = folder.parent_id
-    if new_parent is not None:
-        gp = await db.get(QuizFolder, new_parent)
-        if gp is None or gp.deleted_at is not None:
-            new_parent = None
+    # Reparent to the nearest live ancestor, walking up the chain so children
+    # don't end up orphaned under a soft-deleted grandparent.
+    new_parent = await _quiz_folder_first_live_ancestor(db, folder)
 
-    # Reparent child folders + quizzes to this folder's parent (may be None).
-    await db.execute(
-        Quiz.__table__.update()
-        .where(Quiz.folder_id == folder_id)
-        .values(folder_id=new_parent)
-    )
-    await db.execute(
-        QuizFolder.__table__.update()
-        .where(QuizFolder.parent_id == folder_id)
-        .values(parent_id=new_parent)
-    )
+    # Group the reparent writes + soft-delete inside a SAVEPOINT so a failure
+    # mid-way can't leave the table in a half-updated state.
+    async with db.begin_nested():
+        await db.execute(
+            Quiz.__table__.update()
+            .where(Quiz.folder_id == folder_id)
+            .values(folder_id=new_parent)
+        )
+        await db.execute(
+            QuizFolder.__table__.update()
+            .where(QuizFolder.parent_id == folder_id)
+            .values(parent_id=new_parent)
+        )
+        folder.deleted_at = datetime.now(timezone.utc)
 
-    folder.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     return APIResponse(success=True, data=None)
 
