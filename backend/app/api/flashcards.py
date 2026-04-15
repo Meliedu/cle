@@ -542,7 +542,13 @@ async def delete_flashcard_folder(
         raise HTTPException(status_code=404, detail="Folder not found")
     await _verify_enrollment(db, folder.course_id, user.id)
 
-    new_parent = folder.parent_id
+    # Reparent to this folder's parent, but only if the parent is still live.
+    new_parent: uuid.UUID | None = folder.parent_id
+    if new_parent is not None:
+        gp = await db.get(FlashcardFolder, new_parent)
+        if gp is None or gp.deleted_at is not None:
+            new_parent = None
+
     await db.execute(
         FlashcardSet.__table__.update()
         .where(FlashcardSet.folder_id == folder_id)

@@ -776,6 +776,9 @@ async def create_quiz_folder(
 ):
     await _verify_enrollment(db, course_id, user.id)
 
+    if body.purpose not in {"after_class", "live"}:
+        raise HTTPException(status_code=400, detail="Invalid purpose")
+
     if body.parent_id is not None:
         parent = await db.get(QuizFolder, body.parent_id)
         if (
@@ -787,9 +790,11 @@ async def create_quiz_folder(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Parent folder not found in this course",
             )
-
-    if body.purpose not in {"after_class", "live"}:
-        raise HTTPException(status_code=400, detail="Invalid purpose")
+        if parent.purpose != body.purpose:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Subfolder purpose must match its parent",
+            )
     folder = QuizFolder(
         course_id=course_id,
         name=body.name.strip() or "Untitled",
@@ -855,6 +860,11 @@ async def move_quiz_folder(
             or parent.course_id != folder.course_id
         ):
             raise HTTPException(status_code=400, detail="Parent folder not found in this course")
+        if parent.purpose != folder.purpose:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot move folder under a parent with a different purpose",
+            )
         descendants = await _folder_descendant_ids(db, folder_id)
         if body.parent_id in descendants:
             raise HTTPException(status_code=400, detail="Cannot move folder into its own descendant")
@@ -879,7 +889,14 @@ async def delete_quiz_folder(
         raise HTTPException(status_code=404, detail="Folder not found")
     await _verify_enrollment(db, folder.course_id, user.id)
 
-    new_parent = folder.parent_id
+    # Reparent to this folder's parent, but only if the parent is still live.
+    # If a concurrent request soft-deleted the grandparent, fall back to root
+    # so children don't get stranded under an invisible ancestor.
+    new_parent: uuid.UUID | None = folder.parent_id
+    if new_parent is not None:
+        gp = await db.get(QuizFolder, new_parent)
+        if gp is None or gp.deleted_at is not None:
+            new_parent = None
 
     # Reparent child folders + quizzes to this folder's parent (may be None).
     await db.execute(
@@ -921,6 +938,11 @@ async def move_quiz_to_folder(
             or folder.course_id != quiz.course_id
         ):
             raise HTTPException(status_code=400, detail="Folder not found in this course")
+        if folder.purpose != quiz.purpose:
+            raise HTTPException(
+                status_code=400,
+                detail="Quiz and folder purposes do not match",
+            )
 
     quiz.folder_id = body.folder_id
     await db.commit()
