@@ -740,11 +740,12 @@ async def _folder_descendant_ids(
 )
 async def list_quiz_folders(
     course_id: uuid.UUID,
+    purpose: Literal["after_class", "live"] | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     await _verify_enrollment(db, course_id, user.id)
-    result = await db.execute(
+    stmt = (
         select(QuizFolder)
         .where(
             QuizFolder.course_id == course_id,
@@ -752,6 +753,9 @@ async def list_quiz_folders(
         )
         .order_by(QuizFolder.created_at)
     )
+    if purpose is not None:
+        stmt = stmt.where(QuizFolder.purpose == purpose)
+    result = await db.execute(stmt)
     folders = result.scalars().all()
     return APIResponse(
         success=True,
@@ -784,10 +788,13 @@ async def create_quiz_folder(
                 detail="Parent folder not found in this course",
             )
 
+    if body.purpose not in {"after_class", "live"}:
+        raise HTTPException(status_code=400, detail="Invalid purpose")
     folder = QuizFolder(
         course_id=course_id,
         name=body.name.strip() or "Untitled",
         parent_id=body.parent_id,
+        purpose=body.purpose,
         created_by=user.id,
     )
     db.add(folder)

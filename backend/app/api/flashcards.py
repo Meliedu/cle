@@ -10,7 +10,12 @@ from sqlalchemy.orm import selectinload
 from app.api._helpers import verify_enrollment as _verify_enrollment
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.config import settings
-from app.models.flashcard import FlashcardCard, FlashcardProgress, FlashcardSet
+from app.models.flashcard import (
+    FlashcardCard,
+    FlashcardFolder,
+    FlashcardProgress,
+    FlashcardSet,
+)
 from app.models.scheduler import SchedulerModel
 from app.models.user import User
 from app.schemas.common import APIResponse
@@ -26,9 +31,14 @@ from app.services.scheduler import (
 )
 from app.schemas.flashcard import (
     FlashcardCardResponse,
+    FlashcardFolderCreate,
+    FlashcardFolderMove,
+    FlashcardFolderRename,
+    FlashcardFolderResponse,
     FlashcardProgressResponse,
     FlashcardProgressUpdate,
     FlashcardSetDetailResponse,
+    FlashcardSetMove,
     FlashcardSetResponse,
 )
 
@@ -71,6 +81,7 @@ async def list_flashcard_sets(
             course_id=fc_set.course_id,
             title=fc_set.title,
             is_published=fc_set.is_published,
+            folder_id=fc_set.folder_id,
             card_count=card_count,
             created_at=fc_set.created_at,
         )
@@ -174,6 +185,7 @@ async def publish_flashcard_set(
             course_id=fc_set.course_id,
             title=fc_set.title,
             is_published=fc_set.is_published,
+            folder_id=fc_set.folder_id,
             card_count=card_count,
             created_at=fc_set.created_at,
         ),
@@ -376,5 +388,216 @@ async def update_progress(
             repetitions=progress.repetitions,
             next_review=progress.next_review,
             last_reviewed=progress.last_reviewed,
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Flashcard folders
+# ---------------------------------------------------------------------------
+
+
+async def _fc_folder_descendant_ids(
+    db: AsyncSession, root_id: uuid.UUID
+) -> set[uuid.UUID]:
+    result: set[uuid.UUID] = {root_id}
+    frontier = [root_id]
+    while frontier:
+        rows = (
+            await db.execute(
+                select(FlashcardFolder.id).where(
+                    FlashcardFolder.parent_id.in_(frontier),
+                    FlashcardFolder.deleted_at.is_(None),
+                )
+            )
+        ).scalars().all()
+        frontier = [r for r in rows if r not in result]
+        result.update(frontier)
+    return result
+
+
+@router.get(
+    "/courses/{course_id}/flashcard-folders",
+    response_model=APIResponse[list[FlashcardFolderResponse]],
+)
+async def list_flashcard_folders(
+    course_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    await _verify_enrollment(db, course_id, user.id)
+    result = await db.execute(
+        select(FlashcardFolder)
+        .where(
+            FlashcardFolder.course_id == course_id,
+            FlashcardFolder.deleted_at.is_(None),
+        )
+        .order_by(FlashcardFolder.created_at)
+    )
+    return APIResponse(
+        success=True,
+        data=[FlashcardFolderResponse.model_validate(f) for f in result.scalars().all()],
+    )
+
+
+@router.post(
+    "/courses/{course_id}/flashcard-folders",
+    response_model=APIResponse[FlashcardFolderResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_flashcard_folder(
+    course_id: uuid.UUID,
+    body: FlashcardFolderCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    await _verify_enrollment(db, course_id, user.id)
+    if body.parent_id is not None:
+        parent = await db.get(FlashcardFolder, body.parent_id)
+        if (
+            parent is None
+            or parent.deleted_at is not None
+            or parent.course_id != course_id
+        ):
+            raise HTTPException(status_code=400, detail="Parent folder not found in this course")
+    folder = FlashcardFolder(
+        course_id=course_id,
+        name=body.name.strip() or "Untitled",
+        parent_id=body.parent_id,
+        created_by=user.id,
+    )
+    db.add(folder)
+    await db.commit()
+    await db.refresh(folder)
+    return APIResponse(success=True, data=FlashcardFolderResponse.model_validate(folder))
+
+
+@router.patch(
+    "/flashcard-folders/{folder_id}",
+    response_model=APIResponse[FlashcardFolderResponse],
+)
+async def rename_flashcard_folder(
+    folder_id: uuid.UUID,
+    body: FlashcardFolderRename,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    folder = await db.get(FlashcardFolder, folder_id)
+    if folder is None or folder.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    await _verify_enrollment(db, folder.course_id, user.id)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name cannot be empty")
+    folder.name = name
+    await db.commit()
+    await db.refresh(folder)
+    return APIResponse(success=True, data=FlashcardFolderResponse.model_validate(folder))
+
+
+@router.post(
+    "/flashcard-folders/{folder_id}/move",
+    response_model=APIResponse[FlashcardFolderResponse],
+)
+async def move_flashcard_folder(
+    folder_id: uuid.UUID,
+    body: FlashcardFolderMove,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    folder = await db.get(FlashcardFolder, folder_id)
+    if folder is None or folder.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    await _verify_enrollment(db, folder.course_id, user.id)
+    if body.parent_id is not None:
+        if body.parent_id == folder_id:
+            raise HTTPException(status_code=400, detail="Cannot nest folder inside itself")
+        parent = await db.get(FlashcardFolder, body.parent_id)
+        if (
+            parent is None
+            or parent.deleted_at is not None
+            or parent.course_id != folder.course_id
+        ):
+            raise HTTPException(status_code=400, detail="Parent folder not found in this course")
+        descendants = await _fc_folder_descendant_ids(db, folder_id)
+        if body.parent_id in descendants:
+            raise HTTPException(status_code=400, detail="Cannot move folder into its own descendant")
+    folder.parent_id = body.parent_id
+    await db.commit()
+    await db.refresh(folder)
+    return APIResponse(success=True, data=FlashcardFolderResponse.model_validate(folder))
+
+
+@router.delete(
+    "/flashcard-folders/{folder_id}",
+    response_model=APIResponse[None],
+)
+async def delete_flashcard_folder(
+    folder_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    folder = await db.get(FlashcardFolder, folder_id)
+    if folder is None or folder.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    await _verify_enrollment(db, folder.course_id, user.id)
+
+    new_parent = folder.parent_id
+    await db.execute(
+        FlashcardSet.__table__.update()
+        .where(FlashcardSet.folder_id == folder_id)
+        .values(folder_id=new_parent)
+    )
+    await db.execute(
+        FlashcardFolder.__table__.update()
+        .where(FlashcardFolder.parent_id == folder_id)
+        .values(parent_id=new_parent)
+    )
+    folder.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+    return APIResponse(success=True, data=None)
+
+
+@router.patch(
+    "/flashcard-sets/{set_id}/folder",
+    response_model=APIResponse[FlashcardSetResponse],
+)
+async def move_flashcard_set_to_folder(
+    set_id: uuid.UUID,
+    body: FlashcardSetMove,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    fc_set = await db.get(FlashcardSet, set_id)
+    if fc_set is None or fc_set.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Flashcard set not found")
+    await _verify_enrollment(db, fc_set.course_id, user.id)
+    if body.folder_id is not None:
+        folder = await db.get(FlashcardFolder, body.folder_id)
+        if (
+            folder is None
+            or folder.deleted_at is not None
+            or folder.course_id != fc_set.course_id
+        ):
+            raise HTTPException(status_code=400, detail="Folder not found in this course")
+    fc_set.folder_id = body.folder_id
+    await db.commit()
+    await db.refresh(fc_set)
+
+    count_stmt = select(func.count(FlashcardCard.id)).where(
+        FlashcardCard.flashcard_set_id == fc_set.id
+    )
+    card_count = (await db.execute(count_stmt)).scalar_one()
+
+    return APIResponse(
+        success=True,
+        data=FlashcardSetResponse(
+            id=fc_set.id,
+            course_id=fc_set.course_id,
+            title=fc_set.title,
+            is_published=fc_set.is_published,
+            folder_id=fc_set.folder_id,
+            card_count=card_count,
+            created_at=fc_set.created_at,
         ),
     )
