@@ -3,7 +3,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_factory
@@ -34,6 +34,38 @@ async def _reset_stuck_tasks(session: AsyncSession) -> None:
             Task.started_at < cutoff,
         )
         .values(status="pending")
+    )
+    await session.commit()
+
+
+async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
+    """Tombstone documents that are stuck in 'processing' with no live task.
+
+    Happens when the worker is SIGKILL'd (OOM, forced restart) between
+    'task running' and 'task failed' state transitions, or when a task is
+    cleared out-of-band. Without this, the UI shows a perpetual spinner
+    and re-upload is the user's only recourse.
+    """
+    from app.models.document import Document
+
+    # A document is orphaned if status='processing' but no task of type
+    # process_document referencing it is currently pending or running.
+    await session.execute(
+        text(
+            """
+            UPDATE documents
+               SET status = 'failed',
+                   updated_at = now()
+             WHERE status = 'processing'
+               AND deleted_at IS NULL
+               AND NOT EXISTS (
+                   SELECT 1 FROM tasks t
+                    WHERE t.task_type = 'process_document'
+                      AND (t.payload->>'document_id')::uuid = documents.id
+                      AND t.status IN ('pending', 'running')
+               )
+            """
+        )
     )
     await session.commit()
 
@@ -148,13 +180,14 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
 
     while not shutdown_event.is_set():
         try:
-            # Periodically reset stuck tasks (every ~5 min).
+            # Periodically reset stuck tasks + reconcile orphaned docs.
             if _utcnow() - last_stuck_reset > timedelta(minutes=5):
                 try:
                     async with async_session_factory() as reset_session:
                         await _reset_stuck_tasks(reset_session)
+                        await _reconcile_orphaned_documents(reset_session)
                 except Exception:  # noqa: BLE001
-                    logger.exception("Failed to reset stuck tasks")
+                    logger.exception("Failed to run reconciliation")
                 last_stuck_reset = _utcnow()
 
             # Short-lived claim session so we don't hold a DB connection open
