@@ -4,7 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRole } from "@/hooks/use-role";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import {
@@ -123,125 +125,133 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
 
   const publishedQuizzes = liveQuizzes?.filter((q) => q.is_published);
 
-  const hasSessions = !!sessions && sessions.length > 0;
-
   const sessionsSection = (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {isInstructor && (
-        <Button
-          className="w-full"
-          size="sm"
-          onClick={() => setCreateOpen(true)}
-        >
-          <Plus className="size-4" />
-          Create Session
-        </Button>
-      )}
-
-      {/* Join by code — compact, no card chrome */}
-      <div className="flex flex-col gap-1">
-        <div className="flex items-stretch gap-2">
-          <Input
-            placeholder="Join code"
-            value={joinCodeInput}
-            onChange={(e) => {
-              setJoinCodeInput(e.target.value.toUpperCase());
-              setJoinError(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleJoinByCode();
-            }}
-            maxLength={6}
-            className="h-9 font-mono text-sm tracking-[0.2em] uppercase"
-          />
-          <Button
-            size="sm"
-            disabled={joinCodeInput.length < 6 || findByCode.isPending}
-            onClick={handleJoinByCode}
-          >
-            <Zap className="size-4" />
-            Join
+        <div className="flex justify-end">
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="size-4" />
+            Create Session
           </Button>
         </div>
-        {joinError && (
-          <p className="text-xs text-[var(--color-error)]">{joinError}</p>
-        )}
-      </div>
+      )}
 
-      {/* Active sessions — only rendered when present (no empty state jitter) */}
-      {sessionsLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 2 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 rounded-[var(--radius-md)]" />
-          ))}
-        </div>
-      ) : hasSessions ? (
-        <section className="space-y-2">
-          <h2 className="px-1 text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-            Active · {sessions!.length}
-          </h2>
-          <div className="space-y-1.5">
-            {sessions!.map((session) => (
-              <div
-                key={session.id}
-                className="group flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-2 transition-colors hover:border-[var(--color-border-hover)]"
-              >
-                <Link
-                  href={`/dashboard/courses/${courseId}/live/${session.id}`}
-                  className="flex min-w-0 flex-1 items-center gap-2"
-                >
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-success-light)]">
-                    <Radio className="size-3.5 text-[var(--color-success)]" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-sm font-bold text-[var(--color-text)]">
-                        {session.join_code}
-                      </span>
-                      <span className="text-[11px] text-[var(--color-success)]">
-                        · {session.status}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
-                      <span className="flex items-center gap-0.5">
-                        <Users className="size-3" />
-                        {session.participant_count}
-                      </span>
-                      <span className="flex items-center gap-0.5">
-                        <Clock className="size-3" />
-                        {formatRelativeTime(session.created_at)}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-                {isInstructor && session.is_host && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="size-7 shrink-0 p-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setDeleteConfirmId(session.id);
-                    }}
-                    aria-label="Delete session"
-                  >
-                    <Trash2 className="size-3.5 text-[var(--color-error)]" />
-                  </Button>
-                )}
-              </div>
+      <Card>
+        <CardContent className="flex flex-col gap-2">
+          <div className="flex items-center gap-3">
+            <Input
+              placeholder="Enter join code..."
+              value={joinCodeInput}
+              onChange={(e) => {
+                setJoinCodeInput(e.target.value.toUpperCase());
+                setJoinError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleJoinByCode();
+              }}
+              maxLength={6}
+              className="font-mono text-lg tracking-widest uppercase"
+            />
+            <Button
+              disabled={joinCodeInput.length < 6 || findByCode.isPending}
+              onClick={handleJoinByCode}
+            >
+              <Zap className="size-4" />
+              {findByCode.isPending ? "Joining..." : "Join"}
+            </Button>
+          </div>
+          {joinError && (
+            <p className="text-sm text-[var(--color-error)]">{joinError}</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Active sessions */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium text-[var(--color-text-muted)]">
+          Active Sessions
+        </h2>
+
+        {sessionsLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Skeleton key={i} className="h-20 rounded-[var(--radius-lg)]" />
             ))}
           </div>
-        </section>
-      ) : null}
-
-      {/* Empty state only when there genuinely are no sessions — compact */}
-      {!sessionsLoading && !hasSessions && (
-        <p className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] px-3 py-4 text-center text-xs text-[var(--color-text-muted)]">
-          {isInstructor
-            ? "No active sessions. Pick a quiz from the bank to start one."
-            : "No active sessions right now."}
-        </p>
-      )}
+        ) : sessions && sessions.length > 0 ? (
+          <div className="space-y-3">
+            {sessions.map((session) => (
+              <Card
+                key={session.id}
+                className="transition-all duration-[var(--duration-fast)] hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)]"
+              >
+                <CardContent className="flex items-center gap-4">
+                  <Link
+                    href={`/dashboard/courses/${courseId}/live/${session.id}`}
+                    className="flex min-w-0 flex-1 items-center gap-4"
+                  >
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-success-light)]">
+                      <Radio className="size-5 text-[var(--color-success)]" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-bold text-[var(--color-text)]">
+                          {session.join_code}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className="border-[var(--color-success)] text-[var(--color-success)]"
+                        >
+                          {session.status}
+                        </Badge>
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-3 text-xs text-[var(--color-text-muted)]">
+                        <span className="flex items-center gap-1">
+                          <Users className="size-3" />
+                          {session.participant_count} participants
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="size-3" />
+                          {formatRelativeTime(session.created_at)}
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                  {isInstructor && session.is_host && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setDeleteConfirmId(session.id);
+                      }}
+                      aria-label="Delete session"
+                    >
+                      <Trash2 className="size-4 text-[var(--color-error)]" />
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card>
+            <CardContent className="flex flex-col items-center py-12 text-center">
+              <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-primary-light)]">
+                <Radio className="size-6 text-[var(--color-primary)]" />
+              </div>
+              <h3 className="font-semibold text-[var(--color-text)]">
+                No active sessions
+              </h3>
+              <p className="mt-1 max-w-sm text-sm text-[var(--color-text-muted)]">
+                {isInstructor
+                  ? "Create a live quiz session to engage your students in real-time."
+                  : "There are no active live sessions right now. Check back later or enter a join code."}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </section>
     </div>
   );
 
