@@ -2,27 +2,23 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3 } from "lucide-react";
-
-const OPTION_COLORS: Record<string, string> = {
-  A: "var(--color-primary)",
-  B: "var(--color-accent)",
-  C: "var(--color-success)",
-  D: "var(--color-warning)",
-};
+import { OPTION_BAR_COLORS } from "@/components/live-quiz/option-colors";
 
 interface AnswerDistributionProps {
   readonly distribution: Record<string, number>;
+  readonly optionKeys: readonly string[];
   readonly correctAnswer?: string;
   readonly totalAnswers: number;
 }
 
 export function AnswerDistribution({
   distribution,
+  optionKeys,
   correctAnswer,
   totalAnswers,
 }: AnswerDistributionProps) {
-  const maxCount = Math.max(...Object.values(distribution), 1);
-  const options = ["A", "B", "C", "D"];
+  const counts = optionKeys.map((k) => distribution[k] ?? 0);
+  const maxCount = Math.max(...counts, 1);
 
   return (
     <Card>
@@ -33,12 +29,12 @@ export function AnswerDistribution({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {options.map((option) => {
+        {optionKeys.map((option, i) => {
           const count = distribution[option] ?? 0;
           const percentage = totalAnswers > 0 ? (count / totalAnswers) * 100 : 0;
           const widthPercent = maxCount > 0 ? (count / maxCount) * 100 : 0;
           const isCorrect = correctAnswer === option;
-          const barColor = OPTION_COLORS[option] ?? "var(--color-text-muted)";
+          const barColor = OPTION_BAR_COLORS[i] ?? "var(--color-text-muted)";
 
           return (
             <div key={option} className="space-y-1">
@@ -63,7 +59,7 @@ export function AnswerDistribution({
                   style={{
                     width: `${widthPercent}%`,
                     backgroundColor: barColor,
-                    opacity: isCorrect ? 1 : 0.6,
+                    opacity: isCorrect ? 1 : 0.75,
                   }}
                 />
               </div>

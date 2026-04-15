@@ -14,6 +14,8 @@ interface LobbyProps {
   readonly participantCount: number;
   readonly isHost: boolean;
   readonly status: LiveStatus;
+  readonly isAnonymous?: boolean;
+  readonly onAnonymityChange?: (anonymous: boolean) => void;
   readonly onStart: () => void;
 }
 
@@ -23,6 +25,8 @@ export function Lobby({
   participantCount,
   isHost,
   status,
+  isAnonymous = false,
+  onAnonymityChange,
   onStart,
 }: LobbyProps) {
   const [copiedCode, setCopiedCode] = useState(false);
@@ -130,6 +134,26 @@ export function Lobby({
           </div>
         </CardContent>
       </Card>
+
+      {/* Student anonymity opt-in — hide name from the leaderboard. */}
+      {!isHost && onAnonymityChange && (
+        <label className="flex w-full cursor-pointer items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+          <input
+            type="checkbox"
+            checked={isAnonymous}
+            onChange={(e) => onAnonymityChange(e.target.checked)}
+            className="size-4 accent-[var(--color-primary)]"
+          />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-[var(--color-text)]">
+              Stay anonymous
+            </p>
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Your name won&apos;t appear on the leaderboard.
+            </p>
+          </div>
+        </label>
+      )}
 
       {/* Action area */}
       {isHost ? (

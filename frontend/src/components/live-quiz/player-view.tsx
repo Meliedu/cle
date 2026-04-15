@@ -2,21 +2,20 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { CheckCircle2, Loader2, Clock } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Clock } from "lucide-react";
 import type { QuestionMessage } from "@/hooks/use-live-quiz";
-
-const POSITIONAL_BUTTON_STYLES: readonly string[] = [
-  "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-text-on-primary)]",
-  "bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white",
-  "bg-[var(--color-success)] hover:bg-[oklch(58%_0.17_155)] text-white",
-  "bg-[var(--color-warning)] hover:bg-[oklch(65%_0.16_75)] text-[var(--color-text-on-primary)]",
-];
+import {
+  OPTION_BUTTON_STYLES,
+  OPTION_ICONS,
+} from "@/components/live-quiz/option-colors";
 
 interface PlayerViewProps {
   readonly currentQuestion: QuestionMessage | null;
   readonly questionText?: string;
   readonly options?: Record<string, string>;
   readonly questionType?: string;
+  readonly elapsedSeconds?: number;
+  readonly correctAnswer?: string;
   readonly onAnswer: (answer: string) => void;
 }
 
@@ -25,41 +24,39 @@ export function PlayerView({
   questionText,
   options,
   questionType,
+  elapsedSeconds = 0,
+  correctAnswer,
   onAnswer,
 }: PlayerViewProps) {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [tick, setTick] = useState(0);
 
-  /* Reset state when a new question arrives.
-   *
-   * Depend on index + time_limit only — the hook creates a new wrapping object
-   * on every 1.5s poll, so using the object as the dep would reset the submitted
-   * state every tick and allow the student to re-submit → score inflation. */
+  /* Reset answer state when a new question arrives. Deps are primitives so
+   * polling doesn't reset this every tick — that used to drive duplicate
+   * submissions. */
   const questionIndex = currentQuestion?.index ?? -1;
-  const questionTimeLimit = currentQuestion?.time_limit ?? 0;
   useEffect(() => {
-    if (questionIndex >= 0) {
-      setSelectedAnswer(null);
-      setTimeRemaining(questionTimeLimit);
-    }
-  }, [questionIndex, questionTimeLimit]);
+    if (questionIndex >= 0) setSelectedAnswer(null);
+  }, [questionIndex]);
 
-  /* Countdown timer */
+  /* Run the ticker unconditionally while a question is live — previously it
+   * stopped as soon as the student answered, so the countdown visibly froze
+   * at whatever value it had when they clicked. */
   useEffect(() => {
-    if (!currentQuestion || selectedAnswer) return;
-
-    const interval = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
+    if (!currentQuestion) return;
+    const interval = setInterval(() => setTick((n) => n + 1), 250);
     return () => clearInterval(interval);
-  }, [currentQuestion, selectedAnswer]);
+  }, [currentQuestion]);
+
+  /* Server-anchored countdown. The poll hands us `elapsedSeconds` from the
+   * server; we add a local monotonically-increasing offset so the timer
+   * reads smoothly between polls instead of jumping every 1.5s. */
+  const timeRemaining = currentQuestion
+    ? Math.max(
+        0,
+        Math.ceil(currentQuestion.time_limit - elapsedSeconds - (tick * 0.25))
+      )
+    : 0;
 
   const handleAnswer = useCallback(
     (option: string) => {
@@ -70,7 +67,6 @@ export function PlayerView({
     [selectedAnswer, timeRemaining, onAnswer]
   );
 
-  /* Waiting for next question */
   if (!currentQuestion) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-16">
@@ -82,7 +78,6 @@ export function PlayerView({
     );
   }
 
-  /* Timer progress */
   const timerPercent =
     currentQuestion.time_limit > 0
       ? (timeRemaining / currentQuestion.time_limit) * 100
@@ -94,6 +89,16 @@ export function PlayerView({
       : timerPercent > 20
         ? "var(--color-warning)"
         : "var(--color-error)";
+
+  const keys = options ? Object.keys(options) : [];
+  const isTrueFalse =
+    questionType === "true_false" ||
+    (keys.length === 2 &&
+      keys.every((k) => ["T", "F", "True", "False"].includes(k)));
+
+  const isRevealing = timeRemaining <= 0 && !!correctAnswer;
+  const answeredCorrectly =
+    selectedAnswer != null && correctAnswer != null && selectedAnswer === correctAnswer;
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-4">
@@ -110,7 +115,7 @@ export function PlayerView({
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-[var(--color-surface-hover)]">
           <div
-            className="h-full rounded-full transition-all duration-1000 ease-linear"
+            className="h-full rounded-full transition-all duration-[var(--duration-normal)] ease-linear"
             style={{
               width: `${timerPercent}%`,
               backgroundColor: timerColor,
@@ -119,7 +124,6 @@ export function PlayerView({
         </div>
       </div>
 
-      {/* Question text */}
       {questionText && (
         <Card>
           <CardContent className="py-4">
@@ -130,8 +134,37 @@ export function PlayerView({
         </Card>
       )}
 
-      {/* Already answered */}
-      {selectedAnswer ? (
+      {isRevealing ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-8">
+            {answeredCorrectly ? (
+              <>
+                <CheckCircle2 className="size-10 text-[var(--color-success)]" />
+                <p className="text-sm font-medium text-[var(--color-success)]">
+                  Correct! You answered {selectedAnswer}.
+                </p>
+              </>
+            ) : selectedAnswer ? (
+              <>
+                <XCircle className="size-10 text-[var(--color-error)]" />
+                <p className="text-sm font-medium text-[var(--color-error)]">
+                  Not quite — the correct answer was {correctAnswer}.
+                </p>
+              </>
+            ) : (
+              <>
+                <Clock className="size-10 text-[var(--color-error)]" />
+                <p className="text-sm font-medium text-[var(--color-text)]">
+                  Time is up! Correct answer: {correctAnswer}.
+                </p>
+              </>
+            )}
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Waiting for the next question...
+            </p>
+          </CardContent>
+        </Card>
+      ) : selectedAnswer ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-8">
             <CheckCircle2 className="size-10 text-[var(--color-success)]" />
@@ -153,42 +186,36 @@ export function PlayerView({
           </CardContent>
         </Card>
       ) : (
-        /* Answer buttons — labels derived from actual option keys so
-         * true_false questions show T/F, not A/B/C/D. */
-        (() => {
-          const keys = options ? Object.keys(options) : [];
-          const isTrueFalse =
-            questionType === "true_false" ||
-            (keys.length === 2 &&
-              keys.every((k) => ["T", "F", "True", "False"].includes(k)));
-          const gridCols = isTrueFalse || keys.length <= 2 ? "grid-cols-2" : "grid-cols-2";
-          return (
-            <div className={`grid ${gridCols} gap-3`}>
-              {keys.map((label, i) => {
-                const optionText = options?.[label];
-                const style = POSITIONAL_BUTTON_STYLES[i] ?? POSITIONAL_BUTTON_STYLES[0];
-                const displayLabel = isTrueFalse
-                  ? label.charAt(0).toUpperCase()
-                  : label;
+        <div className="grid grid-cols-2 gap-3">
+          {keys.map((label, i) => {
+            const optionText = options?.[label];
+            const style = OPTION_BUTTON_STYLES[i] ?? OPTION_BUTTON_STYLES[0];
+            const icon = OPTION_ICONS[i] ?? "";
+            const displayLabel = isTrueFalse
+              ? label.charAt(0).toUpperCase()
+              : label;
 
-                return (
-                  <button
-                    key={label}
-                    onClick={() => handleAnswer(label)}
-                    className={`flex flex-col items-center justify-center gap-1 rounded-[var(--radius-xl)] px-4 py-6 text-center font-semibold transition-all duration-[var(--duration-fast)] active:scale-95 ${style}`}
-                  >
-                    <span className="text-2xl">{displayLabel}</span>
-                    {optionText && optionText !== label && (
-                      <span className="text-xs font-normal opacity-90">
-                        {optionText}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          );
-        })()
+            return (
+              <button
+                key={label}
+                onClick={() => handleAnswer(label)}
+                className={`flex flex-col items-center justify-center gap-2 rounded-[var(--radius-xl)] px-4 py-6 text-center font-semibold shadow-[var(--shadow-md)] transition-all duration-[var(--duration-fast)] hover:scale-[1.02] active:scale-95 ${style}`}
+              >
+                <span className="flex items-center gap-2 text-2xl">
+                  <span aria-hidden="true" className="text-base opacity-80">
+                    {icon}
+                  </span>
+                  {displayLabel}
+                </span>
+                {optionText && optionText !== label && (
+                  <span className="text-xs font-normal opacity-90">
+                    {optionText}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );

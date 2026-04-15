@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,7 @@ import type {
   QuestionMessage,
   LeaderboardEntry,
   LiveStatus,
+  ReviewMode,
 } from "@/hooks/use-live-quiz";
 
 interface QuestionData {
@@ -31,6 +32,9 @@ interface HostPanelProps {
   readonly leaderboard: readonly LeaderboardEntry[];
   readonly participantCount: number;
   readonly totalQuestions: number;
+  readonly answerDistribution: Record<string, number>;
+  readonly elapsedSeconds: number;
+  readonly reviewMode: ReviewMode;
   readonly onNextQuestion: () => void;
   readonly onEndSession: () => void;
 }
@@ -42,44 +46,50 @@ export function HostPanel({
   leaderboard,
   participantCount,
   totalQuestions,
+  answerDistribution,
+  elapsedSeconds,
+  reviewMode,
   onNextQuestion,
   onEndSession,
 }: HostPanelProps) {
-  const [timeRemaining, setTimeRemaining] = useState(0);
-
-  /* Timer countdown */
-  useEffect(() => {
-    if (!currentQuestion) return;
-    setTimeRemaining(currentQuestion.time_limit);
-
-    const interval = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [currentQuestion]);
+  /* Server-anchored timer: use elapsed from /state, not a client-only counter.
+   * That way host and students agree on when time is up even if React re-renders
+   * drift. */
+  const timeRemaining = currentQuestion
+    ? Math.max(0, Math.ceil(currentQuestion.time_limit - elapsedSeconds))
+    : 0;
 
   const questionIndex = currentQuestion?.index ?? 0;
   const isLastQuestion = questionIndex >= totalQuestions - 1;
+  const isTimeUp = !!currentQuestion && timeRemaining <= 0;
 
-  /* Build answer distribution skeleton keyed by this question's actual option
-   * keys so true_false (T/F) renders correctly, not hardcoded A/B/C/D. */
-  const distribution: Record<string, number> = Object.fromEntries(
-    Object.keys(questionData?.options ?? { A: "", B: "", C: "", D: "" }).map(
-      (k) => [k, 0]
-    )
+  /* Auto-advance in "final" review mode: the whole point is to finish the
+   * quiz first then review at the end, so the host shouldn't have to click.
+   * In per_question mode, hold on the reveal until the host clicks next. */
+  const autoAdvancedRef = useRef<number>(-1);
+  useEffect(() => {
+    if (!currentQuestion) return;
+    if (!isTimeUp) return;
+    if (reviewMode !== "final") return;
+    if (autoAdvancedRef.current === currentQuestion.index) return;
+    autoAdvancedRef.current = currentQuestion.index;
+    onNextQuestion();
+  }, [currentQuestion, isTimeUp, reviewMode, onNextQuestion]);
+
+  const optionKeys = questionData?.options
+    ? Object.keys(questionData.options)
+    : [];
+  const totalAnswers = Object.values(answerDistribution).reduce(
+    (a, b) => a + b,
+    0
   );
-  const totalAnswers = leaderboard.length;
+
+  /* Per-question review: once time is up, reveal correct answer on the card. */
+  const isRevealing = reviewMode === "per_question" && isTimeUp;
+  const revealCorrect = isRevealing ? questionData?.correct_answer : undefined;
 
   return (
     <div className="space-y-4">
-      {/* Top bar: status + stats */}
       <div className="flex flex-wrap items-center gap-3">
         <Badge
           variant="outline"
@@ -90,6 +100,12 @@ export function HostPanel({
           }
         >
           {status === "active" ? "Live" : status}
+        </Badge>
+
+        <Badge variant="outline" className="text-[var(--color-text-muted)]">
+          {reviewMode === "per_question"
+            ? "Review after each"
+            : "Review at the end"}
         </Badge>
 
         <div className="flex items-center gap-1 text-sm text-[var(--color-text-muted)]">
@@ -124,7 +140,6 @@ export function HostPanel({
         )}
       </div>
 
-      {/* Question display */}
       {questionData && (
         <Card>
           <CardHeader>
@@ -156,14 +171,15 @@ export function HostPanel({
         </Card>
       )}
 
-      {/* Answer distribution */}
-      <AnswerDistribution
-        distribution={distribution}
-        correctAnswer={questionData?.correct_answer}
-        totalAnswers={totalAnswers}
-      />
+      {optionKeys.length > 0 && (
+        <AnswerDistribution
+          distribution={answerDistribution}
+          optionKeys={optionKeys}
+          correctAnswer={revealCorrect ?? questionData?.correct_answer}
+          totalAnswers={totalAnswers}
+        />
+      )}
 
-      {/* Mini leaderboard */}
       {leaderboard.length > 0 && (
         <Card>
           <CardHeader>
@@ -179,7 +195,8 @@ export function HostPanel({
                   #{entry.rank}
                 </span>
                 <span className="flex-1 truncate text-sm text-[var(--color-text)]">
-                  {entry.full_name ??
+                  {entry.display_name ??
+                    entry.full_name ??
                     `Player ${entry.user_id.slice(0, 4)}`}
                 </span>
                 <span className="text-sm font-semibold text-[var(--color-primary)]">
@@ -191,14 +208,19 @@ export function HostPanel({
         </Card>
       )}
 
-      {/* Action buttons */}
       <div className="flex gap-3">
         <Button
           className="flex-1"
           onClick={onNextQuestion}
           disabled={status !== "active"}
         >
-          {isLastQuestion ? "Show Results" : "Next Question"}
+          {isRevealing
+            ? isLastQuestion
+              ? "Show Results"
+              : "Next Question"
+            : isLastQuestion
+              ? "Show Results"
+              : "Next Question"}
           <ChevronRight className="size-4" />
         </Button>
         <Button variant="destructive" onClick={onEndSession}>

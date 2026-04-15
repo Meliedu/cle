@@ -67,7 +67,7 @@ export function Podium({ leaderboard }: PodiumProps) {
                       {style.icon}
                     </div>
                     <p className="max-w-[100px] truncate text-center text-sm font-semibold text-[var(--color-text)]">
-                      {entry.full_name ?? `Player ${entry.user_id.slice(0, 4)}`}
+                      {entry.display_name ?? entry.full_name ?? `Player ${entry.user_id.slice(0, 4)}`}
                     </p>
                     <p className="text-xs font-medium text-[var(--color-primary)]">
                       {entry.score.toLocaleString()} pts
