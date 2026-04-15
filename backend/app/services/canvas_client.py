@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import CanvasUserCredential
 from app.services import canvas_oauth
 from app.services.crypto import decrypt_secret, encrypt_secret
@@ -43,6 +45,44 @@ class CanvasNotConnected(Exception):
 
 class CanvasReauthRequired(Exception):
     """Refresh failed — user must re-run OAuth."""
+
+
+class CanvasDownloadUrlRejected(Exception):
+    """download_file was called with a URL that failed host validation."""
+
+
+def _validate_download_url(download_url: str, canvas_base_url: str) -> None:
+    """Reject download URLs that don't point at the user's Canvas host or a
+    narrowly-allowlisted Canvas file-delivery CDN.
+
+    Canvas typically serves file payloads either from the institution's own
+    Canvas host or from ``*.instructure.com`` (the Canvas file delivery CDN).
+    If the operator has configured ``canvas_allowed_hosts`` we also treat
+    each entry as an acceptable suffix match.
+    """
+    parsed = urlparse(download_url)
+    if parsed.scheme != "https":
+        raise CanvasDownloadUrlRejected("download URL must be https")
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise CanvasDownloadUrlRejected("download URL missing hostname")
+
+    base_host = (urlparse(canvas_base_url).hostname or "").lower()
+    configured = [
+        h.strip().lower()
+        for h in (settings.canvas_allowed_hosts or "").split(",")
+        if h.strip()
+    ]
+
+    candidates = {base_host, "instructure.com"}
+    candidates.update(configured)
+    candidates.discard("")
+
+    if any(host == c or host.endswith("." + c) for c in candidates):
+        return
+    raise CanvasDownloadUrlRejected(
+        f"download URL host '{host}' is not an allowed Canvas host"
+    )
 
 
 class CanvasClient:
@@ -166,8 +206,13 @@ class CanvasClient:
         return (await self._request("GET", f"/files/{file_id}")).json()
 
     async def download_file(self, download_url: str) -> bytes:
+        # Guard against SSRF: Canvas's list_course_files returns attacker-
+        # influenceable URLs (file uploads can carry a redirect target in
+        # some deployments). Require https + an allowed Canvas host, and
+        # disable redirect following so a 3xx can't smuggle us elsewhere.
+        _validate_download_url(download_url, self._cred.canvas_base_url)
         async with httpx.AsyncClient(
-            timeout=120.0, transport=self._transport
+            timeout=120.0, transport=self._transport, follow_redirects=False
         ) as client:
             response = await client.get(download_url)
             response.raise_for_status()
