@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { FileText, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -144,9 +146,11 @@ export function SummaryCard({ courseId, isInstructor }: SummaryCardProps) {
 
         {summary && !pickerOpen && (
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-4">
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--color-text-secondary)]">
-              {summary.summary_text}
-            </p>
+            <div className="prose-summary text-sm leading-relaxed text-[var(--color-text-secondary)]">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {summary.summary_text}
+              </ReactMarkdown>
+            </div>
           </div>
         )}
       </CardContent>
