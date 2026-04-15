@@ -81,6 +81,7 @@ export function HostPanel({
   }, [currentQuestion, isTimeUp, reviewMode, onNextQuestion]);
 
   const [showDistribution, setShowDistribution] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   const optionKeys = questionData?.options
     ? Object.keys(questionData.options)
@@ -214,9 +215,27 @@ export function HostPanel({
 
       {leaderboard.length > 0 && (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-sm">Top Players</CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowLeaderboard((v) => !v)}
+            >
+              {showLeaderboard ? (
+                <>
+                  <EyeOff className="size-4" />
+                  Hide
+                </>
+              ) : (
+                <>
+                  <Eye className="size-4" />
+                  Show
+                </>
+              )}
+            </Button>
           </CardHeader>
+          {showLeaderboard && (
           <CardContent className="space-y-1">
             {leaderboard.slice(0, 5).map((entry) => (
               <div
@@ -237,6 +256,7 @@ export function HostPanel({
               </div>
             ))}
           </CardContent>
+          )}
         </Card>
       )}
 
