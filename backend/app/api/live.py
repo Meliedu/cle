@@ -284,14 +284,32 @@ async def get_live_state(
 
     state = await _get_or_rehydrate_state(db, session)
 
-    if user.id != session.host_id and state.add_participant(str(user.id)):
+    is_host = user.id == session.host_id
+    if not is_host and state.add_participant(str(user.id)):
         new_count = len(state.participants)
         if session.participant_count != new_count:
             session.participant_count = new_count
             await db.commit()
 
+    # Visibility flags — default to permissive so existing sessions stay
+    # unchanged, but hosts can hide leaderboard / distribution via settings.
+    settings_dict = session.settings or {}
+    show_leaderboard = bool(
+        settings_dict.get("show_leaderboard_after_each", True)
+    )
+    show_distribution = bool(settings_dict.get("show_distribution", True))
+
     names = await _name_lookup(db, set(state.player_scores.keys()))
-    distribution = state.get_answer_distribution(state.current_question_index)
+    leaderboard: list[dict] = (
+        state.get_leaderboard(names=names)
+        if is_host or show_leaderboard
+        else []
+    )
+    distribution: dict[str, int] = (
+        state.get_answer_distribution(state.current_question_index)
+        if is_host or show_distribution
+        else {}
+    )
 
     return APIResponse(
         success=True,
@@ -300,7 +318,7 @@ async def get_live_state(
             "current_question_index": state.current_question_index,
             "time_limit": state.time_limit,
             "elapsed_seconds": state.elapsed_seconds(),
-            "leaderboard": state.get_leaderboard(names=names),
+            "leaderboard": leaderboard,
             "participant_count": len(state.participants),
             "answer_distribution": distribution,
             "review_mode": state.review_mode,
