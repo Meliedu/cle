@@ -464,6 +464,41 @@ async def _fc_folder_descendant_ids(
     return set(rows)
 
 
+async def _fc_folder_subtree_height(
+    db: AsyncSession, folder_id: uuid.UUID
+) -> int:
+    """Return the height of the subtree rooted at ``folder_id``.
+
+    Height is the max number of edges from ``folder_id`` down to a descendant
+    leaf. 0 when there are no live children.
+    """
+    height = 0
+    frontier: set[uuid.UUID] = {folder_id}
+    visited: set[uuid.UUID] = {folder_id}
+    while frontier:
+        rows = (
+            await db.execute(
+                select(FlashcardFolder.id).where(
+                    FlashcardFolder.parent_id.in_(frontier),
+                    FlashcardFolder.deleted_at.is_(None),
+                )
+            )
+        ).scalars().all()
+        next_frontier: set[uuid.UUID] = set()
+        for child_id in rows:
+            if child_id in visited:
+                continue
+            visited.add(child_id)
+            next_frontier.add(child_id)
+        if not next_frontier:
+            break
+        height += 1
+        frontier = next_frontier
+        if height > MAX_FOLDER_DEPTH:
+            return height
+    return height
+
+
 @router.get(
     "/courses/{course_id}/flashcard-folders",
     response_model=APIResponse[list[FlashcardFolderResponse]],
@@ -577,7 +612,8 @@ async def move_flashcard_folder(
         if body.parent_id in descendants:
             raise HTTPException(status_code=400, detail="Cannot move folder into its own descendant")
         parent_depth = await _fc_folder_ancestor_depth(db, parent.id)
-        if parent_depth >= MAX_FOLDER_DEPTH:
+        subtree_height = await _fc_folder_subtree_height(db, folder_id)
+        if parent_depth + subtree_height > MAX_FOLDER_DEPTH:
             raise HTTPException(
                 status_code=400,
                 detail=f"Folder nesting exceeds maximum depth of {MAX_FOLDER_DEPTH}",
