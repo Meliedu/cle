@@ -46,6 +46,39 @@ class LiveAnswerRequest(BaseModel):
     elapsed_seconds: float = 0.0
 
 
+class LiveAnonymityRequest(BaseModel):
+    anonymous: bool
+
+
+def _review_mode_from_settings(settings: dict | None) -> str:
+    mode = (settings or {}).get("review_mode", "per_question")
+    return mode if mode in ("per_question", "final") else "per_question"
+
+
+async def _name_lookup(
+    db: AsyncSession, user_ids: set[str]
+) -> dict[str, str]:
+    """Map user UUIDs to their display name (full_name or email local-part)."""
+    if not user_ids:
+        return {}
+    uuids: list[uuid.UUID] = []
+    for s in user_ids:
+        try:
+            uuids.append(uuid.UUID(s))
+        except ValueError:
+            continue
+    if not uuids:
+        return {}
+    result = await db.execute(
+        select(User.id, User.full_name, User.email).where(User.id.in_(uuids))
+    )
+    lookup: dict[str, str] = {}
+    for uid, full_name, email in result.all():
+        name = full_name or (email.split("@")[0] if email else None) or f"Player {str(uid)[:4]}"
+        lookup[str(uid)] = name
+    return lookup
+
+
 def _session_to_response(
     session: LiveSession, current_user_id: uuid.UUID | None = None
 ) -> LiveSessionResponse:
@@ -98,6 +131,7 @@ async def _get_or_rehydrate_state(
         session_id,
         total_questions=total_questions,
         time_limit=session.time_limit_seconds or 30,
+        review_mode=_review_mode_from_settings(session.settings),
     )
     state.status = session.status or "waiting"
     state.current_question_index = session.current_question_index or 0
@@ -145,7 +179,10 @@ async def create_live_session(
     total_questions = len(quiz_with_questions.questions)
 
     manager.create_session(
-        str(session.id), total_questions, req.time_limit_seconds
+        str(session.id),
+        total_questions,
+        req.time_limit_seconds,
+        review_mode=_review_mode_from_settings(req.settings),
     )
 
     return APIResponse(
@@ -252,14 +289,21 @@ async def get_live_state(
             session.participant_count = new_count
             await db.commit()
 
+    names = await _name_lookup(db, set(state.player_scores.keys()))
+    distribution = state.get_answer_distribution(state.current_question_index)
+
     return APIResponse(
         success=True,
         data={
             "status": state.status,
             "current_question_index": state.current_question_index,
             "time_limit": state.time_limit,
-            "leaderboard": state.get_leaderboard(),
+            "elapsed_seconds": state.elapsed_seconds(),
+            "leaderboard": state.get_leaderboard(names=names),
             "participant_count": len(state.participants),
+            "answer_distribution": distribution,
+            "review_mode": state.review_mode,
+            "is_anonymous": str(user.id) in state.anonymous_users,
         },
     )
 
@@ -351,10 +395,27 @@ async def live_end_session(
     session.ended_at = datetime.now(timezone.utc)
     await db.commit()
 
+    names = await _name_lookup(db, set(state.player_scores.keys()))
     return APIResponse(
         success=True,
-        data={"final_leaderboard": state.get_leaderboard()},
+        data={"final_leaderboard": state.get_leaderboard(names=names)},
     )
+
+
+@router.post("/live-sessions/{session_id}/anonymity")
+async def live_set_anonymity(
+    session_id: str,
+    body: LiveAnonymityRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Toggle a participant's anonymous display. Hosts can also toggle (no-op
+    on leaderboard since hosts aren't on it, but kept symmetric)."""
+    session = await _get_session_or_404(db, session_id)
+    await verify_enrollment(db, session.course_id, user.id)
+    state = await _get_or_rehydrate_state(db, session)
+    state.set_anonymity(str(user.id), body.anonymous)
+    return APIResponse(success=True, data={"anonymous": body.anonymous})
 
 
 async def _persist_session_activity(
