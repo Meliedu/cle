@@ -164,9 +164,36 @@ class TestSessionState:
         state = SessionState(session_id="test", total_questions=5, time_limit=30)
         state.player_scores = {"u1": 300, "u2": 900, "u3": 600}
         leaderboard = state.get_leaderboard()
-        assert leaderboard[0] == {"user_id": "u2", "score": 900, "rank": 1}
-        assert leaderboard[1] == {"user_id": "u3", "score": 600, "rank": 2}
-        assert leaderboard[2] == {"user_id": "u1", "score": 300, "rank": 3}
+        assert leaderboard[0]["user_id"] == "u2"
+        assert leaderboard[0]["score"] == 900
+        assert leaderboard[0]["rank"] == 1
+        assert leaderboard[0]["display_name"] == "Player u2"[:11]  # stub fallback
+        assert leaderboard[1]["user_id"] == "u3"
+        assert leaderboard[2]["user_id"] == "u1"
+
+    def test_get_leaderboard_uses_name_lookup(self):
+        state = SessionState(session_id="test", total_questions=5, time_limit=30)
+        state.player_scores = {"u1": 100}
+        leaderboard = state.get_leaderboard(names={"u1": "Alice"})
+        assert leaderboard[0]["display_name"] == "Alice"
+
+    def test_get_leaderboard_hides_anonymous(self):
+        state = SessionState(session_id="test", total_questions=5, time_limit=30)
+        state.player_scores = {"u1": 100, "u2": 200}
+        state.set_anonymity("u1", True)
+        leaderboard = state.get_leaderboard(names={"u1": "Alice", "u2": "Bob"})
+        # u2 is top
+        assert leaderboard[0]["display_name"] == "Bob"
+        assert leaderboard[1]["display_name"] == "Anonymous"
+
+    def test_get_answer_distribution(self):
+        state = SessionState(session_id="test", total_questions=5, time_limit=30)
+        state.start()
+        state.record_answer("u1", "A", 0)
+        state.record_answer("u2", "A", 0)
+        state.record_answer("u3", "B", 0)
+        assert state.get_answer_distribution(0) == {"A": 2, "B": 1}
+        assert state.get_answer_distribution(1) == {}
 
     def test_get_leaderboard_top_n(self):
         state = SessionState(session_id="test", total_questions=5, time_limit=30)

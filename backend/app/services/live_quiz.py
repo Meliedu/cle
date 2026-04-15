@@ -40,6 +40,30 @@ class SessionState:
     player_answers: dict[str, dict[int, str]] = field(default_factory=dict)
     player_correct: dict[str, dict[int, bool]] = field(default_factory=dict)
     participants: set[str] = field(default_factory=set)
+    anonymous_users: set[str] = field(default_factory=set)
+    review_mode: str = "per_question"  # "per_question" | "final"
+
+    def set_anonymity(self, user_id: str, anonymous: bool) -> None:
+        if anonymous:
+            self.anonymous_users.add(user_id)
+        else:
+            self.anonymous_users.discard(user_id)
+
+    def get_answer_distribution(self, question_index: int) -> dict[str, int]:
+        """Count player answers for a single question keyed by option label."""
+        counts: dict[str, int] = {}
+        for answers in self.player_answers.values():
+            choice = answers.get(question_index)
+            if choice is None:
+                continue
+            counts[choice] = counts.get(choice, 0) + 1
+        return counts
+
+    def elapsed_seconds(self) -> float:
+        """Seconds since the current question started; 0 if not yet active."""
+        if self.question_started_at is None or self.status != "active":
+            return 0.0
+        return (datetime.now(timezone.utc) - self.question_started_at).total_seconds()
 
     def add_participant(self, user_id: str) -> bool:
         """Mark a user as present in the session. Returns True if newly added."""
@@ -86,14 +110,36 @@ class SessionState:
         self.participants.add(user_id)
         return True
 
-    def get_leaderboard(self, top_n: int = 10) -> list[dict]:
+    def get_leaderboard(
+        self,
+        top_n: int = 10,
+        names: dict[str, str] | None = None,
+    ) -> list[dict]:
+        """Return leaderboard entries with a display_name.
+
+        - If a user opted in to anonymity, display_name is "Anonymous".
+        - If a name lookup is provided, use it; otherwise fall back to a short
+          user id stub so the frontend never has to do that itself.
+        """
+        names = names or {}
         sorted_players = sorted(
             self.player_scores.items(), key=lambda x: x[1], reverse=True
         )[:top_n]
-        return [
-            {"user_id": uid, "score": score, "rank": i + 1}
-            for i, (uid, score) in enumerate(sorted_players)
-        ]
+        result: list[dict] = []
+        for i, (uid, score) in enumerate(sorted_players):
+            if uid in self.anonymous_users:
+                display_name = "Anonymous"
+            else:
+                display_name = names.get(uid) or f"Player {uid[:4]}"
+            result.append(
+                {
+                    "user_id": uid,
+                    "score": score,
+                    "rank": i + 1,
+                    "display_name": display_name,
+                }
+            )
+        return result
 
 
 class ConnectionManager:
@@ -128,12 +174,17 @@ class ConnectionManager:
         return self.sessions.get(session_id)
 
     def create_session(
-        self, session_id: str, total_questions: int, time_limit: int
+        self,
+        session_id: str,
+        total_questions: int,
+        time_limit: int,
+        review_mode: str = "per_question",
     ) -> SessionState:
         state = SessionState(
             session_id=session_id,
             total_questions=total_questions,
             time_limit=time_limit,
+            review_mode=review_mode,
         )
         self.sessions[session_id] = state
         return state
