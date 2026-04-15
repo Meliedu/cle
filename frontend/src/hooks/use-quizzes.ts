@@ -1,6 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
 import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
+
+export type QuizPurpose = "after_class" | "live";
 
 export interface QuestionResponse {
   readonly id: string;
@@ -18,6 +20,7 @@ export interface QuizResponse {
   readonly title: string;
   readonly description: string | null;
   readonly quiz_type: string;
+  readonly purpose: QuizPurpose;
   readonly is_published: boolean;
   readonly question_count: number;
   readonly created_at: string;
@@ -34,16 +37,17 @@ export interface QuizDetailResponse {
   readonly created_at: string;
 }
 
-export function useQuizzes(courseId: string) {
+export function useQuizzes(courseId: string, purpose?: QuizPurpose) {
   const { getToken, isSignedIn } = useAuth();
 
   return useQuery({
-    queryKey: ["quizzes", courseId],
+    queryKey: ["quizzes", courseId, purpose ?? "all"],
     queryFn: async () => {
       const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
+      const qs = purpose ? `?purpose=${purpose}` : "";
       const response = await apiFetch<ApiEnvelope<QuizResponse[]>>(
-        `/courses/${courseId}/quizzes`,
+        `/courses/${courseId}/quizzes${qs}`,
         { token }
       );
       return response.data;
@@ -52,6 +56,33 @@ export function useQuizzes(courseId: string) {
     retry: (count, error) => {
       if (isAuthError(error)) return false;
       return count < 3;
+    },
+  });
+}
+
+export interface ImportToLiveInput {
+  readonly source_quiz_id: string;
+  readonly question_ids: string[];
+  readonly title: string;
+}
+
+export function useImportQuestionsToLive(courseId: string) {
+  const { getToken } = useAuth();
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: ImportToLiveInput) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const response = await apiFetch<ApiEnvelope<QuizResponse>>(
+        `/courses/${courseId}/quizzes/import-to-live`,
+        { token, method: "POST", body: JSON.stringify(input) }
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["quizzes", courseId, "live"] });
+      qc.invalidateQueries({ queryKey: ["quizzes", courseId, "all"] });
     },
   });
 }

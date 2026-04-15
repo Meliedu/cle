@@ -8,6 +8,8 @@ export const OPTION_BUTTON_STYLES: readonly string[] = [
   "bg-[oklch(55%_0.22_250)] hover:bg-[oklch(50%_0.22_250)] text-white",
   "bg-[oklch(68%_0.17_75)] hover:bg-[oklch(63%_0.17_75)] text-[oklch(18%_0_0)]",
   "bg-[oklch(60%_0.17_155)] hover:bg-[oklch(55%_0.17_155)] text-white",
+  "bg-[oklch(58%_0.22_300)] hover:bg-[oklch(53%_0.22_300)] text-white",
+  "bg-[oklch(63%_0.18_200)] hover:bg-[oklch(58%_0.18_200)] text-white",
 ];
 
 export const OPTION_BAR_COLORS: readonly string[] = [
@@ -15,6 +17,8 @@ export const OPTION_BAR_COLORS: readonly string[] = [
   "oklch(55% 0.22 250)",
   "oklch(68% 0.17 75)",
   "oklch(60% 0.17 155)",
+  "oklch(58% 0.22 300)",
+  "oklch(63% 0.18 200)",
 ];
 
-export const OPTION_ICONS: readonly string[] = ["◆", "■", "●", "▲"];
+export const OPTION_ICONS: readonly string[] = ["◆", "■", "●", "▲", "★", "✚"];
