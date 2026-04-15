@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,8 @@ import {
   Users,
   Clock,
   HelpCircle,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { AnswerDistribution } from "@/components/live-quiz/answer-distribution";
 import { useLiveTimer } from "@/hooks/use-live-timer";
@@ -77,6 +79,8 @@ export function HostPanel({
     autoAdvancedRef.current = currentQuestion.index;
     onNextQuestion();
   }, [currentQuestion, isTimeUp, reviewMode, onNextQuestion]);
+
+  const [showDistribution, setShowDistribution] = useState(false);
 
   const optionKeys = questionData?.options
     ? Object.keys(questionData.options)
@@ -174,12 +178,38 @@ export function HostPanel({
       )}
 
       {optionKeys.length > 0 && (
-        <AnswerDistribution
-          distribution={answerDistribution}
-          optionKeys={optionKeys}
-          correctAnswer={revealCorrect ?? questionData?.correct_answer}
-          totalAnswers={totalAnswers}
-        />
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-[var(--color-text-muted)]">
+              Answer distribution
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowDistribution((v) => !v)}
+            >
+              {showDistribution ? (
+                <>
+                  <EyeOff className="size-4" />
+                  Hide
+                </>
+              ) : (
+                <>
+                  <Eye className="size-4" />
+                  Show
+                </>
+              )}
+            </Button>
+          </div>
+          {showDistribution && (
+            <AnswerDistribution
+              distribution={answerDistribution}
+              optionKeys={optionKeys}
+              correctAnswer={revealCorrect ?? questionData?.correct_answer}
+              totalAnswers={totalAnswers}
+            />
+          )}
+        </div>
       )}
 
       {leaderboard.length > 0 && (
