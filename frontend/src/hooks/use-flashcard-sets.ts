@@ -14,6 +14,8 @@ export interface FlashcardSetResponse {
   readonly id: string;
   readonly course_id: string;
   readonly title: string;
+  readonly is_published: boolean;
+  readonly folder_id: string | null;
   readonly card_count: number;
   readonly created_at: string;
 }
