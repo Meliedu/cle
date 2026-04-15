@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { CheckCircle2, XCircle, Loader2, Clock } from "lucide-react";
 import type { QuestionMessage } from "@/hooks/use-live-quiz";
+import { useLiveTimer } from "@/hooks/use-live-timer";
 import {
   OPTION_BUTTON_STYLES,
   OPTION_ICONS,
@@ -29,7 +30,6 @@ export function PlayerView({
   onAnswer,
 }: PlayerViewProps) {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
 
   /* Reset answer state when a new question arrives. Deps are primitives so
    * polling doesn't reset this every tick — that used to drive duplicate
@@ -39,24 +39,13 @@ export function PlayerView({
     if (questionIndex >= 0) setSelectedAnswer(null);
   }, [questionIndex]);
 
-  /* Run the ticker unconditionally while a question is live — previously it
-   * stopped as soon as the student answered, so the countdown visibly froze
-   * at whatever value it had when they clicked. */
-  useEffect(() => {
-    if (!currentQuestion) return;
-    const interval = setInterval(() => setTick((n) => n + 1), 250);
-    return () => clearInterval(interval);
-  }, [currentQuestion]);
-
-  /* Server-anchored countdown. The poll hands us `elapsedSeconds` from the
-   * server; we add a local monotonically-increasing offset so the timer
-   * reads smoothly between polls instead of jumping every 1.5s. */
-  const timeRemaining = currentQuestion
-    ? Math.max(
-        0,
-        Math.ceil(currentQuestion.time_limit - elapsedSeconds - (tick * 0.25))
-      )
-    : 0;
+  /* Server-anchored countdown shared with the host via useLiveTimer so both
+   * sides agree on when time is up. */
+  const timeRemaining = useLiveTimer(
+    questionIndex,
+    currentQuestion?.time_limit ?? 0,
+    elapsedSeconds
+  );
 
   const handleAnswer = useCallback(
     (option: string) => {

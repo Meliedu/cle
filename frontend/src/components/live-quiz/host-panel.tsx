@@ -12,6 +12,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { AnswerDistribution } from "@/components/live-quiz/answer-distribution";
+import { useLiveTimer } from "@/hooks/use-live-timer";
 import type {
   QuestionMessage,
   LeaderboardEntry,
@@ -52,12 +53,13 @@ export function HostPanel({
   onNextQuestion,
   onEndSession,
 }: HostPanelProps) {
-  /* Server-anchored timer: use elapsed from /state, not a client-only counter.
-   * That way host and students agree on when time is up even if React re-renders
-   * drift. */
-  const timeRemaining = currentQuestion
-    ? Math.max(0, Math.ceil(currentQuestion.time_limit - elapsedSeconds))
-    : 0;
+  /* Server-anchored countdown shared with the student via useLiveTimer so
+   * both sides agree on when time is up (to within one network round-trip). */
+  const timeRemaining = useLiveTimer(
+    currentQuestion?.index ?? null,
+    currentQuestion?.time_limit ?? 0,
+    elapsedSeconds
+  );
 
   const questionIndex = currentQuestion?.index ?? 0;
   const isLastQuestion = questionIndex >= totalQuestions - 1;
