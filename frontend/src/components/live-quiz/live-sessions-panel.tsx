@@ -27,6 +27,7 @@ import {
   Sparkles,
   Download,
   BookOpen,
+  FolderPlus,
 } from "lucide-react";
 import {
   useLiveSessions,
@@ -35,9 +36,17 @@ import {
   useFindLiveSessionByCode,
 } from "@/hooks/use-live-quiz";
 import { useQuizzes, useDeleteQuiz } from "@/hooks/use-quizzes";
+import {
+  useQuizFolders,
+  useCreateQuizFolder,
+  useRenameQuizFolder,
+  useDeleteQuizFolder,
+  useMoveQuizToFolder,
+} from "@/hooks/use-quiz-folders";
 import { formatRelativeTime } from "@/lib/format";
 import { GenerateLiveQuizDialog } from "@/components/live-quiz/generate-live-quiz-dialog";
 import { ImportFromQuizDialog } from "@/components/live-quiz/import-from-quiz-dialog";
+import { QuizFolderTree } from "@/components/live-quiz/quiz-folder-tree";
 
 interface LiveSessionsPanelProps {
   readonly courseId: string;
@@ -56,6 +65,11 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
   const deleteSession = useDeleteLiveSession(courseId);
   const deleteQuiz = useDeleteQuiz(courseId);
   const findByCode = useFindLiveSessionByCode();
+  const { data: folders } = useQuizFolders(courseId);
+  const createFolder = useCreateQuizFolder(courseId);
+  const renameFolder = useRenameQuizFolder(courseId);
+  const deleteFolder = useDeleteQuizFolder(courseId);
+  const moveQuiz = useMoveQuizToFolder(courseId);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedQuizId, setSelectedQuizId] = useState("");
@@ -112,89 +126,23 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
 
   const publishedQuizzes = liveQuizzes?.filter((q) => q.is_published);
 
-  return (
-    <div className="space-y-6">
-      {/* Question bank (instructor-only) */}
-      {isInstructor && (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-muted)]">
-              <BookOpen className="size-4" />
-              Live Question Bank
-            </h2>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setImportOpen(true)}
-              >
-                <Download className="size-4" />
-                Import
-              </Button>
-              <Button size="sm" onClick={() => setGenerateOpen(true)}>
-                <Sparkles className="size-4" />
-                Generate
-              </Button>
-            </div>
-          </div>
-          {quizzesLoading ? (
-            <Skeleton className="h-16 rounded-[var(--radius-lg)]" />
-          ) : liveQuizzes && liveQuizzes.length > 0 ? (
-            <div className="space-y-2">
-              {liveQuizzes.map((q) => (
-                <Card key={q.id}>
-                  <CardContent className="flex items-center gap-4 py-3">
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-light)]">
-                      <BookOpen className="size-4 text-[var(--color-primary)]" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-[var(--color-text)]">
-                        {q.title}
-                      </p>
-                      <p className="text-xs text-[var(--color-text-muted)]">
-                        {q.question_count} questions ·{" "}
-                        {formatRelativeTime(q.created_at)}
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setSelectedQuizId(q.id);
-                        setCreateOpen(true);
-                      }}
-                    >
-                      Start Session
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setDeleteQuizConfirmId(q.id)}
-                      aria-label="Delete live quiz"
-                    >
-                      <Trash2 className="size-4 text-[var(--color-error)]" />
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center gap-2 py-8 text-center">
-                <p className="text-sm text-[var(--color-text)]">
-                  No live quizzes yet.
-                </p>
-                <p className="max-w-sm text-xs text-[var(--color-text-muted)]">
-                  Generate a new one, or import questions from an existing
-                  after-class quiz.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </section>
-      )}
+  const handleNewFolder = (parentId: string | null) => {
+    const name = window.prompt("Folder name");
+    if (!name || !name.trim()) return;
+    createFolder.mutate({ name: name.trim(), parent_id: parentId });
+  };
+  const handleDeleteFolder = (folderId: string) => {
+    if (
+      !window.confirm(
+        "Delete this folder? Quizzes and subfolders inside will move up one level."
+      )
+    )
+      return;
+    deleteFolder.mutate(folderId);
+  };
 
-      {/* Session controls */}
+  const sessionsSection = (
+    <div className="space-y-4">
       {isInstructor && (
         <div className="flex justify-end">
           <Button onClick={() => setCreateOpen(true)}>
@@ -204,7 +152,6 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
         </div>
       )}
 
-      {/* Join by code */}
       <Card>
         <CardContent className="flex flex-col gap-2">
           <div className="flex items-center gap-3">
@@ -321,6 +268,84 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
           </Card>
         )}
       </section>
+    </div>
+  );
+
+  const bankSection = isInstructor ? (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-muted)]">
+          <BookOpen className="size-4" />
+          Live Question Bank
+        </h2>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleNewFolder(null)}
+          >
+            <FolderPlus className="size-4" />
+            New Folder
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setImportOpen(true)}
+          >
+            <Download className="size-4" />
+            Import
+          </Button>
+          <Button size="sm" onClick={() => setGenerateOpen(true)}>
+            <Sparkles className="size-4" />
+            Generate
+          </Button>
+        </div>
+      </div>
+      {quizzesLoading ? (
+        <Skeleton className="h-16 rounded-[var(--radius-lg)]" />
+      ) : (liveQuizzes && liveQuizzes.length > 0) ||
+        (folders && folders.length > 0) ? (
+        <QuizFolderTree
+          folders={folders ?? []}
+          quizzes={liveQuizzes ?? []}
+          onCreateFolder={handleNewFolder}
+          onRenameFolder={(id, name) =>
+            renameFolder.mutate({ folder_id: id, name })
+          }
+          onDeleteFolder={handleDeleteFolder}
+          onMoveQuiz={(quizId, folderId) =>
+            moveQuiz.mutate({ quiz_id: quizId, folder_id: folderId })
+          }
+          onStartSession={(quizId) => {
+            setSelectedQuizId(quizId);
+            setCreateOpen(true);
+          }}
+          onDeleteQuiz={(quizId) => setDeleteQuizConfirmId(quizId)}
+        />
+      ) : (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-2 py-8 text-center">
+            <p className="text-sm text-[var(--color-text)]">
+              No live quizzes yet.
+            </p>
+            <p className="max-w-sm text-xs text-[var(--color-text-muted)]">
+              Generate a new one, or import questions from an existing
+              after-class quiz.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  ) : null;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-6 md:grid-cols-5">
+        <div className="md:col-span-2">{sessionsSection}</div>
+        {bankSection && (
+          <div className="md:col-span-3">{bankSection}</div>
+        )}
+      </div>
 
       {/* Create session dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
