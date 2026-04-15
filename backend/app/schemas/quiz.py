@@ -27,11 +27,39 @@ class QuizResponse(BaseModel):
     description: str | None
     quiz_type: str
     purpose: str = "after_class"
+    folder_id: uuid.UUID | None = None
     is_published: bool
     question_count: int
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class QuizFolderResponse(BaseModel):
+    id: uuid.UUID
+    course_id: uuid.UUID
+    name: str
+    parent_id: uuid.UUID | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class QuizFolderCreate(BaseModel):
+    name: str
+    parent_id: uuid.UUID | None = None
+
+
+class QuizFolderRename(BaseModel):
+    name: str
+
+
+class QuizFolderMove(BaseModel):
+    parent_id: uuid.UUID | None = None
+
+
+class QuizMove(BaseModel):
+    folder_id: uuid.UUID | None = None
 
 
 class QuizDetailResponse(BaseModel):

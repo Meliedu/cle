@@ -6,7 +6,7 @@ from app.models.chunk import Chunk
 from app.models.course import Course, Enrollment
 from app.models.document import Document
 from app.models.flashcard import FlashcardCard, FlashcardProgress, FlashcardSet, FlashcardSetDocument
-from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument
+from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument, QuizFolder
 from app.models.scheduler import SchedulerModel
 from app.models.score import PronunciationScore, StudentProgress
 from app.models.live_answer import LiveAnswer
@@ -34,6 +34,7 @@ __all__ = [
     "Question",
     "QuizDocument",
     "QuizAttempt",
+    "QuizFolder",
     "FlashcardSet",
     "FlashcardCard",
     "FlashcardSetDocument",
