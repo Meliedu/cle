@@ -51,7 +51,7 @@ async def oauth_callback(
 ) -> RedirectResponse:
     """OAuth redirect target — exchange code, store credential, redirect to UI."""
     try:
-        user_id = canvas_oauth.decode_state(state)
+        user_id = await canvas_oauth.decode_state(state)
     except canvas_oauth.StateInvalid:
         raise HTTPException(status_code=400, detail="Invalid or expired state")
 
