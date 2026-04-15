@@ -26,6 +26,8 @@ class GeneratedQuestion:
     options: dict[str, str]
     correct_answer: str
     explanation: str
+    type: str = "multiple_choice"
+    difficulty: str = "medium"
 
 
 @dataclass(frozen=True)
@@ -117,45 +119,95 @@ def _parse_json_response(text: str) -> list[dict]:
 # Quiz Generation
 # ---------------------------------------------------------------------------
 
-_QUIZ_SYSTEM_PROMPT = """\
+_QUIZ_SYSTEM_PROMPT_BASE = """\
 You are an educational quiz generator. Given source material, create quiz questions.
 Return ONLY a JSON array of question objects. No extra text.
 
 Each object must have:
 - "question_text": the question string
-- "options": an object with keys "A", "B", "C", "D" and string values
-- "correct_answer": one of "A", "B", "C", "D"
+- "type": either "multiple_choice" or "true_false"
+- "options": for multiple_choice, an object of N option keys (e.g. "A","B",...) with
+  string values. For true_false, exactly {"T": "True", "F": "False"}.
+- "correct_answer": one of the option keys (e.g. "A", "C", "T")
 - "explanation": a brief explanation of why the answer is correct
+- "difficulty": "easy", "medium", or "hard"
 """
+
+_MCQ_LETTERS = ["A", "B", "C", "D", "E", "F"]
+
+
+def _quiz_instructions(
+    question_types: list[str],
+    mcq_option_count: int,
+    difficulty: str,
+) -> str:
+    parts: list[str] = []
+    if len(question_types) == 1:
+        if question_types[0] == "true_false":
+            parts.append(
+                'Generate ONLY true/false questions: options must be exactly '
+                '{"T": "True", "F": "False"} and correct_answer must be "T" or "F".'
+            )
+        else:
+            letters = ", ".join(f'"{_MCQ_LETTERS[i]}"' for i in range(mcq_option_count))
+            parts.append(
+                f'Generate ONLY multiple-choice questions with exactly {mcq_option_count} '
+                f"options using keys {letters}. correct_answer must be one of those keys."
+            )
+    else:
+        letters = ", ".join(f'"{_MCQ_LETTERS[i]}"' for i in range(mcq_option_count))
+        parts.append(
+            "Mix true/false and multiple-choice questions. For multiple-choice use "
+            f"exactly {mcq_option_count} options with keys {letters}. For true/false "
+            'use keys "T" and "F" only.'
+        )
+
+    if difficulty == "mixed":
+        parts.append(
+            "Mix easy, medium, and hard questions roughly evenly. Tag each question "
+            'with its difficulty in the "difficulty" field.'
+        )
+    else:
+        parts.append(
+            f'All questions should be at **{difficulty}** difficulty. '
+            f'Set "difficulty" to "{difficulty}" on every question.'
+        )
+
+    return " ".join(parts)
 
 
 async def generate_quiz(
     chunks: list[RetrievedChunk],
     num_questions: int = 5,
-    quiz_type: str = "multiple_choice",
+    quiz_type: str = "multiple_choice",  # kept for back-compat; ignored if question_types given
     language: str = "english",
+    question_types: list[str] | None = None,
+    mcq_option_count: int = 4,
+    difficulty: str = "medium",
 ) -> list[GeneratedQuestion]:
     """Generate quiz questions from retrieved chunks.
 
     Tries the primary model first. On JSON parse failure, falls back to the
     secondary model. Raises ``ValueError`` if both attempts fail.
     """
+    types = question_types or [quiz_type]
     context = _build_context(chunks)
+    instructions = _quiz_instructions(types, mcq_option_count, difficulty)
     user_prompt = (
-        f"Create {num_questions} {quiz_type} questions about the following {language} language learning material. "
+        f"Create {num_questions} questions about the following {language} language "
+        f"learning material. {instructions} "
         f"Write question text and explanations in English. "
         f"Options may include {language} vocabulary/phrases where relevant.\n\n{context}"
     )
 
-    # Attempt primary model
     try:
-        raw = await _call_llm(_QUIZ_SYSTEM_PROMPT, user_prompt)
+        raw = await _call_llm(_QUIZ_SYSTEM_PROMPT_BASE, user_prompt)
         items = _parse_json_response(raw)
     except (ValueError, json.JSONDecodeError) as exc:
         logger.warning("Primary model JSON parse failed: %s — trying fallback", exc)
         try:
             raw = await _call_llm(
-                _QUIZ_SYSTEM_PROMPT,
+                _QUIZ_SYSTEM_PROMPT_BASE,
                 user_prompt,
                 model=settings.openrouter_fallback_model,
             )
@@ -165,15 +217,26 @@ async def generate_quiz(
                 "Both primary and fallback models failed to produce valid quiz JSON"
             ) from fallback_exc
 
-    return [
-        GeneratedQuestion(
-            question_text=item["question_text"],
-            options=item["options"],
-            correct_answer=item["correct_answer"],
-            explanation=item["explanation"],
+    results: list[GeneratedQuestion] = []
+    for item in items:
+        q_type = item.get("type") or (
+            "true_false" if set((item.get("options") or {}).keys()) == {"T", "F"}
+            else "multiple_choice"
         )
-        for item in items
-    ]
+        q_difficulty = item.get("difficulty", difficulty if difficulty != "mixed" else "medium")
+        if q_difficulty not in {"easy", "medium", "hard"}:
+            q_difficulty = "medium"
+        results.append(
+            GeneratedQuestion(
+                question_text=item["question_text"],
+                options=item["options"],
+                correct_answer=item["correct_answer"],
+                explanation=item.get("explanation", ""),
+                type=q_type,
+                difficulty=q_difficulty,
+            )
+        )
+    return results
 
 
 # ---------------------------------------------------------------------------

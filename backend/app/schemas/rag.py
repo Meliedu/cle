@@ -27,11 +27,22 @@ class RAGQueryResponse(BaseModel):
     chunks: list[ChunkResult]
 
 
+QuestionType = Literal["multiple_choice", "true_false"]
+QuizPurpose = Literal["after_class", "live"]
+Difficulty = Literal["easy", "medium", "hard", "mixed"]
+
+
 class GenerateQuizRequest(BaseModel):
     course_id: uuid.UUID
     title: str
     document_ids: list[uuid.UUID] | None = None
     num_questions: int = Field(default=5, ge=1, le=30)
+    purpose: QuizPurpose = "after_class"
+    question_types: list[QuestionType] = Field(
+        default_factory=lambda: ["multiple_choice"]
+    )
+    mcq_option_count: int = Field(default=4, ge=2, le=6)
+    difficulty: Difficulty = "medium"
 
 
 class GenerateSummaryRequest(BaseModel):

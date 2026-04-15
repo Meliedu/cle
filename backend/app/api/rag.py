@@ -196,6 +196,10 @@ async def rag_generate_quiz(
         extra={
             "num_questions": body.num_questions,
             "document_ids": [str(d) for d in (body.document_ids or [])] or None,
+            "purpose": body.purpose,
+            "question_types": body.question_types,
+            "mcq_option_count": body.mcq_option_count,
+            "difficulty": body.difficulty,
         },
     )
     response.status_code = status.HTTP_202_ACCEPTED

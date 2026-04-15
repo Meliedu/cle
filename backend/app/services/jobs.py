@@ -67,6 +67,10 @@ async def run_generate_quiz(
     num_questions: int = int(payload.get("num_questions", 5))
     document_ids = payload.get("document_ids") or None
     document_uuids = [uuid.UUID(d) for d in document_ids] if document_ids else None
+    purpose: str = payload.get("purpose", "after_class")
+    question_types: list[str] = payload.get("question_types") or ["multiple_choice"]
+    mcq_option_count: int = int(payload.get("mcq_option_count", 4))
+    difficulty: str = payload.get("difficulty", "medium")
 
     language = await _course_language(session, course_id)
     safe_title = _sanitize(title)
@@ -80,7 +84,12 @@ async def run_generate_quiz(
         document_ids=document_uuids,
     )
     generated = await generate_quiz(
-        chunks, num_questions=num_questions, language=language
+        chunks,
+        num_questions=num_questions,
+        language=language,
+        question_types=question_types,
+        mcq_option_count=mcq_option_count,
+        difficulty=difficulty,
     )
 
     quiz = Quiz(
@@ -88,7 +97,8 @@ async def run_generate_quiz(
         created_by=user_id,
         title=title,
         quiz_type="multiple_choice",
-        is_published=False,
+        purpose=purpose,
+        is_published=(purpose == "live"),
     )
     session.add(quiz)
     await session.flush()
@@ -98,11 +108,12 @@ async def run_generate_quiz(
             Question(
                 quiz_id=quiz.id,
                 question_index=idx,
-                type="multiple_choice",
+                type=gq.type,
                 question_text=gq.question_text,
                 options=gq.options,
                 correct_answer=gq.correct_answer,
                 explanation=gq.explanation,
+                difficulty=gq.difficulty,
             )
         )
 
