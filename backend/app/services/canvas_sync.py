@@ -86,13 +86,21 @@ async def sync_integration(db, integration: CanvasIntegration) -> None:
         )
         integration.last_roster_sync_at = now
         await db.commit()
-    except Exception as exc:  # noqa: BLE001 - we want to log + continue
+    except Exception:  # noqa: BLE001 - we want to log + continue
         logger.exception("Roster sync failed for integration %s", integration.id)
+        # Never write raw exception text to CanvasSyncEvent.payload — it's
+        # exposed to instructors via the sync-events endpoint and can leak
+        # stack frames, IDs, or internal hostnames. Store a stable code +
+        # a generic human message only.
         db.add(
             CanvasSyncEvent(
                 course_id=integration.course_id,
                 event_type="error",
-                payload={"stage": "roster_diff", "message": str(exc)[:500]},
+                payload={
+                    "stage": "roster_diff",
+                    "code": "internal_error",
+                    "message": "Roster sync failed. Please try again later.",
+                },
             )
         )
         await db.commit()
@@ -124,13 +132,17 @@ async def sync_integration(db, integration: CanvasIntegration) -> None:
         )
         integration.last_file_scan_at = now
         await db.commit()
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("File scan failed for integration %s", integration.id)
         db.add(
             CanvasSyncEvent(
                 course_id=integration.course_id,
                 event_type="error",
-                payload={"stage": "file_scan", "message": str(exc)[:500]},
+                payload={
+                    "stage": "file_scan",
+                    "code": "internal_error",
+                    "message": "File scan failed. Please try again later.",
+                },
             )
         )
         await db.commit()
