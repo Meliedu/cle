@@ -81,6 +81,12 @@ class Settings(BaseSettings):
     # Upload limits
     max_upload_size_mb: int = 100
 
+    # Run the document-processing worker + Canvas scheduler inside the API
+    # process. Default True for dev (single container). In prod we run the
+    # worker as a separate Railway service and set this to False on the API
+    # container so a worker OOM can't kill the API.
+    run_worker_in_api: bool = True
+
     # Rate limits (per hour)
     student_rate_limit: int = 10
     instructor_rate_limit: int = 50

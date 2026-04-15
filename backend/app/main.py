@@ -24,13 +24,21 @@ for _noisy in ("botocore", "boto3", "urllib3", "s3transfer", "httpx", "httpcore"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     shutdown_event = asyncio.Event()
-    worker_task = asyncio.create_task(worker_loop(shutdown_event))
-    scheduler_task = asyncio.create_task(run_canvas_scheduler(shutdown_event))
+    background_tasks: list[asyncio.Task] = []
+    if settings.run_worker_in_api:
+        background_tasks.append(asyncio.create_task(worker_loop(shutdown_event)))
+        background_tasks.append(
+            asyncio.create_task(run_canvas_scheduler(shutdown_event))
+        )
+    else:
+        logging.getLogger(__name__).info(
+            "run_worker_in_api=False — worker/scheduler run in a separate service"
+        )
     yield
     shutdown_event.set()
-    worker_task.cancel()
-    scheduler_task.cancel()
-    for task in (worker_task, scheduler_task):
+    for task in background_tasks:
+        task.cancel()
+    for task in background_tasks:
         try:
             await task
         except asyncio.CancelledError:
