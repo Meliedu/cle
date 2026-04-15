@@ -50,6 +50,13 @@ async def oauth_callback(
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
     """OAuth redirect target — exchange code, store credential, redirect to UI."""
+    if not settings.canvas_state_secret:
+        # Never attempt to decode a state JWT with an unset secret — PyJWT
+        # would either accept an empty key or raise an opaque error.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Canvas integration not configured: CANVAS_STATE_SECRET is unset",
+        )
     try:
         user_id = await canvas_oauth.decode_state(state)
     except canvas_oauth.StateInvalid:

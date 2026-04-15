@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     canvas_redirect_uri: str = "http://localhost:8000/api/canvas/oauth/callback"
     # Signing key for OAuth state JWT; 32+ random bytes.
     # Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"
-    canvas_state_secret: str = ""
+    canvas_state_secret: str | None = None
     canvas_scopes: str = (
         "url:GET|/api/v1/users/self "
         "url:GET|/api/v1/users/self/courses "
