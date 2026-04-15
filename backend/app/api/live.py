@@ -14,6 +14,7 @@ from fastapi import (
 )
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -423,8 +424,10 @@ async def _persist_session_activity(
 ) -> None:
     """Create a QuizAttempt row and award XP for each participant.
 
-    Called once when a live session ends. Skips users that already have an
-    attempt for this quiz from this session (idempotent across retries).
+    Called once when a live session ends. Idempotent: uses a partial unique
+    index on (user_id, live_session_id) with INSERT ... ON CONFLICT DO
+    NOTHING so duplicate end-session calls (host double-click, REST + WS
+    both firing) never produce duplicate attempts or double XP.
     """
     total_questions = state.total_questions or 0
     # Persist anyone who joined, even if they never answered — activity counts
@@ -450,16 +453,29 @@ async def _persist_session_activity(
             else Decimal(0)
         ).quantize(Decimal("0.01"))
 
-        attempt = QuizAttempt(
-            quiz_id=session.quiz_id,
-            user_id=user_uuid,
-            answers={str(k): v for k, v in answers.items()},
-            score=percent,
-            total_questions=total_questions,
-            correct_count=correct_count,
-            completed_at=now,
+        insert_stmt = (
+            pg_insert(QuizAttempt)
+            .values(
+                quiz_id=session.quiz_id,
+                user_id=user_uuid,
+                live_session_id=session.id,
+                answers={str(k): v for k, v in answers.items()},
+                score=percent,
+                total_questions=total_questions,
+                correct_count=correct_count,
+                completed_at=now,
+            )
+            .on_conflict_do_nothing(
+                index_elements=["user_id", "live_session_id"],
+            )
+            .returning(QuizAttempt.id)
         )
-        db.add(attempt)
+        result = await db.execute(insert_stmt)
+        inserted_id = result.scalar_one_or_none()
+        if inserted_id is None:
+            # Attempt already exists for this (user, live_session) — skip XP
+            # so we don't double-award on duplicate end-of-session calls.
+            continue
 
         await award_xp(
             db,

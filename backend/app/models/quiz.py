@@ -99,6 +99,15 @@ class QuizAttempt(UUIDPrimaryKeyMixin, Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
+    # When an attempt was created by a live quiz session ending, this holds
+    # the session id. A unique index on (user_id, live_session_id) prevents
+    # double-awarding XP / duplicate attempts if the end-session hook fires
+    # more than once (host double-click, WS + REST path, etc).
+    live_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("live_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     answers: Mapped[dict] = mapped_column(JSON, nullable=False)
     score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     total_questions: Mapped[int | None] = mapped_column(Integer)
