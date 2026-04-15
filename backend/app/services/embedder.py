@@ -1,3 +1,4 @@
+import httpx
 import openai
 
 from app.config import settings
@@ -5,6 +6,8 @@ from app.config import settings
 EMBEDDING_MODEL = "openai/text-embedding-3-large"
 EMBEDDING_DIMENSIONS = 1536
 BATCH_SIZE = 100
+# Explicit per-request timeout so a hung upstream can never deadlock the worker.
+_EMBED_TIMEOUT = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
 
 _client: openai.AsyncOpenAI | None = None
 
@@ -15,6 +18,8 @@ def _get_client() -> openai.AsyncOpenAI:
         _client = openai.AsyncOpenAI(
             api_key=settings.openrouter_api_key,
             base_url=settings.openrouter_base_url,
+            timeout=_EMBED_TIMEOUT,
+            max_retries=2,
         )
     return _client
 
