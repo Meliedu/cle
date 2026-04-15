@@ -43,6 +43,16 @@ async def _discard_refresh_lock(user_id: uuid.UUID) -> None:
         _REFRESH_LOCKS.pop(user_id, None)
 
 
+# Allowlist of Canvas-operated hosts that may serve file payloads in
+# addition to the institution's own Canvas host. Canvas's public file
+# delivery CDN is ``files.instructure.com``; signed S3 URLs surface via
+# ``canvas-*.s3.*.amazonaws.com``. Anything broader (e.g. bare
+# ``instructure.com``) is too permissive for SSRF defense.
+_CANVAS_DOWNLOAD_ALLOWLIST: tuple[str, ...] = (
+    "files.instructure.com",
+)
+
+
 class CanvasNotConnected(Exception):
     """User has no Canvas credential (or it was marked invalid)."""
 
@@ -60,9 +70,11 @@ def _validate_download_url(download_url: str, canvas_base_url: str) -> None:
     narrowly-allowlisted Canvas file-delivery CDN.
 
     Canvas typically serves file payloads either from the institution's own
-    Canvas host or from ``*.instructure.com`` (the Canvas file delivery CDN).
-    If the operator has configured ``canvas_allowed_hosts`` we also treat
-    each entry as an acceptable suffix match.
+    Canvas host or from ``files.instructure.com`` (the Canvas file delivery
+    CDN). If the operator has configured ``canvas_allowed_hosts`` we also
+    treat each entry as an acceptable suffix match (e.g. to permit signed
+    S3 URLs from ``canvas-*.s3.*.amazonaws.com`` in deployments that use
+    them).
     """
     parsed = urlparse(download_url)
     if parsed.scheme != "https":
@@ -78,7 +90,7 @@ def _validate_download_url(download_url: str, canvas_base_url: str) -> None:
         if h.strip()
     ]
 
-    candidates = {base_host, "instructure.com"}
+    candidates = {base_host, *_CANVAS_DOWNLOAD_ALLOWLIST}
     candidates.update(configured)
     candidates.discard("")
 
