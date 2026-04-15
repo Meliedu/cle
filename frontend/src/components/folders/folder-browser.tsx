@@ -861,11 +861,14 @@ function MoveDialog({
   const rows = useMemo(() => {
     const out: { folder: FolderLike | null; depth: number }[] = [];
     out.push({ folder: null, depth: 0 });
+    const visited = new Set<string>();
     const walk = (parentId: string | null, depth: number) => {
       const children = [...(byParent.get(parentId) ?? [])].sort((a, b) =>
         a.name.localeCompare(b.name)
       );
       for (const c of children) {
+        if (visited.has(c.id)) continue;
+        visited.add(c.id);
         out.push({ folder: c, depth });
         walk(c.id, depth + 1);
       }
