@@ -4,8 +4,6 @@ import ipaddress
 import socket
 from urllib.parse import urlparse
 
-from app.config import settings
-
 
 def _is_private_ip(ip: str) -> bool:
     try:
@@ -30,8 +28,12 @@ def _resolves_to_private(host: str) -> bool:
     return any(_is_private_ip(info[4][0]) for info in infos)
 
 
-def validate_canvas_base_url(url: str) -> str:
+def validate_canvas_base_url(url: str, allowed_hosts: str | None = None) -> str:
     """Validate a Canvas LMS base URL: HTTPS, allowlisted host, no private IPs.
+
+    ``allowed_hosts`` is an optional comma-separated allowlist; when omitted
+    the caller is telling us no allowlist is configured and we fall back to
+    rejecting hosts that resolve to private/internal addresses.
 
     Returns the normalized URL on success; raises ValueError otherwise.
     """
@@ -47,7 +49,11 @@ def validate_canvas_base_url(url: str) -> str:
     if parsed.port and parsed.port not in (443,):
         raise ValueError("canvas_base_url may only use the default https port")
 
-    allowed = [h.strip().lower() for h in (settings.canvas_allowed_hosts or "").split(",") if h.strip()]
+    allowed = [
+        h.strip().lower()
+        for h in (allowed_hosts or "").split(",")
+        if h.strip()
+    ]
     if allowed:
         if not any(host == a or host.endswith("." + a) for a in allowed):
             raise ValueError(f"canvas_base_url host '{host}' not in allowlist")

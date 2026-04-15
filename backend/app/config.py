@@ -103,6 +103,21 @@ class Settings(BaseSettings):
             raise ValueError(
                 "INTEGRATIONS_ENCRYPTION_KEY must be set when ENVIRONMENT=production"
             )
+        # Validate canvas_base_url on every environment. SSRF is a runtime
+        # concern, and we want the process to fail fast if someone points
+        # Canvas at a non-https or internal URL.
+        # Imported inline to avoid a circular import: url_safety would
+        # otherwise try to import ``settings`` before this module finishes
+        # initializing.
+        from app.services.url_safety import validate_canvas_base_url
+
+        object.__setattr__(
+            self,
+            "canvas_base_url",
+            validate_canvas_base_url(
+                self.canvas_base_url, self.canvas_allowed_hosts
+            ),
+        )
         return self
 
 
