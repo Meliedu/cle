@@ -706,10 +706,9 @@ async def websocket_live(
                     continue
                 async with manager.get_lock(session_id):
                     async with async_session_factory() as db:
-                        state = await _get_or_rehydrate_state(db, session)
-                    state.status = "finished"
-                    async with async_session_factory() as db:
                         db_session = await _get_session_or_404(db, session_id)
+                        state = await _get_or_rehydrate_state(db, db_session)
+                        state.status = "finished"
                         await _persist_session_activity(db, db_session, state)
                         db_session.status = "finished"
                         db_session.ended_at = datetime.now(timezone.utc)
