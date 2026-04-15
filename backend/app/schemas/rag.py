@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.services.generator import MAX_MCQ_OPTIONS
+
 
 class RAGQueryRequest(BaseModel):
     course_id: uuid.UUID
@@ -41,7 +43,7 @@ class GenerateQuizRequest(BaseModel):
     question_types: list[QuestionType] = Field(
         default_factory=lambda: ["multiple_choice"]
     )
-    mcq_option_count: int = Field(default=4, ge=2, le=6)
+    mcq_option_count: int = Field(default=4, ge=2, le=MAX_MCQ_OPTIONS)
     difficulty: Difficulty = "medium"
 
 

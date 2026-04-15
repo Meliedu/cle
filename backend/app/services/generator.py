@@ -134,6 +134,7 @@ Each object must have:
 """
 
 _MCQ_LETTERS = ["A", "B", "C", "D", "E", "F"]
+MAX_MCQ_OPTIONS = len(_MCQ_LETTERS)
 
 
 def _quiz_instructions(
@@ -141,6 +142,9 @@ def _quiz_instructions(
     mcq_option_count: int,
     difficulty: str,
 ) -> str:
+    assert mcq_option_count <= MAX_MCQ_OPTIONS, (
+        f"mcq_option_count {mcq_option_count} exceeds MAX_MCQ_OPTIONS {MAX_MCQ_OPTIONS}"
+    )
     parts: list[str] = []
     if len(question_types) == 1:
         if question_types[0] == "true_false":
