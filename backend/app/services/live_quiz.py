@@ -1,3 +1,4 @@
+import asyncio
 import json
 import secrets
 import string
@@ -148,6 +149,17 @@ class ConnectionManager:
     def __init__(self) -> None:
         self.connections: dict[str, list[WebSocket]] = {}
         self.sessions: dict[str, SessionState] = {}
+        # Per-session locks serialize state mutations like next_question so
+        # concurrent host clicks can't double-advance the quiz.
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def get_lock(self, session_id: str) -> asyncio.Lock:
+        """Return (and lazily create) the asyncio.Lock for a session."""
+        lock = self._locks.get(session_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[session_id] = lock
+        return lock
 
     async def connect(self, session_id: str, websocket: WebSocket) -> None:
         await websocket.accept()
@@ -192,6 +204,7 @@ class ConnectionManager:
     def remove_session(self, session_id: str) -> None:
         self.sessions.pop(session_id, None)
         self.connections.pop(session_id, None)
+        self._locks.pop(session_id, None)
 
 
 # Singleton

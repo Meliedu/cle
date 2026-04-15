@@ -333,29 +333,34 @@ async def live_next_question(
     user=Depends(require_instructor),
     db: AsyncSession = Depends(get_db),
 ):
-    """Advance to the next question (host only)."""
+    """Advance to the next question (host only).
+
+    Serialized through a per-session asyncio.Lock so concurrent host clicks
+    cannot double-advance the quiz.
+    """
     session = await _get_session_or_404(db, session_id)
     if session.host_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not session host"
         )
 
-    state = await _get_or_rehydrate_state(db, session)
-    state.next_question()
+    async with manager.get_lock(session_id):
+        state = await _get_or_rehydrate_state(db, session)
+        state.next_question()
 
-    session.status = state.status
-    session.current_question_index = state.current_question_index
-    if state.status == "active" and session.started_at is None:
-        session.started_at = datetime.now(timezone.utc)
-    await db.commit()
+        session.status = state.status
+        session.current_question_index = state.current_question_index
+        if state.status == "active" and session.started_at is None:
+            session.started_at = datetime.now(timezone.utc)
+        await db.commit()
 
-    return APIResponse(
-        success=True,
-        data={
-            "status": state.status,
-            "current_question_index": state.current_question_index,
-        },
-    )
+        return APIResponse(
+            success=True,
+            data={
+                "status": state.status,
+                "current_question_index": state.current_question_index,
+            },
+        )
 
 
 @router.post("/live-sessions/{session_id}/answer")
@@ -585,8 +590,6 @@ async def websocket_live(
         while True:
             data = await websocket.receive_json()
             msg_type = data.get("type")
-            async with async_session_factory() as db:
-                state = await _get_or_rehydrate_state(db, session)
 
             if msg_type == "next_question":
                 if not is_host:
@@ -594,7 +597,12 @@ async def websocket_live(
                         {"type": "error", "message": "Host only"}
                     )
                     continue
-                state.next_question()
+                # Serialize with REST next_question so concurrent advances
+                # can't race each other.
+                async with manager.get_lock(session_id):
+                    async with async_session_factory() as db:
+                        state = await _get_or_rehydrate_state(db, session)
+                    state.next_question()
                 if state.status == "finished":
                     await manager.broadcast(
                         session_id,
@@ -622,13 +630,14 @@ async def websocket_live(
                     )
                     continue
                 answer = str(data.get("answer", ""))
-                try:
-                    elapsed = float(data.get("elapsed_seconds", 0))
-                except (TypeError, ValueError):
-                    elapsed = 0.0
 
+                # Fetch state + question in the same DB session, then act on
+                # that single state reference — don't re-fetch mid-handler.
                 async with async_session_factory() as db:
-                    question = await _load_question(db, session.quiz_id, question_index)
+                    state = await _get_or_rehydrate_state(db, session)
+                    question = await _load_question(
+                        db, session.quiz_id, question_index
+                    )
                 if question is None:
                     await websocket.send_json(
                         {"type": "error", "message": "Question not found"}
@@ -636,6 +645,8 @@ async def websocket_live(
                     continue
 
                 is_correct = _answer_is_correct(answer, question.correct_answer)
+                # Trust server-side elapsed time, not the client's claim.
+                elapsed = state.elapsed_seconds()
                 points = calculate_points(is_correct, elapsed, state.time_limit)
                 state.record_answer(
                     str(user.id), answer, points, is_correct=is_correct
@@ -656,13 +667,16 @@ async def websocket_live(
                         {"type": "error", "message": "Host only"}
                     )
                     continue
-                state.status = "finished"
-                async with async_session_factory() as db:
-                    db_session = await _get_session_or_404(db, session_id)
-                    await _persist_session_activity(db, db_session, state)
-                    db_session.status = "finished"
-                    db_session.ended_at = datetime.now(timezone.utc)
-                    await db.commit()
+                async with manager.get_lock(session_id):
+                    async with async_session_factory() as db:
+                        state = await _get_or_rehydrate_state(db, session)
+                    state.status = "finished"
+                    async with async_session_factory() as db:
+                        db_session = await _get_session_or_404(db, session_id)
+                        await _persist_session_activity(db, db_session, state)
+                        db_session.status = "finished"
+                        db_session.ended_at = datetime.now(timezone.utc)
+                        await db.commit()
                 await manager.broadcast(
                     session_id,
                     {
