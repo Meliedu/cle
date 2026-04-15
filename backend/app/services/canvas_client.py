@@ -33,10 +33,14 @@ async def _get_refresh_lock(user_id: uuid.UUID) -> asyncio.Lock:
 
 
 async def _discard_refresh_lock(user_id: uuid.UUID) -> None:
+    # Unconditionally remove the per-user lock entry. Callers invoke this
+    # from the finally block of _refresh(), after ``async with lock`` has
+    # released the lock. Leaving the ``not lock.locked()`` guard here meant
+    # the entry was never evicted because the current coroutine still held
+    # the lock when the finally ran in some call orderings, causing
+    # _REFRESH_LOCKS to grow unboundedly across users.
     async with _REFRESH_LOCKS_GUARD:
-        lock = _REFRESH_LOCKS.get(user_id)
-        if lock is not None and not lock.locked():
-            _REFRESH_LOCKS.pop(user_id, None)
+        _REFRESH_LOCKS.pop(user_id, None)
 
 
 class CanvasNotConnected(Exception):
