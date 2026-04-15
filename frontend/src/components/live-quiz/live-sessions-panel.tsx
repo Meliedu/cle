@@ -24,10 +24,6 @@ import {
   Clock,
   Zap,
   Trash2,
-  Sparkles,
-  Download,
-  BookOpen,
-  FolderPlus,
 } from "lucide-react";
 import {
   useLiveSessions,
@@ -41,12 +37,13 @@ import {
   useCreateQuizFolder,
   useRenameQuizFolder,
   useDeleteQuizFolder,
+  useMoveQuizFolder,
   useMoveQuizToFolder,
 } from "@/hooks/use-quiz-folders";
 import { formatRelativeTime } from "@/lib/format";
 import { GenerateLiveQuizDialog } from "@/components/live-quiz/generate-live-quiz-dialog";
 import { ImportFromQuizDialog } from "@/components/live-quiz/import-from-quiz-dialog";
-import { QuizFolderTree } from "@/components/live-quiz/quiz-folder-tree";
+import { QuizBankBrowser } from "@/components/live-quiz/quiz-bank-browser";
 
 interface LiveSessionsPanelProps {
   readonly courseId: string;
@@ -69,6 +66,7 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
   const createFolder = useCreateQuizFolder(courseId);
   const renameFolder = useRenameQuizFolder(courseId);
   const deleteFolder = useDeleteQuizFolder(courseId);
+  const moveFolder = useMoveQuizFolder(courseId);
   const moveQuiz = useMoveQuizToFolder(courseId);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -125,21 +123,6 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
   };
 
   const publishedQuizzes = liveQuizzes?.filter((q) => q.is_published);
-
-  const handleNewFolder = (parentId: string | null) => {
-    const name = window.prompt("Folder name");
-    if (!name || !name.trim()) return;
-    createFolder.mutate({ name: name.trim(), parent_id: parentId });
-  };
-  const handleDeleteFolder = (folderId: string) => {
-    if (
-      !window.confirm(
-        "Delete this folder? Quizzes and subfolders inside will move up one level."
-      )
-    )
-      return;
-    deleteFolder.mutate(folderId);
-  };
 
   const sessionsSection = (
     <div className="space-y-4">
@@ -273,46 +256,22 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
 
   const bankSection = isInstructor ? (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-muted)]">
-          <BookOpen className="size-4" />
-          Live Question Bank
-        </h2>
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleNewFolder(null)}
-          >
-            <FolderPlus className="size-4" />
-            New Folder
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setImportOpen(true)}
-          >
-            <Download className="size-4" />
-            Import
-          </Button>
-          <Button size="sm" onClick={() => setGenerateOpen(true)}>
-            <Sparkles className="size-4" />
-            Generate
-          </Button>
-        </div>
-      </div>
       {quizzesLoading ? (
-        <Skeleton className="h-16 rounded-[var(--radius-lg)]" />
-      ) : (liveQuizzes && liveQuizzes.length > 0) ||
-        (folders && folders.length > 0) ? (
-        <QuizFolderTree
+        <Skeleton className="h-32 rounded-[var(--radius-lg)]" />
+      ) : (
+        <QuizBankBrowser
           folders={folders ?? []}
           quizzes={liveQuizzes ?? []}
-          onCreateFolder={handleNewFolder}
+          onCreateFolder={(parentId, name) =>
+            createFolder.mutate({ name, parent_id: parentId })
+          }
           onRenameFolder={(id, name) =>
             renameFolder.mutate({ folder_id: id, name })
           }
-          onDeleteFolder={handleDeleteFolder}
+          onDeleteFolder={(id) => deleteFolder.mutate(id)}
+          onMoveFolder={(id, parentId) =>
+            moveFolder.mutate({ folder_id: id, parent_id: parentId })
+          }
           onMoveQuiz={(quizId, folderId) =>
             moveQuiz.mutate({ quiz_id: quizId, folder_id: folderId })
           }
@@ -321,19 +280,9 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
             setCreateOpen(true);
           }}
           onDeleteQuiz={(quizId) => setDeleteQuizConfirmId(quizId)}
+          onGenerate={() => setGenerateOpen(true)}
+          onImport={() => setImportOpen(true)}
         />
-      ) : (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-8 text-center">
-            <p className="text-sm text-[var(--color-text)]">
-              No live quizzes yet.
-            </p>
-            <p className="max-w-sm text-xs text-[var(--color-text-muted)]">
-              Generate a new one, or import questions from an existing
-              after-class quiz.
-            </p>
-          </CardContent>
-        </Card>
       )}
     </div>
   ) : null;
