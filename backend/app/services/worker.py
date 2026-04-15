@@ -45,11 +45,16 @@ async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
     'task running' and 'task failed' state transitions, or when a task is
     cleared out-of-band. Without this, the UI shows a perpetual spinner
     and re-upload is the user's only recourse.
-    """
-    from app.models.document import Document
 
-    # A document is orphaned if status='processing' but no task of type
-    # process_document referencing it is currently pending or running.
+    We also enforce a grace period: the document upload endpoint commits
+    the document row BEFORE uploading to R2 and creating the task row.
+    During that window (seconds to tens of seconds for large PDFs) there
+    is no task referencing the doc — but it's a valid in-flight upload.
+    The 10-minute floor on updated_at is longer than any realistic R2
+    upload and shorter than any tolerable "stuck spinner" experience.
+    """
+    # A document is orphaned if status='processing', older than the grace
+    # period, and no process_document task referencing it is pending/running.
     await session.execute(
         text(
             """
@@ -58,6 +63,7 @@ async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
                    updated_at = now()
              WHERE status = 'processing'
                AND deleted_at IS NULL
+               AND updated_at < now() - INTERVAL '10 minutes'
                AND NOT EXISTS (
                    SELECT 1 FROM tasks t
                     WHERE t.task_type = 'process_document'
