@@ -20,10 +20,38 @@ class FlashcardSetResponse(BaseModel):
     course_id: uuid.UUID
     title: str
     is_published: bool
+    folder_id: uuid.UUID | None = None
     card_count: int
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class FlashcardFolderResponse(BaseModel):
+    id: uuid.UUID
+    course_id: uuid.UUID
+    name: str
+    parent_id: uuid.UUID | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FlashcardFolderCreate(BaseModel):
+    name: str
+    parent_id: uuid.UUID | None = None
+
+
+class FlashcardFolderRename(BaseModel):
+    name: str
+
+
+class FlashcardFolderMove(BaseModel):
+    parent_id: uuid.UUID | None = None
+
+
+class FlashcardSetMove(BaseModel):
+    folder_id: uuid.UUID | None = None
 
 
 class FlashcardSetDetailResponse(BaseModel):

@@ -40,6 +40,7 @@ class QuizFolderResponse(BaseModel):
     course_id: uuid.UUID
     name: str
     parent_id: uuid.UUID | None
+    purpose: str = "live"
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -48,6 +49,7 @@ class QuizFolderResponse(BaseModel):
 class QuizFolderCreate(BaseModel):
     name: str
     parent_id: uuid.UUID | None = None
+    purpose: str = "live"
 
 
 class QuizFolderRename(BaseModel):

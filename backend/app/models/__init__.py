@@ -5,7 +5,13 @@ from app.models.integration import CanvasIntegration
 from app.models.chunk import Chunk
 from app.models.course import Course, Enrollment
 from app.models.document import Document
-from app.models.flashcard import FlashcardCard, FlashcardProgress, FlashcardSet, FlashcardSetDocument
+from app.models.flashcard import (
+    FlashcardCard,
+    FlashcardFolder,
+    FlashcardProgress,
+    FlashcardSet,
+    FlashcardSetDocument,
+)
 from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument, QuizFolder
 from app.models.scheduler import SchedulerModel
 from app.models.score import PronunciationScore, StudentProgress
@@ -37,6 +43,7 @@ __all__ = [
     "QuizFolder",
     "FlashcardSet",
     "FlashcardCard",
+    "FlashcardFolder",
     "FlashcardSetDocument",
     "FlashcardProgress",
     "SchedulerModel",

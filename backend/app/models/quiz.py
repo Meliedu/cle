@@ -19,6 +19,9 @@ class QuizFolder(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("quiz_folders.id", ondelete="SET NULL")
     )
+    purpose: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="live"
+    )
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
