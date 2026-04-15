@@ -1,8 +1,10 @@
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -35,6 +37,7 @@ router = APIRouter(tags=["quizzes"])
 )
 async def list_quizzes(
     course_id: uuid.UUID,
+    purpose: Literal["after_class", "live"] | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -50,6 +53,9 @@ async def list_quizzes(
         .group_by(Quiz.id)
     )
 
+    if purpose is not None:
+        stmt = stmt.where(Quiz.purpose == purpose)
+
     if user.role != "instructor":
         stmt = stmt.where(Quiz.is_published.is_(True))
 
@@ -63,6 +69,7 @@ async def list_quizzes(
             title=quiz.title,
             description=quiz.description,
             quiz_type=quiz.quiz_type,
+            purpose=quiz.purpose,
             is_published=quiz.is_published,
             question_count=question_count,
             created_at=quiz.created_at,
@@ -224,6 +231,7 @@ async def update_quiz(
             title=quiz.title,
             description=quiz.description,
             quiz_type=quiz.quiz_type,
+            purpose=quiz.purpose,
             is_published=quiz.is_published,
             question_count=question_count,
             created_at=quiz.created_at,
@@ -299,6 +307,7 @@ async def publish_quiz(
             title=quiz.title,
             description=quiz.description,
             quiz_type=quiz.quiz_type,
+            purpose=quiz.purpose,
             is_published=quiz.is_published,
             question_count=question_count,
             created_at=quiz.created_at,
@@ -589,5 +598,103 @@ async def submit_attempt(
             time_taken_seconds=attempt.time_taken_seconds,
             results=results,
             completed_at=attempt.completed_at,
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Import to live question bank
+# ---------------------------------------------------------------------------
+
+
+class ImportToLiveRequest(BaseModel):
+    source_quiz_id: uuid.UUID
+    question_ids: list[uuid.UUID] = Field(default_factory=list)
+    title: str = Field(min_length=1, max_length=255)
+
+
+@router.post(
+    "/courses/{course_id}/quizzes/import-to-live",
+    response_model=APIResponse[QuizResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_to_live(
+    course_id: uuid.UUID,
+    body: ImportToLiveRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    """Copy selected questions from an existing quiz into a new live-purpose quiz.
+
+    The new quiz is created published (live bank entries are directly usable) and
+    marked purpose='live'. Source quiz is untouched.
+    """
+    await _verify_enrollment(db, course_id, user.id)
+
+    source = await db.get(Quiz, body.source_quiz_id)
+    if (
+        source is None
+        or source.deleted_at is not None
+        or source.course_id != course_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source quiz not found in this course",
+        )
+
+    q_stmt = select(Question).where(Question.quiz_id == source.id)
+    if body.question_ids:
+        q_stmt = q_stmt.where(Question.id.in_(body.question_ids))
+    q_stmt = q_stmt.order_by(Question.question_index)
+    source_questions = (await db.execute(q_stmt)).scalars().all()
+
+    if not source_questions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No questions matched the selection",
+        )
+
+    new_quiz = Quiz(
+        course_id=course_id,
+        created_by=user.id,
+        title=body.title,
+        description=source.description,
+        quiz_type=source.quiz_type,
+        purpose="live",
+        is_published=True,
+    )
+    db.add(new_quiz)
+    await db.flush()
+
+    for idx, q in enumerate(source_questions):
+        db.add(
+            Question(
+                quiz_id=new_quiz.id,
+                question_index=idx,
+                type=q.type,
+                question_text=q.question_text,
+                options=q.options,
+                correct_answer=q.correct_answer,
+                explanation=q.explanation,
+                difficulty=q.difficulty,
+                source_chunk_id=q.source_chunk_id,
+            )
+        )
+
+    await db.commit()
+    await db.refresh(new_quiz)
+
+    return APIResponse(
+        success=True,
+        data=QuizResponse(
+            id=new_quiz.id,
+            course_id=new_quiz.course_id,
+            title=new_quiz.title,
+            description=new_quiz.description,
+            quiz_type=new_quiz.quiz_type,
+            purpose=new_quiz.purpose,
+            is_published=new_quiz.is_published,
+            question_count=len(source_questions),
+            created_at=new_quiz.created_at,
         ),
     )
