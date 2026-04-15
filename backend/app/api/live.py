@@ -413,20 +413,21 @@ async def live_end_session(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not session host"
         )
 
-    state = await _get_or_rehydrate_state(db, session)
-    state.status = "finished"
+    async with manager.get_lock(session_id):
+        state = await _get_or_rehydrate_state(db, session)
+        state.status = "finished"
 
-    await _persist_session_activity(db, session, state)
+        await _persist_session_activity(db, session, state)
 
-    session.status = "finished"
-    session.ended_at = datetime.now(timezone.utc)
-    await db.commit()
+        session.status = "finished"
+        session.ended_at = datetime.now(timezone.utc)
+        await db.commit()
 
-    names = await _name_lookup(db, set(state.player_scores.keys()))
-    return APIResponse(
-        success=True,
-        data={"final_leaderboard": state.get_leaderboard(names=names)},
-    )
+        names = await _name_lookup(db, set(state.player_scores.keys()))
+        return APIResponse(
+            success=True,
+            data={"final_leaderboard": state.get_leaderboard(names=names)},
+        )
 
 
 @router.post("/live-sessions/{session_id}/anonymity")
