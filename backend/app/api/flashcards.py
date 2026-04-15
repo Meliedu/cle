@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -6,6 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+logger = logging.getLogger(__name__)
 
 from app.api._helpers import verify_enrollment as _verify_enrollment
 from app.api.deps import get_current_user, get_db, require_instructor
@@ -432,6 +435,10 @@ async def _fc_folder_first_live_ancestor(
     visited: set[uuid.UUID] = set()
     while current is not None:
         if current in visited:
+            logger.warning(
+                "flashcard folder cycle detected during ancestor walk",
+                extra={"folder_id": str(folder.id), "cycle_at": str(current)},
+            )
             return None
         visited.add(current)
         ancestor = await db.get(FlashcardFolder, current)
