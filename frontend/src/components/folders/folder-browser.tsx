@@ -74,8 +74,14 @@ export interface FolderBrowserProps<TItem extends ItemLike> {
   readonly onCreateFolder: (parentId: string | null, name: string) => void;
   readonly onRenameFolder: (folderId: string, name: string) => void;
   readonly onDeleteFolder: (folderId: string) => void;
-  readonly onMoveFolder: (folderId: string, parentId: string | null) => void;
-  readonly onMoveItem: (itemId: string, folderId: string | null) => void;
+  readonly onMoveFolder: (
+    folderId: string,
+    parentId: string | null
+  ) => void | Promise<unknown>;
+  readonly onMoveItem: (
+    itemId: string,
+    folderId: string | null
+  ) => void | Promise<unknown>;
   readonly sortItems?: (a: TItem, b: TItem) => number;
   /** Number of items+subfolders beneath a folder. If omitted, computed internally */
   readonly childCountOf?: (folderId: string) => number;
@@ -189,6 +195,8 @@ export function FolderBrowser<TItem extends ItemLike>({
   const [prompt, setPrompt] = useState<PromptState | null>(null);
   const [promptValue, setPromptValue] = useState("");
   const [move, setMove] = useState<MoveState | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const [movePending, setMovePending] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{
     type: "folder";
     id: string;
@@ -252,11 +260,28 @@ export function FolderBrowser<TItem extends ItemLike>({
     setPromptValue(folder.name);
   };
 
-  const performMove = (targetId: string | null) => {
-    if (!move) return;
-    if (move.type === "folder") onMoveFolder(move.id, targetId);
-    else onMoveItem(move.id, targetId);
-    setMove(null);
+  const performMove = async (targetId: string | null) => {
+    if (!move || movePending) return;
+    setMoveError(null);
+    try {
+      setMovePending(true);
+      const result =
+        move.type === "folder"
+          ? onMoveFolder(move.id, targetId)
+          : onMoveItem(move.id, targetId);
+      if (result && typeof (result as Promise<unknown>).then === "function") {
+        await result;
+      }
+      setMove(null);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "Move failed. Try again.";
+      setMoveError(message);
+    } finally {
+      setMovePending(false);
+    }
   };
 
   const isEmpty = currentFolders.length === 0 && currentItems.length === 0;
@@ -403,7 +428,12 @@ export function FolderBrowser<TItem extends ItemLike>({
       {/* Move dialog */}
       <MoveDialog
         open={move !== null}
-        onOpenChange={(open) => !open && setMove(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setMove(null);
+            setMoveError(null);
+          }
+        }}
         byParent={byParent}
         disabledIds={
           move?.type === "folder"
@@ -412,6 +442,8 @@ export function FolderBrowser<TItem extends ItemLike>({
         }
         currentParentId={move?.currentParentId ?? null}
         onPick={performMove}
+        error={moveError}
+        isPending={movePending}
       />
 
       {/* Delete folder confirmation */}
@@ -808,6 +840,8 @@ function MoveDialog({
   disabledIds,
   currentParentId,
   onPick,
+  error,
+  isPending,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -815,6 +849,8 @@ function MoveDialog({
   disabledIds: Set<string>;
   currentParentId: string | null;
   onPick: (folderId: string | null) => void;
+  error?: string | null;
+  isPending?: boolean;
 }) {
   const [pick, setPick] = useState<string | null>(currentParentId);
 
@@ -884,15 +920,27 @@ function MoveDialog({
             );
           })}
         </div>
+        {error ? (
+          <p
+            role="alert"
+            className="rounded-[var(--radius-sm)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]"
+          >
+            {error}
+          </p>
+        ) : null}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isPending}
+          >
             Cancel
           </Button>
           <Button
             onClick={() => onPick(pick)}
-            disabled={pick === currentParentId}
+            disabled={pick === currentParentId || isPending}
           >
-            Move here
+            {isPending ? "Moving…" : "Move here"}
           </Button>
         </DialogFooter>
       </DialogContent>
