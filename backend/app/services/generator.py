@@ -203,6 +203,7 @@ async def generate_quiz(
     try:
         raw = await _call_llm(_QUIZ_SYSTEM_PROMPT_BASE, user_prompt)
         items = _parse_json_response(raw)
+        results = _build_quiz_results(items, difficulty)
     except (ValueError, json.JSONDecodeError) as exc:
         logger.warning("Primary model JSON parse failed: %s — trying fallback", exc)
         try:
@@ -212,11 +213,21 @@ async def generate_quiz(
                 model=settings.openrouter_fallback_model,
             )
             items = _parse_json_response(raw)
+            results = _build_quiz_results(items, difficulty)
         except (ValueError, json.JSONDecodeError) as fallback_exc:
             raise ValueError(
                 "Both primary and fallback models failed to produce valid quiz JSON"
             ) from fallback_exc
 
+    return results
+
+
+def _build_quiz_results(
+    items: list[dict], difficulty: str
+) -> list[GeneratedQuestion]:
+    """Convert parsed LLM items to ``GeneratedQuestion``. Raises ``ValueError``
+    on malformed output so the caller can trigger the fallback model path.
+    """
     results: list[GeneratedQuestion] = []
     for item in items:
         q_type = item.get("type") or (
@@ -226,11 +237,17 @@ async def generate_quiz(
         q_difficulty = item.get("difficulty", difficulty if difficulty != "mixed" else "medium")
         if q_difficulty not in {"easy", "medium", "hard"}:
             q_difficulty = "medium"
+        try:
+            question_text = item["question_text"]
+            options = item["options"]
+            correct_answer = item["correct_answer"]
+        except (KeyError, TypeError) as exc:
+            raise ValueError(f"missing field: {exc}") from exc
         results.append(
             GeneratedQuestion(
-                question_text=item["question_text"],
-                options=item["options"],
-                correct_answer=item["correct_answer"],
+                question_text=question_text,
+                options=options,
+                correct_answer=correct_answer,
                 explanation=item.get("explanation", ""),
                 type=q_type,
                 difficulty=q_difficulty,
@@ -372,6 +389,7 @@ async def generate_revision_quiz(
     try:
         raw = await _call_llm(_REVISION_QUIZ_SYSTEM_PROMPT, user_prompt)
         items = _parse_json_response(raw)
+        results = _build_revision_quiz_results(items)
     except (ValueError, json.JSONDecodeError) as exc:
         logger.warning("Primary model JSON parse failed: %s — trying fallback", exc)
         try:
@@ -381,20 +399,38 @@ async def generate_revision_quiz(
                 model=settings.openrouter_fallback_model,
             )
             items = _parse_json_response(raw)
+            results = _build_revision_quiz_results(items)
         except (ValueError, json.JSONDecodeError) as fallback_exc:
             raise ValueError(
                 "Both primary and fallback models failed to produce valid revision quiz JSON"
             ) from fallback_exc
 
-    return [
-        GeneratedQuestion(
-            question_text=item["question_text"],
-            options=item["options"],
-            correct_answer=item["correct_answer"],
-            explanation=item["explanation"],
+    return results
+
+
+def _build_revision_quiz_results(items: list[dict]) -> list[GeneratedQuestion]:
+    """Convert parsed LLM items to ``GeneratedQuestion`` for the revision path.
+    Raises ``ValueError`` on malformed output so the caller can trigger the
+    fallback model path.
+    """
+    results: list[GeneratedQuestion] = []
+    for item in items:
+        try:
+            question_text = item["question_text"]
+            options = item["options"]
+            correct_answer = item["correct_answer"]
+            explanation = item["explanation"]
+        except (KeyError, TypeError) as exc:
+            raise ValueError(f"missing field: {exc}") from exc
+        results.append(
+            GeneratedQuestion(
+                question_text=question_text,
+                options=options,
+                correct_answer=correct_answer,
+                explanation=explanation,
+            )
         )
-        for item in items
-    ]
+    return results
 
 
 # ---------------------------------------------------------------------------
