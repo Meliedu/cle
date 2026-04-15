@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api._helpers import verify_enrollment as _verify_enrollment
 from app.api.deps import get_current_user, get_db, require_instructor
-from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument
+from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument, QuizFolder
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.services.gamification import award_xp
@@ -23,6 +23,11 @@ from app.schemas.quiz import (
     QuizAttemptResponse,
     QuizAttemptResult,
     QuizDetailResponse,
+    QuizFolderCreate,
+    QuizFolderMove,
+    QuizFolderRename,
+    QuizFolderResponse,
+    QuizMove,
     QuizPreviewResponse,
     QuizResponse,
     QuizUpdate,
@@ -70,6 +75,7 @@ async def list_quizzes(
             description=quiz.description,
             quiz_type=quiz.quiz_type,
             purpose=quiz.purpose,
+            folder_id=quiz.folder_id,
             is_published=quiz.is_published,
             question_count=question_count,
             created_at=quiz.created_at,
@@ -232,6 +238,7 @@ async def update_quiz(
             description=quiz.description,
             quiz_type=quiz.quiz_type,
             purpose=quiz.purpose,
+            folder_id=quiz.folder_id,
             is_published=quiz.is_published,
             question_count=question_count,
             created_at=quiz.created_at,
@@ -308,6 +315,7 @@ async def publish_quiz(
             description=quiz.description,
             quiz_type=quiz.quiz_type,
             purpose=quiz.purpose,
+            folder_id=quiz.folder_id,
             is_published=quiz.is_published,
             question_count=question_count,
             created_at=quiz.created_at,
@@ -693,8 +701,239 @@ async def import_to_live(
             description=new_quiz.description,
             quiz_type=new_quiz.quiz_type,
             purpose=new_quiz.purpose,
+            folder_id=new_quiz.folder_id,
             is_published=new_quiz.is_published,
             question_count=len(source_questions),
             created_at=new_quiz.created_at,
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Quiz folders
+# ---------------------------------------------------------------------------
+
+
+async def _folder_descendant_ids(
+    db: AsyncSession, root_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """Return all descendant folder ids of root_id (inclusive)."""
+    result: set[uuid.UUID] = {root_id}
+    frontier = [root_id]
+    while frontier:
+        rows = (
+            await db.execute(
+                select(QuizFolder.id).where(
+                    QuizFolder.parent_id.in_(frontier),
+                    QuizFolder.deleted_at.is_(None),
+                )
+            )
+        ).scalars().all()
+        frontier = [r for r in rows if r not in result]
+        result.update(frontier)
+    return result
+
+
+@router.get(
+    "/courses/{course_id}/quiz-folders",
+    response_model=APIResponse[list[QuizFolderResponse]],
+)
+async def list_quiz_folders(
+    course_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    await _verify_enrollment(db, course_id, user.id)
+    result = await db.execute(
+        select(QuizFolder)
+        .where(
+            QuizFolder.course_id == course_id,
+            QuizFolder.deleted_at.is_(None),
+        )
+        .order_by(QuizFolder.created_at)
+    )
+    folders = result.scalars().all()
+    return APIResponse(
+        success=True,
+        data=[QuizFolderResponse.model_validate(f) for f in folders],
+    )
+
+
+@router.post(
+    "/courses/{course_id}/quiz-folders",
+    response_model=APIResponse[QuizFolderResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_quiz_folder(
+    course_id: uuid.UUID,
+    body: QuizFolderCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    await _verify_enrollment(db, course_id, user.id)
+
+    if body.parent_id is not None:
+        parent = await db.get(QuizFolder, body.parent_id)
+        if (
+            parent is None
+            or parent.deleted_at is not None
+            or parent.course_id != course_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Parent folder not found in this course",
+            )
+
+    folder = QuizFolder(
+        course_id=course_id,
+        name=body.name.strip() or "Untitled",
+        parent_id=body.parent_id,
+        created_by=user.id,
+    )
+    db.add(folder)
+    await db.commit()
+    await db.refresh(folder)
+    return APIResponse(
+        success=True,
+        data=QuizFolderResponse.model_validate(folder),
+    )
+
+
+@router.patch(
+    "/quiz-folders/{folder_id}",
+    response_model=APIResponse[QuizFolderResponse],
+)
+async def rename_quiz_folder(
+    folder_id: uuid.UUID,
+    body: QuizFolderRename,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    folder = await db.get(QuizFolder, folder_id)
+    if folder is None or folder.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    await _verify_enrollment(db, folder.course_id, user.id)
+
+    new_name = body.name.strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Name cannot be empty")
+    folder.name = new_name
+    await db.commit()
+    await db.refresh(folder)
+    return APIResponse(success=True, data=QuizFolderResponse.model_validate(folder))
+
+
+@router.post(
+    "/quiz-folders/{folder_id}/move",
+    response_model=APIResponse[QuizFolderResponse],
+)
+async def move_quiz_folder(
+    folder_id: uuid.UUID,
+    body: QuizFolderMove,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    folder = await db.get(QuizFolder, folder_id)
+    if folder is None or folder.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    await _verify_enrollment(db, folder.course_id, user.id)
+
+    if body.parent_id is not None:
+        if body.parent_id == folder_id:
+            raise HTTPException(status_code=400, detail="Cannot nest folder inside itself")
+        parent = await db.get(QuizFolder, body.parent_id)
+        if (
+            parent is None
+            or parent.deleted_at is not None
+            or parent.course_id != folder.course_id
+        ):
+            raise HTTPException(status_code=400, detail="Parent folder not found in this course")
+        descendants = await _folder_descendant_ids(db, folder_id)
+        if body.parent_id in descendants:
+            raise HTTPException(status_code=400, detail="Cannot move folder into its own descendant")
+
+    folder.parent_id = body.parent_id
+    await db.commit()
+    await db.refresh(folder)
+    return APIResponse(success=True, data=QuizFolderResponse.model_validate(folder))
+
+
+@router.delete(
+    "/quiz-folders/{folder_id}",
+    response_model=APIResponse[None],
+)
+async def delete_quiz_folder(
+    folder_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    folder = await db.get(QuizFolder, folder_id)
+    if folder is None or folder.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    await _verify_enrollment(db, folder.course_id, user.id)
+
+    new_parent = folder.parent_id
+
+    # Reparent child folders + quizzes to this folder's parent (may be None).
+    await db.execute(
+        Quiz.__table__.update()
+        .where(Quiz.folder_id == folder_id)
+        .values(folder_id=new_parent)
+    )
+    await db.execute(
+        QuizFolder.__table__.update()
+        .where(QuizFolder.parent_id == folder_id)
+        .values(parent_id=new_parent)
+    )
+
+    folder.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+    return APIResponse(success=True, data=None)
+
+
+@router.patch(
+    "/quizzes/{quiz_id}/folder",
+    response_model=APIResponse[QuizResponse],
+)
+async def move_quiz_to_folder(
+    quiz_id: uuid.UUID,
+    body: QuizMove,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    quiz = await db.get(Quiz, quiz_id)
+    if quiz is None or quiz.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    await _verify_enrollment(db, quiz.course_id, user.id)
+
+    if body.folder_id is not None:
+        folder = await db.get(QuizFolder, body.folder_id)
+        if (
+            folder is None
+            or folder.deleted_at is not None
+            or folder.course_id != quiz.course_id
+        ):
+            raise HTTPException(status_code=400, detail="Folder not found in this course")
+
+    quiz.folder_id = body.folder_id
+    await db.commit()
+    await db.refresh(quiz)
+
+    count_stmt = select(func.count(Question.id)).where(Question.quiz_id == quiz.id)
+    question_count = (await db.execute(count_stmt)).scalar_one()
+
+    return APIResponse(
+        success=True,
+        data=QuizResponse(
+            id=quiz.id,
+            course_id=quiz.course_id,
+            title=quiz.title,
+            description=quiz.description,
+            quiz_type=quiz.quiz_type,
+            purpose=quiz.purpose,
+            folder_id=quiz.folder_id,
+            is_published=quiz.is_published,
+            question_count=question_count,
+            created_at=quiz.created_at,
         ),
     )
