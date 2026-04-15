@@ -125,118 +125,135 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
 
   const publishedQuizzes = liveQuizzes?.filter((q) => q.is_published);
 
-  /* ---------------------------------------------------------------- */
-  /* Top bar: Join code + Create Session in one compact row           */
-  /* ---------------------------------------------------------------- */
-  const topBar = (
-    <div className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:flex-row sm:items-center">
-      <div className="flex flex-1 items-center gap-2">
-        <Input
-          placeholder="Enter join code…"
-          value={joinCodeInput}
-          onChange={(e) => {
-            setJoinCodeInput(e.target.value.toUpperCase());
-            setJoinError(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleJoinByCode();
-          }}
-          maxLength={6}
-          className="font-mono text-base tracking-widest uppercase"
-        />
-        <Button
-          size="sm"
-          disabled={joinCodeInput.length < 6 || findByCode.isPending}
-          onClick={handleJoinByCode}
-        >
-          <Zap className="size-4" />
-          {findByCode.isPending ? "Joining…" : "Join"}
-        </Button>
-      </div>
+  const sessionsSection = (
+    <div className="space-y-4">
       {isInstructor && (
-        <>
-          <div className="hidden h-8 w-px bg-[var(--color-border)] sm:block" />
+        <div className="flex justify-end">
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" />
             Create Session
           </Button>
-        </>
+        </div>
       )}
-      {joinError && (
-        <p className="basis-full text-xs text-[var(--color-error)] sm:basis-auto">
-          {joinError}
-        </p>
-      )}
+
+      <Card>
+        <CardContent className="flex flex-col gap-2">
+          <div className="flex items-center gap-3">
+            <Input
+              placeholder="Enter join code..."
+              value={joinCodeInput}
+              onChange={(e) => {
+                setJoinCodeInput(e.target.value.toUpperCase());
+                setJoinError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleJoinByCode();
+              }}
+              maxLength={6}
+              className="font-mono text-lg tracking-widest uppercase"
+            />
+            <Button
+              disabled={joinCodeInput.length < 6 || findByCode.isPending}
+              onClick={handleJoinByCode}
+            >
+              <Zap className="size-4" />
+              {findByCode.isPending ? "Joining..." : "Join"}
+            </Button>
+          </div>
+          {joinError && (
+            <p className="text-sm text-[var(--color-error)]">{joinError}</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Active sessions */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium text-[var(--color-text-muted)]">
+          Active Sessions
+        </h2>
+
+        {sessionsLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Skeleton key={i} className="h-20 rounded-[var(--radius-lg)]" />
+            ))}
+          </div>
+        ) : sessions && sessions.length > 0 ? (
+          <div className="space-y-3">
+            {sessions.map((session) => (
+              <Card
+                key={session.id}
+                className="transition-all duration-[var(--duration-fast)] hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)]"
+              >
+                <CardContent className="flex items-center gap-4">
+                  <Link
+                    href={`/dashboard/courses/${courseId}/live/${session.id}`}
+                    className="flex min-w-0 flex-1 items-center gap-4"
+                  >
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-success-light)]">
+                      <Radio className="size-5 text-[var(--color-success)]" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-bold text-[var(--color-text)]">
+                          {session.join_code}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className="border-[var(--color-success)] text-[var(--color-success)]"
+                        >
+                          {session.status}
+                        </Badge>
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-3 text-xs text-[var(--color-text-muted)]">
+                        <span className="flex items-center gap-1">
+                          <Users className="size-3" />
+                          {session.participant_count} participants
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="size-3" />
+                          {formatRelativeTime(session.created_at)}
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                  {isInstructor && session.is_host && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setDeleteConfirmId(session.id);
+                      }}
+                      aria-label="Delete session"
+                    >
+                      <Trash2 className="size-4 text-[var(--color-error)]" />
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card>
+            <CardContent className="flex flex-col items-center py-12 text-center">
+              <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-primary-light)]">
+                <Radio className="size-6 text-[var(--color-primary)]" />
+              </div>
+              <h3 className="font-semibold text-[var(--color-text)]">
+                No active sessions
+              </h3>
+              <p className="mt-1 max-w-sm text-sm text-[var(--color-text-muted)]">
+                {isInstructor
+                  ? "Create a live quiz session to engage your students in real-time."
+                  : "There are no active live sessions right now. Check back later or enter a join code."}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </section>
     </div>
   );
-
-  /* ---------------------------------------------------------------- */
-  /* Active sessions — horizontal strip of compact pill cards         */
-  /* ---------------------------------------------------------------- */
-  const activeSessionsStrip =
-    !sessionsLoading && sessions && sessions.length > 0 ? (
-      <div className="space-y-2">
-        <h2 className="px-1 text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-          Active Sessions · {sessions.length}
-        </h2>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {sessions.map((session) => (
-            <Card
-              key={session.id}
-              className="group relative transition-all duration-[var(--duration-fast)] hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-sm)]"
-            >
-              <CardContent className="flex items-center gap-2.5 px-3 py-2.5">
-                <Link
-                  href={`/dashboard/courses/${courseId}/live/${session.id}`}
-                  className="flex min-w-0 flex-1 items-center gap-2.5"
-                >
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-success-light)]">
-                    <Radio className="size-4 text-[var(--color-success)]" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-sm font-bold text-[var(--color-text)]">
-                        {session.join_code}
-                      </span>
-                      <Badge
-                        variant="outline"
-                        className="border-[var(--color-success)] px-1.5 py-0 text-[10px] leading-tight text-[var(--color-success)]"
-                      >
-                        {session.status}
-                      </Badge>
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
-                      <span className="flex items-center gap-0.5">
-                        <Users className="size-3" />
-                        {session.participant_count}
-                      </span>
-                      <span className="flex items-center gap-0.5">
-                        <Clock className="size-3" />
-                        {formatRelativeTime(session.created_at)}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-                {isInstructor && session.is_host && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="size-8 shrink-0 p-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setDeleteConfirmId(session.id);
-                    }}
-                    aria-label="Delete session"
-                  >
-                    <Trash2 className="size-4 text-[var(--color-error)]" />
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    ) : null;
 
   const bankSection = isInstructor ? (
     <div className="space-y-3">
@@ -273,9 +290,14 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
 
   return (
     <div className="space-y-6">
-      {topBar}
-      {activeSessionsStrip}
-      {bankSection}
+      <div className="grid gap-6 md:grid-cols-5">
+        <div className={bankSection ? "md:col-span-2" : "md:col-span-5"}>
+          {sessionsSection}
+        </div>
+        {bankSection && (
+          <div className="md:col-span-3">{bankSection}</div>
+        )}
+      </div>
 
       {/* Create session dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
