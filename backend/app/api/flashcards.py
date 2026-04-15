@@ -549,17 +549,21 @@ async def delete_flashcard_folder(
         if gp is None or gp.deleted_at is not None:
             new_parent = None
 
-    await db.execute(
-        FlashcardSet.__table__.update()
-        .where(FlashcardSet.folder_id == folder_id)
-        .values(folder_id=new_parent)
-    )
-    await db.execute(
-        FlashcardFolder.__table__.update()
-        .where(FlashcardFolder.parent_id == folder_id)
-        .values(parent_id=new_parent)
-    )
-    folder.deleted_at = datetime.now(timezone.utc)
+    # Group the reparent writes + soft-delete inside a SAVEPOINT so a failure
+    # mid-way can't leave the table in a half-updated state.
+    async with db.begin_nested():
+        await db.execute(
+            FlashcardSet.__table__.update()
+            .where(FlashcardSet.folder_id == folder_id)
+            .values(folder_id=new_parent)
+        )
+        await db.execute(
+            FlashcardFolder.__table__.update()
+            .where(FlashcardFolder.parent_id == folder_id)
+            .values(parent_id=new_parent)
+        )
+        folder.deleted_at = datetime.now(timezone.utc)
+
     await db.commit()
     return APIResponse(success=True, data=None)
 
