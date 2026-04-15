@@ -12,7 +12,6 @@ import {
   Upload as UploadIcon,
   Sparkles,
   Mic,
-  Radio,
   Trash2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +31,7 @@ import { CanvasTab } from "@/components/canvas/canvas-tab";
 import { CANVAS_ENABLED } from "@/lib/features";
 import { CourseAnalytics } from "@/components/analytics/course-analytics";
 import { RecalibrationOverview } from "@/components/recalibration/overview";
+import { LiveSessionsPanel } from "@/components/live-quiz/live-sessions-panel";
 import { useCourse } from "@/hooks/use-courses";
 import { useDocuments, useDeleteDocument, type DocumentResponse } from "@/hooks/use-documents";
 import { useProgress } from "@/hooks/use-progress";
@@ -428,29 +428,7 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
       )}
 
       {activeTab === "live" && (
-        <div>
-          <Card>
-            <CardContent className="flex flex-col items-center py-12 text-center">
-              <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-success-light)]">
-                <Radio className="size-6 text-[var(--color-success)]" />
-              </div>
-              <h3 className="font-semibold text-[var(--color-text)]">
-                Live Quiz Sessions
-              </h3>
-              <p className="mt-1 max-w-sm text-sm text-[var(--color-text-muted)]">
-                {isInstructor
-                  ? "Host real-time quiz sessions and engage your students with live competition."
-                  : "Join live quiz sessions hosted by your instructor."}
-              </p>
-              <Link href={`/dashboard/courses/${courseId}/live`}>
-                <Button className="mt-4">
-                  <Radio className="size-4" />
-                  {isInstructor ? "Manage Live Sessions" : "Join Live Session"}
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </div>
+        <LiveSessionsPanel courseId={courseId} />
       )}
 
       {activeTab === "progress" && (
