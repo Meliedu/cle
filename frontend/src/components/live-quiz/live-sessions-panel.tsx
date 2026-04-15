@@ -44,6 +44,7 @@ import { formatRelativeTime } from "@/lib/format";
 import { GenerateLiveQuizDialog } from "@/components/live-quiz/generate-live-quiz-dialog";
 import { ImportFromQuizDialog } from "@/components/live-quiz/import-from-quiz-dialog";
 import { QuizBankBrowser } from "@/components/live-quiz/quiz-bank-browser";
+import { QuizFolderPicker } from "@/components/live-quiz/quiz-folder-picker";
 
 interface LiveSessionsPanelProps {
   readonly courseId: string;
@@ -312,28 +313,14 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
                 Quiz
               </label>
               {quizzesLoading ? (
-                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-40 w-full" />
               ) : publishedQuizzes && publishedQuizzes.length > 0 ? (
-                <div className="space-y-2">
-                  {publishedQuizzes.map((quiz) => (
-                    <button
-                      key={quiz.id}
-                      onClick={() => setSelectedQuizId(quiz.id)}
-                      className={`w-full rounded-[var(--radius-md)] border px-3 py-2 text-left text-sm transition-colors ${
-                        selectedQuizId === quiz.id
-                          ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]"
-                          : "border-[var(--color-border)] hover:border-[var(--color-border-hover)]"
-                      }`}
-                    >
-                      <span className="font-medium text-[var(--color-text)]">
-                        {quiz.title}
-                      </span>
-                      <span className="ml-2 text-xs text-[var(--color-text-muted)]">
-                        {quiz.question_count} questions
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                <QuizFolderPicker
+                  folders={folders ?? []}
+                  quizzes={publishedQuizzes}
+                  selectedQuizId={selectedQuizId || null}
+                  onSelectQuiz={setSelectedQuizId}
+                />
               ) : (
                 <p className="text-sm text-[var(--color-text-muted)]">
                   No live quizzes yet. Generate or import one from the question
