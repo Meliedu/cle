@@ -142,9 +142,10 @@ def _quiz_instructions(
     mcq_option_count: int,
     difficulty: str,
 ) -> str:
-    assert mcq_option_count <= MAX_MCQ_OPTIONS, (
-        f"mcq_option_count {mcq_option_count} exceeds MAX_MCQ_OPTIONS {MAX_MCQ_OPTIONS}"
-    )
+    if mcq_option_count > MAX_MCQ_OPTIONS:
+        raise ValueError(
+            f"mcq_option_count {mcq_option_count} exceeds MAX_MCQ_OPTIONS {MAX_MCQ_OPTIONS}"
+        )
     parts: list[str] = []
     if len(question_types) == 1:
         if question_types[0] == "true_false":
