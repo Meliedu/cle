@@ -34,7 +34,7 @@ import {
   useDeleteLiveSession,
   useFindLiveSessionByCode,
 } from "@/hooks/use-live-quiz";
-import { useQuizzes } from "@/hooks/use-quizzes";
+import { useQuizzes, useDeleteQuiz } from "@/hooks/use-quizzes";
 import { formatRelativeTime } from "@/lib/format";
 import { GenerateLiveQuizDialog } from "@/components/live-quiz/generate-live-quiz-dialog";
 import { ImportFromQuizDialog } from "@/components/live-quiz/import-from-quiz-dialog";
@@ -54,6 +54,7 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
   );
   const createSession = useCreateLiveSession(courseId);
   const deleteSession = useDeleteLiveSession(courseId);
+  const deleteQuiz = useDeleteQuiz(courseId);
   const findByCode = useFindLiveSessionByCode();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -67,6 +68,9 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [deleteQuizConfirmId, setDeleteQuizConfirmId] = useState<string | null>(
+    null
+  );
 
   const handleCreate = () => {
     if (!selectedQuizId) return;
@@ -161,6 +165,14 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
                       }}
                     >
                       Start Session
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDeleteQuizConfirmId(q.id)}
+                      aria-label="Delete live quiz"
+                    >
+                      <Trash2 className="size-4 text-[var(--color-error)]" />
                     </Button>
                   </CardContent>
                 </Card>
@@ -453,6 +465,43 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
               disabled={deleteSession.isPending}
             >
               {deleteSession.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteQuizConfirmId !== null}
+        onOpenChange={(open) => !open && setDeleteQuizConfirmId(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete live quiz?</DialogTitle>
+            <DialogDescription>
+              This removes the quiz and all its questions from the live question
+              bank. Any sessions already using it will end. After-class quizzes
+              are unaffected.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteQuizConfirmId(null)}
+              disabled={deleteQuiz.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteQuiz.isPending}
+              onClick={() => {
+                if (!deleteQuizConfirmId) return;
+                deleteQuiz.mutate(deleteQuizConfirmId, {
+                  onSuccess: () => setDeleteQuizConfirmId(null),
+                });
+              }}
+            >
+              {deleteQuiz.isPending ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

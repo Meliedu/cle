@@ -66,6 +66,27 @@ export interface ImportToLiveInput {
   readonly title: string;
 }
 
+export function useDeleteQuiz(courseId: string) {
+  const { getToken } = useAuth();
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (quizId: string) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      await apiFetch<ApiEnvelope<null>>(`/quizzes/${quizId}`, {
+        token,
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["quizzes", courseId, "live"] });
+      qc.invalidateQueries({ queryKey: ["quizzes", courseId, "after_class"] });
+      qc.invalidateQueries({ queryKey: ["quizzes", courseId, "all"] });
+    },
+  });
+}
+
 export function useImportQuestionsToLive(courseId: string) {
   const { getToken } = useAuth();
   const qc = useQueryClient();
