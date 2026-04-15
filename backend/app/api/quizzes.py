@@ -654,13 +654,7 @@ async def import_to_live(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Source quiz not found in this course",
         )
-    # Enforce ownership for consistency with other write endpoints. Only the
-    # instructor who originally created the quiz may import it to live.
-    if source.created_by != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the source quiz owner can import it to live",
-        )
+    # Any instructor enrolled in the course may import — source course-match already verified above.
 
     q_stmt = select(Question).where(Question.quiz_id == source.id)
     if body.question_ids:
