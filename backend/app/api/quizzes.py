@@ -668,6 +668,14 @@ async def import_to_live(
     q_stmt = q_stmt.order_by(Question.question_index)
     source_questions = (await db.execute(q_stmt)).scalars().all()
 
+    if body.question_ids and len(source_questions) != len(body.question_ids):
+        found_ids = {q.id for q in source_questions}
+        missing = [str(qid) for qid in body.question_ids if qid not in found_ids]
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Some question_ids not found in source quiz: {missing}",
+        )
+
     if not source_questions:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
