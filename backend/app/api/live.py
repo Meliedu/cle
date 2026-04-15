@@ -606,7 +606,20 @@ async def websocket_live(
                 async with manager.get_lock(session_id):
                     async with async_session_factory() as db:
                         state = await _get_or_rehydrate_state(db, session)
-                    state.next_question()
+                        state.next_question()
+                        # Mirror REST path: persist status / question index /
+                        # started_at to the DB so restarts rehydrate correctly.
+                        db_session = await _get_session_or_404(db, session_id)
+                        db_session.status = state.status
+                        db_session.current_question_index = (
+                            state.current_question_index
+                        )
+                        if (
+                            state.status == "active"
+                            and db_session.started_at is None
+                        ):
+                            db_session.started_at = datetime.now(timezone.utc)
+                        await db.commit()
                 if state.status == "finished":
                     await manager.broadcast(
                         session_id,
