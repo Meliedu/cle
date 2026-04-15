@@ -166,11 +166,11 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
           options={currentQuestionData?.options ?? undefined}
           questionType={currentQuestionData?.type}
           elapsedSeconds={elapsedSeconds}
-          correctAnswer={
-            reviewMode === "per_question"
-              ? currentQuestionData?.correct_answer
-              : undefined
-          }
+          // Defense in depth: never pass the correct answer to the student
+          // client path. The server already strips it from useQuiz for
+          // non-host users, but enforce it here too so a misconfigured
+          // backend can't leak answers through this component.
+          correctAnswer={undefined}
           onAnswer={handleAnswer}
         />
       )}
