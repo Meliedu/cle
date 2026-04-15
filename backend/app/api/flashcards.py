@@ -594,14 +594,29 @@ async def move_flashcard_folder(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
-    folder = await db.get(FlashcardFolder, folder_id)
+    # Lock both the folder being moved and (when set) the target parent to
+    # prevent concurrent-move races that could create cycles under READ
+    # COMMITTED.
+    lock_ids: list[uuid.UUID] = [folder_id]
+    if body.parent_id is not None and body.parent_id != folder_id:
+        lock_ids.append(body.parent_id)
+    locked_rows = (
+        await db.execute(
+            select(FlashcardFolder)
+            .where(FlashcardFolder.id.in_(lock_ids))
+            .with_for_update()
+        )
+    ).scalars().all()
+    locked_by_id = {row.id: row for row in locked_rows}
+
+    folder = locked_by_id.get(folder_id)
     if folder is None or folder.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Folder not found")
     await _verify_enrollment(db, folder.course_id, user.id)
     if body.parent_id is not None:
         if body.parent_id == folder_id:
             raise HTTPException(status_code=400, detail="Cannot nest folder inside itself")
-        parent = await db.get(FlashcardFolder, body.parent_id)
+        parent = locked_by_id.get(body.parent_id)
         if (
             parent is None
             or parent.deleted_at is not None

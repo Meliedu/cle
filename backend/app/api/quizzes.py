@@ -965,7 +965,22 @@ async def move_quiz_folder(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
-    folder = await db.get(QuizFolder, folder_id)
+    # Acquire row-level locks on the folder being moved and, when applicable,
+    # the target parent to prevent concurrent-move races that could otherwise
+    # create cycles under READ COMMITTED.
+    lock_ids: list[uuid.UUID] = [folder_id]
+    if body.parent_id is not None and body.parent_id != folder_id:
+        lock_ids.append(body.parent_id)
+    locked_rows = (
+        await db.execute(
+            select(QuizFolder)
+            .where(QuizFolder.id.in_(lock_ids))
+            .with_for_update()
+        )
+    ).scalars().all()
+    locked_by_id = {row.id: row for row in locked_rows}
+
+    folder = locked_by_id.get(folder_id)
     if folder is None or folder.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Folder not found")
     await _verify_enrollment(db, folder.course_id, user.id)
@@ -973,7 +988,7 @@ async def move_quiz_folder(
     if body.parent_id is not None:
         if body.parent_id == folder_id:
             raise HTTPException(status_code=400, detail="Cannot nest folder inside itself")
-        parent = await db.get(QuizFolder, body.parent_id)
+        parent = locked_by_id.get(body.parent_id)
         if (
             parent is None
             or parent.deleted_at is not None
