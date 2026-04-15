@@ -1,5 +1,9 @@
+import logging
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 _LOCAL_DB_DEFAULT = "postgresql+asyncpg://postgres:postgres@localhost:5432/langassistant"
 
@@ -118,6 +122,20 @@ class Settings(BaseSettings):
                 self.canvas_base_url, self.canvas_allowed_hosts
             ),
         )
+        # Warn (not raise) in dev when the integrations encryption key is
+        # unset — production already raises above. Encrypted columns
+        # (Canvas tokens, etc.) will fail at runtime without a key, so
+        # surface the issue loudly at startup.
+        if (
+            self.environment != "production"
+            and not self.integrations_encryption_key
+        ):
+            logger.warning(
+                "INTEGRATIONS_ENCRYPTION_KEY is unset; third-party token "
+                "encryption/decryption (Canvas, etc.) will fail. Generate "
+                "one with: python -c \"from cryptography.fernet import "
+                "Fernet; print(Fernet.generate_key().decode())\""
+            )
         return self
 
 
