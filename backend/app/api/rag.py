@@ -1,4 +1,3 @@
-import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -24,22 +23,9 @@ from app.schemas.rag import (
 )
 from app.services.embedder import embed_query
 from app.services.retriever import fulltext_retrieve, hybrid_retrieve, retrieve_chunks
+from app.utils.sanitize import sanitize_query as _sanitize_query
 
 router = APIRouter(prefix="/rag", tags=["rag"])
-
-_MAX_QUERY_CHARS = 2000
-_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-
-
-def _sanitize_query(raw: str) -> str:
-    """Strip control characters and bound length before feeding user text to
-    the LLM. Defence in depth against prompt injection payloads delivered via
-    the ``query``/``title`` fields (these get interpolated into LLM prompts)."""
-    cleaned = _CONTROL_CHARS_RE.sub(" ", raw or "")
-    cleaned = cleaned.strip()
-    if len(cleaned) > _MAX_QUERY_CHARS:
-        cleaned = cleaned[:_MAX_QUERY_CHARS]
-    return cleaned
 
 
 async def _verify_enrollment(

@@ -10,7 +10,6 @@ endpoint can surface it to the frontend.
 from __future__ import annotations
 
 import logging
-import re
 import uuid
 from typing import Any
 
@@ -29,19 +28,9 @@ from app.services.generator import (
     generate_summary,
 )
 from app.services.retriever import retrieve_chunks
+from app.utils.sanitize import sanitize_query as _sanitize
 
 logger = logging.getLogger(__name__)
-
-_MAX_QUERY_CHARS = 2000
-_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-
-
-def _sanitize(raw: str | None) -> str:
-    cleaned = _CONTROL_CHARS_RE.sub(" ", raw or "")
-    cleaned = cleaned.strip()
-    if len(cleaned) > _MAX_QUERY_CHARS:
-        cleaned = cleaned[:_MAX_QUERY_CHARS]
-    return cleaned
 
 
 async def _course_language(session: AsyncSession, course_id: uuid.UUID) -> str:
