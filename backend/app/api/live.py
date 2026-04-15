@@ -694,7 +694,6 @@ async def websocket_live(
                     session_id,
                     {
                         "type": "answer_received",
-                        "user_id": str(user.id),
                         "leaderboard": state.get_leaderboard(),
                     },
                 )
