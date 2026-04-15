@@ -22,7 +22,6 @@ from app.models.flashcard import FlashcardCard, FlashcardSet, FlashcardSetDocume
 from app.models.quiz import Question, Quiz, QuizDocument
 from app.models.summary import CourseSummary
 from app.schemas.rag import GenerateQuizRequest
-from app.schemas.rag import GenerateQuizRequest
 from app.services.embedder import embed_query
 from app.services.generator import (
     generate_flashcards,
