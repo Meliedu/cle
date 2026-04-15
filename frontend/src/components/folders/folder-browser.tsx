@@ -298,7 +298,7 @@ export function FolderBrowser<TItem extends ItemLike>({
             <div
               className={
                 viewMode === "grid"
-                  ? "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
+                  ? "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
                   : "space-y-2"
               }
             >
@@ -683,32 +683,32 @@ function FolderCard({
           onOpen();
         }
       }}
-      className="group relative flex aspect-[4/3] cursor-pointer flex-col justify-between overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] p-4 transition-all hover:-translate-y-0.5 hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)] active:translate-y-0 active:shadow-[var(--shadow-sm)]"
+      className="group relative flex cursor-pointer flex-col gap-2 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] px-3 py-3.5 transition-all hover:-translate-y-0.5 hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)] active:translate-y-0 active:shadow-[var(--shadow-sm)]"
       style={{ backgroundColor: hue.bg }}
     >
       <div className="flex items-start justify-between">
-        <Folder className="size-8" style={{ color: hue.fg }} />
-        <div
-          className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <FolderMenu
-            onRename={onRename}
-            onMove={onMove}
-            onDelete={onDelete}
-          />
-        </div>
+        <Folder className="size-6" style={{ color: hue.fg }} />
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p
           className="truncate text-sm font-semibold"
           style={{ color: hue.fg }}
         >
           {folder.name}
         </p>
-        <p className="mt-0.5 text-xs" style={{ color: hue.fg, opacity: 0.75 }}>
+        <p className="text-xs" style={{ color: hue.fg, opacity: 0.75 }}>
           {childCount} {label}
         </p>
+      </div>
+      <div
+        className="absolute top-2 right-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <FolderMenu
+          onRename={onRename}
+          onMove={onMove}
+          onDelete={onDelete}
+        />
       </div>
     </div>
   );
