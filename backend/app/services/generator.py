@@ -243,6 +243,8 @@ def _build_quiz_results(
             correct_answer = item["correct_answer"]
         except (KeyError, TypeError) as exc:
             raise ValueError(f"missing field: {exc}") from exc
+        if correct_answer not in options:
+            raise ValueError("correct_answer not in options")
         results.append(
             GeneratedQuestion(
                 question_text=question_text,
@@ -422,6 +424,8 @@ def _build_revision_quiz_results(items: list[dict]) -> list[GeneratedQuestion]:
             explanation = item["explanation"]
         except (KeyError, TypeError) as exc:
             raise ValueError(f"missing field: {exc}") from exc
+        if correct_answer not in options:
+            raise ValueError("correct_answer not in options")
         results.append(
             GeneratedQuestion(
                 question_text=question_text,
