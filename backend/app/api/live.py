@@ -377,6 +377,11 @@ async def live_answer(
 
     state = await _get_or_rehydrate_state(db, session)
 
+    if body.question_index != state.current_question_index:
+        raise HTTPException(
+            status_code=409, detail="question_index_mismatch"
+        )
+
     question = await _load_question(db, session.quiz_id, body.question_index)
     if question is None:
         raise HTTPException(status_code=404, detail="Question not found")
@@ -655,6 +660,14 @@ async def websocket_live(
                     question = await _load_question(
                         db, session.quiz_id, question_index
                     )
+                if question_index != state.current_question_index:
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "message": "question_index_mismatch",
+                        }
+                    )
+                    continue
                 if question is None:
                     await websocket.send_json(
                         {"type": "error", "message": "Question not found"}
