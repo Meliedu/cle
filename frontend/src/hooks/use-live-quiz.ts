@@ -126,9 +126,7 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
   const answerMut = useMutation({
     mutationFn: async (body: {
       answer: string;
-      user_id: string;
       question_index: number;
-      is_correct: boolean;
       elapsed_seconds: number;
     }) => {
       const t = await getToken({ template: "backend" });
@@ -171,18 +169,10 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
   });
 
   const sendAnswer = useCallback(
-    (
-      answer: string,
-      userId: string,
-      questionIndex: number,
-      isCorrect: boolean,
-      elapsedSeconds: number
-    ) => {
+    (answer: string, questionIndex: number, elapsedSeconds: number) => {
       answerMut.mutate({
         answer,
-        user_id: userId,
         question_index: questionIndex,
-        is_correct: isCorrect,
         elapsed_seconds: elapsedSeconds,
       });
     },

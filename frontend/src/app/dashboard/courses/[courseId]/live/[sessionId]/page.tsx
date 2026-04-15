@@ -81,10 +81,9 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
   const handleAnswer = (answer: string) => {
     if (!currentQuestion || !user?.id) return;
     const elapsed = Math.round((Date.now() - questionStartRef.current) / 1000);
-    const isCorrect =
-      currentQuestionData?.options != null &&
-      answer === Object.keys(currentQuestionData.options)[0]; // Simplified — backend decides correctness
-    sendAnswer(answer, user.id, currentQuestion.index, isCorrect, elapsed);
+    // Correctness and points are decided server-side; the client just sends
+    // its raw answer.
+    sendAnswer(answer, currentQuestion.index, elapsed);
   };
 
   /* Loading state */
