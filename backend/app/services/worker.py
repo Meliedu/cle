@@ -24,7 +24,14 @@ def _utcnow() -> datetime:
 
 
 async def _reset_stuck_tasks(session: AsyncSession) -> None:
-    """Reclaim tasks whose worker crashed before completion."""
+    """Reclaim tasks whose worker crashed before completion.
+
+    Tasks that still have retry budget are returned to ``pending`` so another
+    worker can claim them. Tasks that have already exhausted ``max_attempts``
+    are marked ``failed`` outright — otherwise the next ``claim_task`` would
+    skip them (claim filters by ``attempts < max_attempts``) and they would
+    oscillate between ``running`` and ``pending`` forever.
+    """
     cutoff = _utcnow() - STUCK_TASK_TIMEOUT
     await session.execute(
         update(Task)
@@ -32,8 +39,19 @@ async def _reset_stuck_tasks(session: AsyncSession) -> None:
             Task.status == "running",
             Task.started_at.is_not(None),
             Task.started_at < cutoff,
+            Task.attempts < Task.max_attempts,
         )
         .values(status="pending")
+    )
+    await session.execute(
+        update(Task)
+        .where(
+            Task.status == "running",
+            Task.started_at.is_not(None),
+            Task.started_at < cutoff,
+            Task.attempts >= Task.max_attempts,
+        )
+        .values(status="failed")
     )
     await session.commit()
 
