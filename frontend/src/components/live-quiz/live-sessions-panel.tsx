@@ -17,7 +17,17 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Radio, Plus, Users, Clock, Zap, Trash2 } from "lucide-react";
+import {
+  Radio,
+  Plus,
+  Users,
+  Clock,
+  Zap,
+  Trash2,
+  Sparkles,
+  Download,
+  BookOpen,
+} from "lucide-react";
 import {
   useLiveSessions,
   useCreateLiveSession,
@@ -26,6 +36,8 @@ import {
 } from "@/hooks/use-live-quiz";
 import { useQuizzes } from "@/hooks/use-quizzes";
 import { formatRelativeTime } from "@/lib/format";
+import { GenerateLiveQuizDialog } from "@/components/live-quiz/generate-live-quiz-dialog";
+import { ImportFromQuizDialog } from "@/components/live-quiz/import-from-quiz-dialog";
 
 interface LiveSessionsPanelProps {
   readonly courseId: string;
@@ -36,7 +48,10 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
   const { isInstructor } = useRole();
   const { data: sessions, isLoading: sessionsLoading } =
     useLiveSessions(courseId);
-  const { data: quizzes, isLoading: quizzesLoading } = useQuizzes(courseId);
+  const { data: liveQuizzes, isLoading: quizzesLoading } = useQuizzes(
+    courseId,
+    "live"
+  );
   const createSession = useCreateLiveSession(courseId);
   const deleteSession = useDeleteLiveSession(courseId);
   const findByCode = useFindLiveSessionByCode();
@@ -50,6 +65,8 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [joinError, setJoinError] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const handleCreate = () => {
     if (!selectedQuizId) return;
@@ -89,11 +106,83 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
     });
   };
 
-  const publishedQuizzes = quizzes?.filter((q) => q.is_published);
+  const publishedQuizzes = liveQuizzes?.filter((q) => q.is_published);
 
   return (
     <div className="space-y-6">
-      {/* Header with create button */}
+      {/* Question bank (instructor-only) */}
+      {isInstructor && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-muted)]">
+              <BookOpen className="size-4" />
+              Live Question Bank
+            </h2>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setImportOpen(true)}
+              >
+                <Download className="size-4" />
+                Import
+              </Button>
+              <Button size="sm" onClick={() => setGenerateOpen(true)}>
+                <Sparkles className="size-4" />
+                Generate
+              </Button>
+            </div>
+          </div>
+          {quizzesLoading ? (
+            <Skeleton className="h-16 rounded-[var(--radius-lg)]" />
+          ) : liveQuizzes && liveQuizzes.length > 0 ? (
+            <div className="space-y-2">
+              {liveQuizzes.map((q) => (
+                <Card key={q.id}>
+                  <CardContent className="flex items-center gap-4 py-3">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-light)]">
+                      <BookOpen className="size-4 text-[var(--color-primary)]" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-[var(--color-text)]">
+                        {q.title}
+                      </p>
+                      <p className="text-xs text-[var(--color-text-muted)]">
+                        {q.question_count} questions ·{" "}
+                        {formatRelativeTime(q.created_at)}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedQuizId(q.id);
+                        setCreateOpen(true);
+                      }}
+                    >
+                      Start Session
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-2 py-8 text-center">
+                <p className="text-sm text-[var(--color-text)]">
+                  No live quizzes yet.
+                </p>
+                <p className="max-w-sm text-xs text-[var(--color-text-muted)]">
+                  Generate a new one, or import questions from an existing
+                  after-class quiz.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </section>
+      )}
+
+      {/* Session controls */}
       {isInstructor && (
         <div className="flex justify-end">
           <Button onClick={() => setCreateOpen(true)}>
@@ -261,7 +350,8 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
                 </div>
               ) : (
                 <p className="text-sm text-[var(--color-text-muted)]">
-                  No published quizzes available. Publish a quiz first.
+                  No live quizzes yet. Generate or import one from the question
+                  bank above first.
                 </p>
               )}
             </div>
@@ -367,6 +457,17 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <GenerateLiveQuizDialog
+        courseId={courseId}
+        open={generateOpen}
+        onOpenChange={setGenerateOpen}
+      />
+      <ImportFromQuizDialog
+        courseId={courseId}
+        open={importOpen}
+        onOpenChange={setImportOpen}
+      />
     </div>
   );
 }
