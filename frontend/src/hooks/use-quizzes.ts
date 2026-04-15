@@ -8,6 +8,7 @@ export interface QuestionResponse {
   readonly type: string;
   readonly question_text: string;
   readonly options: Record<string, string> | null;
+  readonly correct_answer?: string;
   readonly explanation: string | null;
 }
 

@@ -3,7 +3,6 @@
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth, useUser } from "@clerk/nextjs";
-import { useRole } from "@/hooks/use-role";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft } from "lucide-react";
@@ -43,19 +42,23 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
     useLiveSession(sessionId);
   const { data: quizDetail } = useQuiz(session?.quiz_id ?? "");
 
-  /* WebSocket connection */
+  /* Polling connection */
   const {
     status,
     currentQuestion,
     leaderboard,
     participantCount,
+    answerDistribution,
+    elapsedSeconds,
+    reviewMode,
+    isAnonymous,
     error: wsError,
     sendAnswer,
     nextQuestion,
     endSession,
+    setAnonymity,
   } = useLiveQuiz(sessionId, token);
 
-  const { isInstructor } = useRole();
   const isHost = session?.is_host ?? false;
 
   const joinUrl =
@@ -131,6 +134,8 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
           participantCount={participantCount}
           isHost={isHost}
           status={status}
+          isAnonymous={isAnonymous}
+          onAnonymityChange={setAnonymity}
           onStart={nextQuestion}
         />
       ) : isHost ? (
@@ -142,12 +147,16 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
               ? {
                   question_text: currentQuestionData.question_text,
                   options: currentQuestionData.options,
+                  correct_answer: currentQuestionData.correct_answer,
                 }
               : undefined
           }
           leaderboard={leaderboard}
           participantCount={participantCount}
           totalQuestions={quizDetail?.questions?.length ?? 0}
+          answerDistribution={answerDistribution}
+          elapsedSeconds={elapsedSeconds}
+          reviewMode={reviewMode}
           onNextQuestion={nextQuestion}
           onEndSession={endSession}
         />
@@ -157,6 +166,12 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
           questionText={currentQuestionData?.question_text}
           options={currentQuestionData?.options ?? undefined}
           questionType={currentQuestionData?.type}
+          elapsedSeconds={elapsedSeconds}
+          correctAnswer={
+            reviewMode === "per_question"
+              ? currentQuestionData?.correct_answer
+              : undefined
+          }
           onAnswer={handleAnswer}
         />
       )}

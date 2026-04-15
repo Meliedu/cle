@@ -55,6 +55,9 @@ export default function LiveSessionListPage({
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedQuizId, setSelectedQuizId] = useState("");
   const [timeLimit, setTimeLimit] = useState("30");
+  const [reviewMode, setReviewMode] = useState<"per_question" | "final">(
+    "per_question"
+  );
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [joinError, setJoinError] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -65,6 +68,7 @@ export default function LiveSessionListPage({
       {
         quiz_id: selectedQuizId,
         time_limit_seconds: parseInt(timeLimit, 10) || 30,
+        settings: { review_mode: reviewMode },
       },
       {
         onSuccess: (session) => {
@@ -310,6 +314,46 @@ export default function LiveSessionListPage({
                 value={timeLimit}
                 onChange={(e) => setTimeLimit(e.target.value)}
               />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[var(--color-text)]">
+                Review mode
+              </label>
+              <div className="grid grid-cols-1 gap-2">
+                {(
+                  [
+                    {
+                      value: "per_question",
+                      title: "Review after each question",
+                      desc: "Students see the correct answer before moving on.",
+                    },
+                    {
+                      value: "final",
+                      title: "Review at the end",
+                      desc: "Auto-advance to the next question when time is up; show all answers at the end.",
+                    },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setReviewMode(opt.value)}
+                    className={`rounded-[var(--radius-md)] border px-3 py-2 text-left text-sm transition-colors ${
+                      reviewMode === opt.value
+                        ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]"
+                        : "border-[var(--color-border)] hover:border-[var(--color-border-hover)]"
+                    }`}
+                  >
+                    <span className="font-medium text-[var(--color-text)]">
+                      {opt.title}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-[var(--color-text-muted)]">
+                      {opt.desc}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

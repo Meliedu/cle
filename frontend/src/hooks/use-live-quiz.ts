@@ -24,6 +24,7 @@ export interface LeaderboardEntry {
   readonly rank: number;
   readonly user_id: string;
   readonly score: number;
+  readonly display_name?: string;
   readonly full_name?: string;
 }
 
@@ -33,6 +34,7 @@ export interface QuestionMessage {
 }
 
 export type LiveStatus = "connecting" | "connected" | "active" | "finished" | "error";
+export type ReviewMode = "per_question" | "final";
 
 interface ApiEnvelope<T> {
   readonly success: boolean;
@@ -43,8 +45,12 @@ interface LiveStateResponse {
   readonly status: string;
   readonly current_question_index: number;
   readonly time_limit: number;
+  readonly elapsed_seconds?: number;
   readonly leaderboard: readonly LeaderboardEntry[];
   readonly participant_count: number;
+  readonly answer_distribution?: Record<string, number>;
+  readonly review_mode?: ReviewMode;
+  readonly is_anonymous?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -98,6 +104,10 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
 
   const leaderboard = state?.leaderboard ?? [];
   const participantCount = state?.participant_count ?? 0;
+  const answerDistribution = state?.answer_distribution ?? {};
+  const elapsedSeconds = state?.elapsed_seconds ?? 0;
+  const reviewMode: ReviewMode = state?.review_mode ?? "per_question";
+  const isAnonymous = state?.is_anonymous ?? false;
 
   /* Actions */
   const nextQuestionMut = useMutation({
@@ -146,6 +156,20 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
       queryClient.invalidateQueries({ queryKey: ["live-state", sessionId] }),
   });
 
+  const anonymityMut = useMutation({
+    mutationFn: async (anonymous: boolean) => {
+      const t = await getToken({ template: "backend" });
+      if (!t) throw new Error("Not authenticated");
+      await apiFetch(`/live-sessions/${sessionId}/anonymity`, {
+        method: "POST",
+        token: t,
+        body: JSON.stringify({ anonymous }),
+      });
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["live-state", sessionId] }),
+  });
+
   const sendAnswer = useCallback(
     (
       answer: string,
@@ -173,15 +197,27 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
     endMut.mutate();
   }, [endMut]);
 
+  const setAnonymity = useCallback(
+    (anonymous: boolean) => {
+      anonymityMut.mutate(anonymous);
+    },
+    [anonymityMut]
+  );
+
   return {
     status,
     currentQuestion,
     leaderboard,
     participantCount,
+    answerDistribution,
+    elapsedSeconds,
+    reviewMode,
+    isAnonymous,
     error: pollError?.message ?? null,
     sendAnswer,
     nextQuestion,
     endSession,
+    setAnonymity,
   } as const;
 }
 
@@ -248,6 +284,7 @@ export function useCreateLiveSession(courseId: string) {
     mutationFn: async (body: {
       quiz_id: string;
       time_limit_seconds?: number;
+      settings?: Record<string, unknown>;
     }) => {
       const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
