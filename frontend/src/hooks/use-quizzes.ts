@@ -21,6 +21,7 @@ export interface QuizResponse {
   readonly description: string | null;
   readonly quiz_type: string;
   readonly purpose: QuizPurpose;
+  readonly folder_id: string | null;
   readonly is_published: boolean;
   readonly question_count: number;
   readonly created_at: string;
