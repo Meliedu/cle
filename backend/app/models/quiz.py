@@ -21,6 +21,9 @@ class Quiz(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(String)
     quiz_type: Mapped[str] = mapped_column(String(20), default="practice")
+    purpose: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="after_class"
+    )
     settings: Mapped[dict] = mapped_column(JSON, default=dict)
     is_published: Mapped[bool] = mapped_column(Boolean, default=False)
 

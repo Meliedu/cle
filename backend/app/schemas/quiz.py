@@ -26,6 +26,7 @@ class QuizResponse(BaseModel):
     title: str
     description: str | None
     quiz_type: str
+    purpose: str = "after_class"
     is_published: bool
     question_count: int
     created_at: datetime
