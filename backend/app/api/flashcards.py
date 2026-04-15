@@ -396,6 +396,33 @@ async def update_progress(
 # Flashcard folders
 # ---------------------------------------------------------------------------
 
+# Maximum nesting depth for folder trees. Prevents unbounded recursion / DoS
+# via deeply nested structures and keeps UI breadcrumbs sane.
+MAX_FOLDER_DEPTH = 10
+
+
+async def _fc_folder_ancestor_depth(
+    db: AsyncSession, parent_id: uuid.UUID
+) -> int:
+    """Return the depth of ``parent_id`` (root = depth 1). Guards against cycles."""
+    depth = 1
+    current: uuid.UUID | None = parent_id
+    visited: set[uuid.UUID] = set()
+    while current is not None:
+        if current in visited:
+            return MAX_FOLDER_DEPTH + 1
+        visited.add(current)
+        parent = await db.get(FlashcardFolder, current)
+        if parent is None or parent.deleted_at is not None:
+            break
+        if parent.parent_id is None:
+            break
+        depth += 1
+        if depth > MAX_FOLDER_DEPTH:
+            return depth
+        current = parent.parent_id
+    return depth
+
 
 async def _fc_folder_descendant_ids(
     db: AsyncSession, root_id: uuid.UUID
@@ -460,6 +487,12 @@ async def create_flashcard_folder(
             or parent.course_id != course_id
         ):
             raise HTTPException(status_code=400, detail="Parent folder not found in this course")
+        parent_depth = await _fc_folder_ancestor_depth(db, parent.id)
+        if parent_depth >= MAX_FOLDER_DEPTH:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Folder nesting exceeds maximum depth of {MAX_FOLDER_DEPTH}",
+            )
     folder = FlashcardFolder(
         course_id=course_id,
         name=body.name.strip() or "Untitled",
@@ -522,6 +555,15 @@ async def move_flashcard_folder(
         descendants = await _fc_folder_descendant_ids(db, folder_id)
         if body.parent_id in descendants:
             raise HTTPException(status_code=400, detail="Cannot move folder into its own descendant")
+        parent_depth = await _fc_folder_ancestor_depth(db, parent.id)
+        if parent_depth >= MAX_FOLDER_DEPTH:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Folder nesting exceeds maximum depth of {MAX_FOLDER_DEPTH}",
+            )
+        # Note: FlashcardFolder has no `purpose` column today, so no
+        # purpose-equality check is enforced here. Intentional asymmetry with
+        # QuizFolder pending schema evolution.
     folder.parent_id = body.parent_id
     await db.commit()
     await db.refresh(folder)
