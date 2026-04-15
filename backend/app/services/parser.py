@@ -60,22 +60,24 @@ async def parse_document(
 
 
 def _parse_pdf(file_data: bytes, filename: str) -> ParseResult:
-    """Extract text from PDF using PyMuPDF with markdown output."""
+    """Extract plain text per page via raw pymupdf.
+
+    Previously used pymupdf4llm.to_markdown which does layout/table analysis
+    and holds the whole doc in memory — big PDFs OOM'd the worker. Raw
+    get_text keeps peak memory to a single page plus accumulated strings.
+    """
     import pymupdf
-    import pymupdf4llm
 
     doc = pymupdf.open(stream=file_data, filetype="pdf")
     try:
-        page_chunks = pymupdf4llm.to_markdown(doc, page_chunks=True)
-
         pages: list[PageContent] = []
         full_parts: list[str] = []
 
-        for chunk in page_chunks:
-            page_num = chunk.get("metadata", {}).get("page", 0) + 1
-            text = chunk.get("text", "").strip()
+        for page_index in range(doc.page_count):
+            page = doc.load_page(page_index)
+            text = page.get_text("text").strip()
             if text:
-                pages.append(PageContent(page_number=page_num, text=text))
+                pages.append(PageContent(page_number=page_index + 1, text=text))
                 full_parts.append(text)
 
         full_text = "\n\n".join(full_parts)
@@ -83,7 +85,7 @@ def _parse_pdf(file_data: bytes, filename: str) -> ParseResult:
             text=full_text,
             pages=pages,
             word_count=len(full_text.split()),
-            page_count=len(pages) or 1,
+            page_count=len(pages) or doc.page_count or 1,
         )
     finally:
         doc.close()
