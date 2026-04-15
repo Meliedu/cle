@@ -404,7 +404,6 @@ export function FolderBrowser<TItem extends ItemLike>({
       <MoveDialog
         open={move !== null}
         onOpenChange={(open) => !open && setMove(null)}
-        folders={folders}
         byParent={byParent}
         disabledIds={
           move?.type === "folder"
@@ -805,7 +804,6 @@ function EmptyState({
 function MoveDialog({
   open,
   onOpenChange,
-  folders,
   byParent,
   disabledIds,
   currentParentId,
@@ -813,7 +811,6 @@ function MoveDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  folders: readonly FolderLike[];
   byParent: Map<string | null, FolderLike[]>;
   disabledIds: Set<string>;
   currentParentId: string | null;
@@ -839,8 +836,7 @@ function MoveDialog({
     };
     walk(null, 1);
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [byParent, folders]);
+  }, [byParent]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
