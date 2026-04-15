@@ -113,7 +113,10 @@ class Settings(BaseSettings):
         # Imported inline to avoid a circular import: url_safety would
         # otherwise try to import ``settings`` before this module finishes
         # initializing.
-        from app.services.url_safety import validate_canvas_base_url
+        from app.services.url_safety import (
+            validate_canvas_base_url,
+            validate_frontend_url,
+        )
 
         object.__setattr__(
             self,
@@ -122,6 +125,14 @@ class Settings(BaseSettings):
                 self.canvas_base_url, self.canvas_allowed_hosts
             ),
         )
+        # Validate frontend_url so the OAuth callback redirect can't be
+        # shaped into something malformed by operator misconfiguration.
+        object.__setattr__(
+            self,
+            "frontend_url",
+            validate_frontend_url(self.frontend_url),
+        )
+
         # Warn (not raise) in dev when the integrations encryption key is
         # unset — production already raises above. Encrypted columns
         # (Canvas tokens, etc.) will fail at runtime without a key, so

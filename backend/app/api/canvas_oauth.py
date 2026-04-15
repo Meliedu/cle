@@ -107,9 +107,12 @@ async def oauth_callback(
     await db.execute(stmt)
     await db.commit()
 
-    frontend = settings.frontend_url.rstrip("/") if settings.frontend_url else ""
+    # settings.frontend_url is validated at startup (see config.py /
+    # url_safety.validate_frontend_url): non-empty, https or localhost http,
+    # and trailing slash already stripped. We can build the redirect
+    # directly without a runtime falsey check.
     return RedirectResponse(
-        url=f"{frontend}/dashboard/canvas?connected=1",
+        url=f"{settings.frontend_url}/dashboard/canvas?connected=1",
         status_code=303,
     )
 

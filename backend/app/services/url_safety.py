@@ -64,3 +64,32 @@ def validate_canvas_base_url(url: str, allowed_hosts: str | None = None) -> str:
             raise ValueError("canvas_base_url resolves to a private/internal address")
 
     return parsed.geturl().rstrip("/")
+
+
+def validate_frontend_url(url: str) -> str:
+    """Validate ``frontend_url`` used for post-OAuth redirects.
+
+    The value is operator-configured (not attacker-controlled), but we still
+    fail fast at startup if it's empty or points somewhere obviously wrong,
+    so we don't build an open-redirect-looking URL at runtime. Rules:
+    - must be non-empty
+    - scheme must be https, OR http with a loopback/localhost host for dev
+    - must have a hostname
+
+    Returns the normalized URL (trailing slash stripped).
+    """
+    if not url:
+        raise ValueError("frontend_url is required")
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise ValueError("frontend_url is missing a hostname")
+    if parsed.scheme == "https":
+        pass
+    elif parsed.scheme == "http" and host in {"localhost", "127.0.0.1", "::1"}:
+        pass
+    else:
+        raise ValueError(
+            "frontend_url must use https:// (http:// is only allowed for localhost)"
+        )
+    return parsed.geturl().rstrip("/")
