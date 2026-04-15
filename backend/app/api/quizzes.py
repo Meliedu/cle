@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Literal
 
@@ -674,6 +674,25 @@ async def import_to_live(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No questions matched the selection",
+        )
+
+    # Dedup guard: reject a second identical live import from the same
+    # instructor within 5 seconds to mitigate rapid double-submit races.
+    # A proper unique constraint would be preferable; this is the pre-flush
+    # mitigation until one is added.
+    dedup_cutoff = datetime.now(timezone.utc) - timedelta(seconds=5)
+    dup_stmt = select(Quiz.id).where(
+        Quiz.course_id == course_id,
+        Quiz.title == body.title,
+        Quiz.purpose == "live",
+        Quiz.created_by == user.id,
+        Quiz.deleted_at.is_(None),
+        Quiz.created_at >= dedup_cutoff,
+    )
+    if (await db.execute(dup_stmt)).scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="duplicate import detected, please retry in a few seconds",
         )
 
     new_quiz = Quiz(
