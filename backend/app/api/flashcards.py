@@ -424,6 +424,25 @@ async def _fc_folder_ancestor_depth(
     return depth
 
 
+async def _fc_folder_first_live_ancestor(
+    db: AsyncSession, folder: FlashcardFolder
+) -> uuid.UUID | None:
+    """Walk up ancestors, returning the first non-deleted ancestor id or None (root)."""
+    current = folder.parent_id
+    visited: set[uuid.UUID] = set()
+    while current is not None:
+        if current in visited:
+            return None
+        visited.add(current)
+        ancestor = await db.get(FlashcardFolder, current)
+        if ancestor is None:
+            return None
+        if ancestor.deleted_at is None:
+            return ancestor.id
+        current = ancestor.parent_id
+    return None
+
+
 async def _fc_folder_descendant_ids(
     db: AsyncSession, root_id: uuid.UUID
 ) -> set[uuid.UUID]:
@@ -586,12 +605,9 @@ async def delete_flashcard_folder(
         raise HTTPException(status_code=404, detail="Folder not found")
     await _verify_enrollment(db, folder.course_id, user.id)
 
-    # Reparent to this folder's parent, but only if the parent is still live.
-    new_parent: uuid.UUID | None = folder.parent_id
-    if new_parent is not None:
-        gp = await db.get(FlashcardFolder, new_parent)
-        if gp is None or gp.deleted_at is not None:
-            new_parent = None
+    # Reparent to the nearest live ancestor, walking up the chain so children
+    # don't end up orphaned under a soft-deleted grandparent.
+    new_parent = await _fc_folder_first_live_ancestor(db, folder)
 
     # Group the reparent writes + soft-delete inside a SAVEPOINT so a failure
     # mid-way can't leave the table in a half-updated state.

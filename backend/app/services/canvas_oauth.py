@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 import time
 import uuid
@@ -19,6 +20,31 @@ class StateInvalid(Exception):
     """Raised when the OAuth state token fails verification."""
 
 
+# In-memory record of already-consumed state nonces. Bounded by STATE_TTL —
+# expired entries are reaped on each check. In-memory is acceptable here
+# because the callback is served by the same process that issued the state;
+# re-auth in a rolling deploy window costs only one extra user flow, which
+# is preferable to a replay in the single-process case.
+_consumed_nonces: dict[str, int] = {}
+_consumed_nonces_lock = asyncio.Lock()
+
+
+async def _reap_expired_nonces(now: int) -> None:
+    expired = [n for n, exp in _consumed_nonces.items() if exp <= now]
+    for n in expired:
+        _consumed_nonces.pop(n, None)
+
+
+async def _consume_nonce(nonce: str, exp: int) -> None:
+    """Record a nonce as used; raise StateInvalid if it was already consumed."""
+    now = int(time.time())
+    async with _consumed_nonces_lock:
+        await _reap_expired_nonces(now)
+        if nonce in _consumed_nonces:
+            raise StateInvalid("state token already consumed")
+        _consumed_nonces[nonce] = exp
+
+
 def encode_state(user_id: uuid.UUID) -> str:
     payload = {
         "uid": str(user_id),
@@ -28,7 +54,7 @@ def encode_state(user_id: uuid.UUID) -> str:
     return jwt.encode(payload, settings.canvas_state_secret, algorithm="HS256")
 
 
-def decode_state(token: str) -> uuid.UUID:
+async def decode_state(token: str) -> uuid.UUID:
     try:
         payload = jwt.decode(
             token,
@@ -37,6 +63,11 @@ def decode_state(token: str) -> uuid.UUID:
         )
     except jwt.PyJWTError as exc:
         raise StateInvalid(str(exc)) from exc
+    nonce = payload.get("nonce")
+    exp = int(payload.get("exp", 0))
+    if not nonce or not exp:
+        raise StateInvalid("state token missing nonce/exp")
+    await _consume_nonce(nonce, exp)
     return uuid.UUID(payload["uid"])
 
 

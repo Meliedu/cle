@@ -8,28 +8,42 @@ import pytest
 from app.services import canvas_oauth
 
 
-def test_state_round_trip(monkeypatch):
+@pytest.mark.asyncio
+async def test_state_round_trip(monkeypatch):
     monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
     user_id = uuid.uuid4()
     token = canvas_oauth.encode_state(user_id)
-    decoded = canvas_oauth.decode_state(token)
+    decoded = await canvas_oauth.decode_state(token)
     assert decoded == user_id
 
 
-def test_state_expired(monkeypatch):
+@pytest.mark.asyncio
+async def test_state_expired(monkeypatch):
     monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
     monkeypatch.setattr(canvas_oauth, "STATE_TTL_SECONDS", 1)
     token = canvas_oauth.encode_state(uuid.uuid4())
     time.sleep(2)
     with pytest.raises(canvas_oauth.StateInvalid):
-        canvas_oauth.decode_state(token)
+        await canvas_oauth.decode_state(token)
 
 
-def test_state_tampered(monkeypatch):
+@pytest.mark.asyncio
+async def test_state_tampered(monkeypatch):
     monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
     token = canvas_oauth.encode_state(uuid.uuid4()) + "x"
     with pytest.raises(canvas_oauth.StateInvalid):
-        canvas_oauth.decode_state(token)
+        await canvas_oauth.decode_state(token)
+
+
+@pytest.mark.asyncio
+async def test_state_replay_rejected(monkeypatch):
+    monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
+    token = canvas_oauth.encode_state(uuid.uuid4())
+    # First use consumes the nonce.
+    await canvas_oauth.decode_state(token)
+    # Second use must be rejected as a replay.
+    with pytest.raises(canvas_oauth.StateInvalid):
+        await canvas_oauth.decode_state(token)
 
 
 def test_authorize_url(monkeypatch):
