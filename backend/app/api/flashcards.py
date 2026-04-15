@@ -427,20 +427,22 @@ async def _fc_folder_ancestor_depth(
 async def _fc_folder_descendant_ids(
     db: AsyncSession, root_id: uuid.UUID
 ) -> set[uuid.UUID]:
-    result: set[uuid.UUID] = {root_id}
-    frontier = [root_id]
-    while frontier:
-        rows = (
-            await db.execute(
-                select(FlashcardFolder.id).where(
-                    FlashcardFolder.parent_id.in_(frontier),
-                    FlashcardFolder.deleted_at.is_(None),
-                )
-            )
-        ).scalars().all()
-        frontier = [r for r in rows if r not in result]
-        result.update(frontier)
-    return result
+    """Return all descendant folder ids of ``root_id`` (inclusive) via a recursive CTE."""
+    base = (
+        select(FlashcardFolder.id.label("id"))
+        .where(
+            FlashcardFolder.id == root_id,
+            FlashcardFolder.deleted_at.is_(None),
+        )
+        .cte(name="flashcard_folder_descendants", recursive=True)
+    )
+    recursive = select(FlashcardFolder.id).where(
+        FlashcardFolder.parent_id == base.c.id,
+        FlashcardFolder.deleted_at.is_(None),
+    )
+    cte = base.union_all(recursive)
+    rows = (await db.execute(select(cte.c.id))).scalars().all()
+    return set(rows)
 
 
 @router.get(
