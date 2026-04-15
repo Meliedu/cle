@@ -62,7 +62,7 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
   const deleteSession = useDeleteLiveSession(courseId);
   const deleteQuiz = useDeleteQuiz(courseId);
   const findByCode = useFindLiveSessionByCode();
-  const { data: folders } = useQuizFolders(courseId);
+  const { data: folders } = useQuizFolders(courseId, "live");
   const createFolder = useCreateQuizFolder(courseId);
   const renameFolder = useRenameQuizFolder(courseId);
   const deleteFolder = useDeleteQuizFolder(courseId);
@@ -263,7 +263,7 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
           folders={folders ?? []}
           quizzes={liveQuizzes ?? []}
           onCreateFolder={(parentId, name) =>
-            createFolder.mutate({ name, parent_id: parentId })
+            createFolder.mutate({ name, parent_id: parentId, purpose: "live" })
           }
           onRenameFolder={(id, name) =>
             renameFolder.mutate({ folder_id: id, name })

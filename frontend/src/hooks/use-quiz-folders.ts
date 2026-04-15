@@ -7,18 +7,22 @@ export interface QuizFolder {
   readonly course_id: string;
   readonly name: string;
   readonly parent_id: string | null;
+  readonly purpose: "after_class" | "live";
   readonly created_at: string;
 }
 
-export function useQuizFolders(courseId: string) {
+export type QuizFolderPurpose = "after_class" | "live";
+
+export function useQuizFolders(courseId: string, purpose?: QuizFolderPurpose) {
   const { getToken, isSignedIn } = useAuth();
   return useQuery({
-    queryKey: ["quiz-folders", courseId],
+    queryKey: ["quiz-folders", courseId, purpose ?? "all"],
     queryFn: async () => {
       const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
+      const qs = purpose ? `?purpose=${purpose}` : "";
       const response = await apiFetch<ApiEnvelope<QuizFolder[]>>(
-        `/courses/${courseId}/quiz-folders`,
+        `/courses/${courseId}/quiz-folders${qs}`,
         { token }
       );
       return response.data;
@@ -33,15 +37,18 @@ export function useQuizFolders(courseId: string) {
 
 function invalidateFolders(qc: ReturnType<typeof useQueryClient>, courseId: string) {
   qc.invalidateQueries({ queryKey: ["quiz-folders", courseId] });
-  qc.invalidateQueries({ queryKey: ["quizzes", courseId, "live"] });
-  qc.invalidateQueries({ queryKey: ["quizzes", courseId, "all"] });
+  qc.invalidateQueries({ queryKey: ["quizzes", courseId] });
 }
 
 export function useCreateQuizFolder(courseId: string) {
   const { getToken } = useAuth();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { name: string; parent_id?: string | null }) => {
+    mutationFn: async (input: {
+      name: string;
+      parent_id?: string | null;
+      purpose: QuizFolderPurpose;
+    }) => {
       const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
       const response = await apiFetch<ApiEnvelope<QuizFolder>>(

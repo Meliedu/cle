@@ -5,6 +5,14 @@ import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useQuizzes } from "@/hooks/use-quizzes";
+import {
+  useQuizFolders,
+  useCreateQuizFolder,
+  useRenameQuizFolder,
+  useDeleteQuizFolder,
+  useMoveQuizFolder,
+  useMoveQuizToFolder,
+} from "@/hooks/use-quiz-folders";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,18 +25,10 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
   Sparkles,
-  MoreHorizontal,
   Globe,
-  Trash2,
   Clock,
   HelpCircle,
   PlayCircle,
@@ -36,6 +36,10 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { GenerateQuizDialog } from "@/components/quiz/generate-quiz-dialog";
+import {
+  FolderBrowser,
+  ItemActionsMenu,
+} from "@/components/folders/folder-browser";
 import type { QuizResponse } from "@/hooks/use-quizzes";
 
 type Quiz = QuizResponse;
@@ -54,18 +58,10 @@ function relativeDate(dateString: string): string {
   const diffHours = Math.floor(diffMinutes / 60);
   const diffDays = Math.floor(diffHours / 24);
 
-  if (diffDays > 7) {
-    return date.toLocaleDateString();
-  }
-  if (diffDays > 0) {
-    return `${diffDays}d ago`;
-  }
-  if (diffHours > 0) {
-    return `${diffHours}h ago`;
-  }
-  if (diffMinutes > 0) {
-    return `${diffMinutes}m ago`;
-  }
+  if (diffDays > 7) return date.toLocaleDateString();
+  if (diffDays > 0) return `${diffDays}d ago`;
+  if (diffHours > 0) return `${diffHours}h ago`;
+  if (diffMinutes > 0) return `${diffMinutes}m ago`;
   return "Just now";
 }
 
@@ -92,7 +88,19 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Quiz | null>(null);
 
-  const { data: quizzes, isLoading, error } = useQuizzes(courseId);
+  const { data: quizzes, isLoading, error } = useQuizzes(
+    courseId,
+    "after_class"
+  );
+  const { data: folders } = useQuizFolders(
+    courseId,
+    isInstructor ? "after_class" : undefined
+  );
+  const createFolder = useCreateQuizFolder(courseId);
+  const renameFolder = useRenameQuizFolder(courseId);
+  const deleteFolder = useDeleteQuizFolder(courseId);
+  const moveFolder = useMoveQuizFolder(courseId);
+  const moveQuiz = useMoveQuizToFolder(courseId);
 
   const publishMutation = useMutation({
     mutationFn: async (quizId: string) => {
@@ -175,35 +183,12 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
     );
   }
 
-  return (
-    <div className="space-y-4">
-      {isInstructor && (
-        <div className="flex justify-end">
-          <Button onClick={() => setGenerateOpen(true)}>
-            <Sparkles className="size-4" />
-            Generate Quiz
-          </Button>
-        </div>
-      )}
-
-      {visibleQuizzes && visibleQuizzes.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {visibleQuizzes.map((quiz) => (
-            <QuizCardItem
-              key={quiz.id}
-              quiz={quiz}
-              courseId={courseId}
-              isInstructor={isInstructor}
-              onPublish={() => publishMutation.mutate(quiz.id)}
-              onDelete={() => setDeleteTarget(quiz)}
-              isPublishing={
-                publishMutation.isPending &&
-                publishMutation.variables === quiz.id
-              }
-            />
-          ))}
-        </div>
-      ) : (
+  /* --------------------------------------------------------------- */
+  /* Student view — flat grid of published quizzes, no folders       */
+  /* --------------------------------------------------------------- */
+  if (!isInstructor) {
+    if (!visibleQuizzes || visibleQuizzes.length === 0) {
+      return (
         <Card>
           <CardContent className="flex flex-col items-center py-12 text-center">
             <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-primary-light)]">
@@ -213,29 +198,87 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
               No quizzes yet
             </h3>
             <p className="mt-1 max-w-sm text-sm text-[var(--color-text-muted)]">
-              {isInstructor
-                ? "Generate your first quiz from course materials to test your students."
-                : "Your instructor hasn't published any quizzes yet. Check back soon."}
+              Your instructor hasn't published any quizzes yet. Check back soon.
             </p>
-            {isInstructor && (
-              <Button className="mt-4" onClick={() => setGenerateOpen(true)}>
-                <Sparkles className="size-4" />
-                Generate your first quiz
-              </Button>
-            )}
           </CardContent>
         </Card>
-      )}
+      );
+    }
+    return (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {visibleQuizzes.map((quiz) => (
+          <QuizCardItem
+            key={quiz.id}
+            quiz={quiz}
+            courseId={courseId}
+            isInstructor={false}
+          />
+        ))}
+      </div>
+    );
+  }
 
-      {isInstructor && (
-        <GenerateQuizDialog
-          courseId={courseId}
-          open={generateOpen}
-          onOpenChange={setGenerateOpen}
-        />
-      )}
+  /* --------------------------------------------------------------- */
+  /* Instructor view — folder browser                                */
+  /* --------------------------------------------------------------- */
+  return (
+    <div className="space-y-4">
+      <FolderBrowser
+        folders={folders ?? []}
+        items={visibleQuizzes ?? []}
+        itemSectionLabel="Quizzes"
+        emptyTitle="No quizzes yet"
+        emptyBody="Create a folder to organize practice by chapter or week, or generate your first quiz from course materials."
+        itemCountNoun={{ singular: "item", plural: "items" }}
+        newMenuActions={[
+          {
+            key: "generate",
+            label: "Generate quiz",
+            icon: <Sparkles className="size-4" />,
+            onClick: () => setGenerateOpen(true),
+          },
+        ]}
+        sortItems={(a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        }
+        onCreateFolder={(parentId, name) =>
+          createFolder.mutate({
+            name,
+            parent_id: parentId,
+            purpose: "after_class",
+          })
+        }
+        onRenameFolder={(id, name) =>
+          renameFolder.mutate({ folder_id: id, name })
+        }
+        onDeleteFolder={(id) => deleteFolder.mutate(id)}
+        onMoveFolder={(id, parentId) =>
+          moveFolder.mutate({ folder_id: id, parent_id: parentId })
+        }
+        onMoveItem={(quizId, folderId) =>
+          moveQuiz.mutate({ quiz_id: quizId, folder_id: folderId })
+        }
+        renderItem={(quiz, { onMove }) => (
+          <InstructorQuizCard
+            quiz={quiz}
+            courseId={courseId}
+            onPublish={() => publishMutation.mutate(quiz.id)}
+            isPublishing={
+              publishMutation.isPending &&
+              publishMutation.variables === quiz.id
+            }
+            onDelete={() => setDeleteTarget(quiz)}
+            onMove={onMove}
+          />
+        )}
+      />
 
-      {/* Delete confirmation dialog */}
+      <GenerateQuizDialog
+        courseId={courseId}
+        open={generateOpen}
+        onOpenChange={setGenerateOpen}
+      />
+
       <Dialog
         open={deleteTarget !== null}
         onOpenChange={(nextOpen) => {
@@ -272,63 +315,19 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* Student / public quiz card (flat list)                             */
+/* ------------------------------------------------------------------ */
 interface QuizCardItemProps {
   readonly quiz: Quiz;
   readonly courseId: string;
   readonly isInstructor: boolean;
-  readonly onPublish: () => void;
-  readonly onDelete: () => void;
-  readonly isPublishing: boolean;
 }
 
-function QuizCardItem({
-  quiz,
-  courseId,
-  isInstructor,
-  onPublish,
-  onDelete,
-  isPublishing,
-}: QuizCardItemProps) {
+function QuizCardItem({ quiz, courseId, isInstructor }: QuizCardItemProps) {
   const { is_published: isPublished } = quiz;
-
   return (
     <Card className="group relative transition-all duration-[var(--duration-normal)] hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)]">
-      {isInstructor && (
-        <div className="absolute top-3 right-3 z-10">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className="opacity-0 transition-opacity duration-[var(--duration-fast)] group-hover:opacity-100 data-popup-open:opacity-100"
-                />
-              }
-            >
-              <MoreHorizontal className="size-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={onPublish}
-                disabled={isPublishing}
-              >
-                <Globe className="size-4" />
-                {isPublishing
-                  ? "Updating..."
-                  : isPublished
-                    ? "Unpublish"
-                    : "Publish"}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onDelete} variant="destructive">
-                <Trash2 className="size-4" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      )}
-
       <Link href={`/dashboard/courses/${courseId}/quizzes/${quiz.id}`}>
         <CardContent className="space-y-3">
           <div className="flex items-start justify-between gap-2 pr-6">
@@ -336,7 +335,6 @@ function QuizCardItem({
               {quiz.title}
             </h3>
           </div>
-
           <div className="flex items-center gap-2">
             <Badge
               variant={isPublished ? "default" : "secondary"}
@@ -353,7 +351,6 @@ function QuizCardItem({
               {quiz.question_count} questions
             </Badge>
           </div>
-
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1 text-xs text-[var(--color-text-muted)]">
               <Clock className="size-3" />
@@ -374,5 +371,81 @@ function QuizCardItem({
         </CardContent>
       </Link>
     </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Instructor quiz card (rendered inside FolderBrowser)               */
+/* ------------------------------------------------------------------ */
+interface InstructorQuizCardProps {
+  readonly quiz: Quiz;
+  readonly courseId: string;
+  readonly onPublish: () => void;
+  readonly isPublishing: boolean;
+  readonly onDelete: () => void;
+  readonly onMove: () => void;
+}
+
+function InstructorQuizCard({
+  quiz,
+  courseId,
+  onPublish,
+  isPublishing,
+  onDelete,
+  onMove,
+}: InstructorQuizCardProps) {
+  const isPublished = quiz.is_published;
+  return (
+    <div className="group relative h-full overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-all hover:-translate-y-0.5 hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)]">
+      <div className="absolute top-3 right-3 z-10 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        <ItemActionsMenu
+          onMove={onMove}
+          onDelete={onDelete}
+          extra={
+            <DropdownMenuItem onClick={onPublish} disabled={isPublishing}>
+              <Globe className="size-4" />
+              {isPublishing
+                ? "Updating..."
+                : isPublished
+                  ? "Unpublish"
+                  : "Publish"}
+            </DropdownMenuItem>
+          }
+        />
+      </div>
+      <Link href={`/dashboard/courses/${courseId}/quizzes/${quiz.id}`}>
+        <div className="space-y-3 p-4 pr-10">
+          <h3 className="line-clamp-2 text-sm font-semibold text-[var(--color-text)] transition-colors duration-[var(--duration-fast)] group-hover:text-[var(--color-primary)]">
+            {quiz.title}
+          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant={isPublished ? "default" : "secondary"}
+              className={
+                isPublished
+                  ? "bg-[oklch(90%_0.05_145)] text-[var(--color-success)] border-transparent"
+                  : ""
+              }
+            >
+              {isPublished ? "Published" : "Draft"}
+            </Badge>
+            <Badge variant="outline">
+              <HelpCircle className="size-3" />
+              {quiz.question_count} questions
+            </Badge>
+          </div>
+          <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
+            <span className="flex items-center gap-1">
+              <Clock className="size-3" />
+              {relativeDate(quiz.created_at)}
+            </span>
+            <span className="flex items-center gap-1 font-medium">
+              <Eye className="size-3.5" />
+              Preview
+            </span>
+          </div>
+        </div>
+      </Link>
+    </div>
   );
 }
