@@ -1,9 +1,12 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CreateLiveSessionRequest(BaseModel):
     quiz_id: str
-    time_limit_seconds: int = 30
+    # Bounded so a client can't set a nonsense time limit — 5 seconds is the
+    # smallest usable per-question window; 600s (10 min) is a generous upper
+    # bound for long-form questions.
+    time_limit_seconds: int = Field(default=30, ge=5, le=600)
     settings: dict = {}
 
 

@@ -382,7 +382,10 @@ async def live_answer(
         raise HTTPException(status_code=404, detail="Question not found")
 
     is_correct = _answer_is_correct(body.answer, question.correct_answer)
-    points = calculate_points(is_correct, body.elapsed_seconds, state.time_limit)
+    # Ignore the client-supplied elapsed_seconds (kept on the schema for
+    # backward compatibility) and use the server's monotonic question timer.
+    elapsed = state.elapsed_seconds()
+    points = calculate_points(is_correct, elapsed, state.time_limit)
     recorded = state.record_answer(
         str(user.id), body.answer, points, is_correct=is_correct
     )
