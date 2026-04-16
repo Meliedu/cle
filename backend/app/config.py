@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     clerk_allowed_azp: str = ""
     # Optional audience (aud) to enforce when Clerk JWT templates set it.
     clerk_audience: str = ""
+    # Expected issuer (iss) claim — set to the Clerk Frontend API URL.
+    clerk_issuer: str = ""
 
     # Cloudflare R2
     r2_account_id: str = ""
@@ -112,6 +114,48 @@ class Settings(BaseSettings):
             raise ValueError(
                 "INTEGRATIONS_ENCRYPTION_KEY must be set when ENVIRONMENT=production"
             )
+
+        if self.environment == "production":
+            if not self.clerk_audience:
+                raise ValueError(
+                    "CLERK_AUDIENCE must be set when ENVIRONMENT=production"
+                )
+            if not self.clerk_issuer:
+                raise ValueError(
+                    "CLERK_ISSUER must be set when ENVIRONMENT=production"
+                )
+            if not self.clerk_jwks_url:
+                raise ValueError(
+                    "CLERK_JWKS_URL must be set when ENVIRONMENT=production"
+                )
+            if not self.clerk_allowed_azp.strip():
+                logger.warning(
+                    "CLERK_ALLOWED_AZP is empty in production — any authorized "
+                    "party will be accepted. Set to a comma-separated list of "
+                    "allowed frontend origins for defense in depth."
+                )
+
+        canvas_enabled = bool(self.canvas_client_id)
+        if canvas_enabled:
+            if not self.canvas_state_secret:
+                raise ValueError(
+                    "CANVAS_STATE_SECRET must be set when CANVAS_CLIENT_ID is configured"
+                )
+            if len(self.canvas_state_secret.encode()) < 32:
+                raise ValueError(
+                    "CANVAS_STATE_SECRET must be at least 32 bytes "
+                    "(generate with: python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+                )
+
+        if self.integrations_encryption_key:
+            from cryptography.fernet import Fernet
+            try:
+                Fernet(self.integrations_encryption_key.encode())
+            except Exception as exc:
+                raise ValueError(
+                    f"INTEGRATIONS_ENCRYPTION_KEY is not a valid Fernet key: {exc}"
+                )
+
         # Validate canvas_base_url on every environment. SSRF is a runtime
         # concern, and we want the process to fail fast if someone points
         # Canvas at a non-https or internal URL.
