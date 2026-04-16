@@ -43,7 +43,10 @@ class SessionState:
     participants: set[str] = field(default_factory=set)
     anonymous_users: set[str] = field(default_factory=set)
     # Lazily populated display-name cache so WS broadcasts can render real
-    # names without a DB round-trip per broadcast.
+    # names without a DB round-trip per broadcast. Bound is the session
+    # lifetime: ConnectionManager.remove_session() drops the whole SessionState
+    # when the session ends, and realistic sessions are well under 100 players,
+    # so no per-entry eviction is needed.
     player_names: dict[str, str] = field(default_factory=dict)
     review_mode: str = "per_question"  # "per_question" | "final"
 
