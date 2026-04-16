@@ -56,6 +56,35 @@ def _review_mode_from_settings(settings: dict | None) -> str:
     return mode if mode in ("per_question", "final") else "per_question"
 
 
+def _display_name_for(user: User) -> str:
+    """Return the preferred display label for a user record."""
+    return (
+        user.full_name
+        or (user.email.split("@")[0] if user.email else None)
+        or f"Player {str(user.id)[:4]}"
+    )
+
+
+async def _backfill_missing_names(state: SessionState) -> None:
+    """Populate state.player_names for any scoring user not yet cached.
+
+    Used before terminal broadcasts (session ended) so the final leaderboard
+    shows real names even for users whose answers were recorded before the
+    cache existed (e.g. after a backend restart that rehydrated state).
+    """
+    missing = {
+        uid
+        for uid in state.player_scores.keys()
+        if uid not in state.player_names
+    }
+    if not missing:
+        return
+    async with async_session_factory() as db:
+        lookup = await _name_lookup(db, missing)
+    for uid, name in lookup.items():
+        state.player_names.setdefault(uid, name)
+
+
 async def _name_lookup(
     db: AsyncSession, user_ids: set[str]
 ) -> dict[str, str]:
@@ -633,11 +662,14 @@ async def websocket_live(
                             db_session.started_at = datetime.now(timezone.utc)
                         await db.commit()
                 if state.status == "finished":
+                    await _backfill_missing_names(state)
                     await manager.broadcast(
                         session_id,
                         {
                             "type": "session_ended",
-                            "final_leaderboard": state.get_leaderboard(),
+                            "final_leaderboard": state.get_leaderboard(
+                                names=state.player_names
+                            ),
                         },
                     )
                 else:
@@ -700,11 +732,20 @@ async def websocket_live(
                 if not recorded:
                     continue
 
+                # Cache the answerer's display name once per session so WS
+                # leaderboard broadcasts can render real names without an
+                # extra DB round-trip per answer.
+                state.player_names.setdefault(
+                    str(user.id), _display_name_for(user)
+                )
+
                 await manager.broadcast(
                     session_id,
                     {
                         "type": "answer_received",
-                        "leaderboard": state.get_leaderboard(),
+                        "leaderboard": state.get_leaderboard(
+                            names=state.player_names
+                        ),
                     },
                 )
 
@@ -723,11 +764,14 @@ async def websocket_live(
                         db_session.status = "finished"
                         db_session.ended_at = datetime.now(timezone.utc)
                         await db.commit()
+                await _backfill_missing_names(state)
                 await manager.broadcast(
                     session_id,
                     {
                         "type": "session_ended",
-                        "final_leaderboard": state.get_leaderboard(),
+                        "final_leaderboard": state.get_leaderboard(
+                            names=state.player_names
+                        ),
                     },
                 )
 

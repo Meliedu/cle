@@ -42,6 +42,9 @@ class SessionState:
     player_correct: dict[str, dict[int, bool]] = field(default_factory=dict)
     participants: set[str] = field(default_factory=set)
     anonymous_users: set[str] = field(default_factory=set)
+    # Lazily populated display-name cache so WS broadcasts can render real
+    # names without a DB round-trip per broadcast.
+    player_names: dict[str, str] = field(default_factory=dict)
     review_mode: str = "per_question"  # "per_question" | "final"
 
     def set_anonymity(self, user_id: str, anonymous: bool) -> None:
