@@ -190,7 +190,18 @@ class CanvasClient:
         return response
 
     async def _paginate(self, path: str, params: dict | None = None) -> list[dict]:
-        """Follow Canvas's Link header pagination."""
+        """Follow Canvas's Link header pagination.
+
+        Each ``rel="next"`` URL parsed from the response header is validated
+        against the credential's ``canvas_base_url`` before being used as the
+        next request target. Without this check a Canvas response could push
+        us at an internal metadata endpoint (e.g. 169.254.169.254) or a
+        different institution's host — both SSRF/data-exfil risks.
+        """
+        # Imported here to keep module-load order simple (url_safety is a
+        # leaf module that imports no app.services peers).
+        from app.services.url_safety import validate_canvas_api_url
+
         results: list[dict] = []
         url: str | None = path
         next_params = dict(params or {})
@@ -203,6 +214,8 @@ class CanvasClient:
             results.extend(response.json())
             link = response.headers.get("Link", "")
             url = _parse_next_link(link)
+            if url:
+                validate_canvas_api_url(url, self._cred.canvas_base_url)
             first = False
         return results
 
