@@ -943,7 +943,11 @@ function MoveDialog({
             onClick={() => onPick(pick)}
             disabled={pick === currentParentId || isPending}
           >
-            {isPending ? "Moving…" : "Move here"}
+            {isPending
+              ? "Moving…"
+              : pick === currentParentId
+                ? "Already here"
+                : "Move here"}
           </Button>
         </DialogFooter>
       </DialogContent>
