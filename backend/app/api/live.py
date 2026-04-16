@@ -732,8 +732,17 @@ async def websocket_live(
 
                 # Skip broadcast on duplicate submissions — prevents a client
                 # from amplifying a broadcast storm to every connected peer by
-                # spamming the same answer.
+                # spamming the same answer. Still ack the submitter so their
+                # UI can update (e.g. show "already answered") instead of
+                # hanging on a pending state.
                 if not recorded:
+                    await websocket.send_json(
+                        {
+                            "type": "answer_ack",
+                            "already_answered": True,
+                            "question_index": question_index,
+                        }
+                    )
                     continue
 
                 # Cache the answerer's display name once per session so WS
