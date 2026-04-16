@@ -12,6 +12,7 @@ import pytest
 from app.services.generator import (
     GeneratedFlashcard,
     GeneratedQuestion,
+    LLMGenerationError,
     generate_flashcards,
     generate_quiz,
     generate_summary,
@@ -121,6 +122,38 @@ async def test_handles_invalid_json_with_fallback(
     assert mock_llm.call_count == 2
     for q in questions:
         assert isinstance(q, GeneratedQuestion)
+
+
+@pytest.mark.asyncio
+async def test_raises_llmgeneration_error_when_both_models_fail(
+    sample_chunks: list[RetrievedChunk],
+) -> None:
+    """Both primary and fallback return unparseable JSON.
+
+    We expect an ``LLMGenerationError`` with a safe, user-facing message —
+    and crucially we must not leak the raw parser / SDK message out to the
+    caller (and from there into ``task.error_message``).
+    """
+    mock_llm = AsyncMock(
+        side_effect=[
+            "not json — primary failure",
+            "still not json — fallback failure",
+        ]
+    )
+
+    with patch("app.services.generator._call_llm", mock_llm):
+        with pytest.raises(LLMGenerationError) as excinfo:
+            await generate_quiz(sample_chunks, num_questions=2)
+
+    # Both models were actually tried.
+    assert mock_llm.call_count == 2
+    # User-facing message is safe: no "JSON", no "parse", no stack/SDK noise.
+    message = str(excinfo.value)
+    assert "quiz generation failed" in message
+    assert "please try again" in message
+    assert "JSON" not in message
+    assert "json" not in message
+    assert "parse" not in message.lower()
 
 
 # ---------------------------------------------------------------------------
