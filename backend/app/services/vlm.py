@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import re as _re
 
 import httpx
 import openai
@@ -20,6 +21,31 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _client: AsyncOpenAI | None = None
+
+_CAPTION_MAX_CHARS = 600
+_CAPTION_INJECTION_PATTERNS = _re.compile(
+    r"(ignore\s+(all|previous|prior)|system\s+prompt|<\|\w+\|>|\[INST\]|\[/INST\])",
+    _re.IGNORECASE,
+)
+
+
+def _sanitize_caption(raw: str) -> str:
+    """Post-process a VLM caption before it enters the chunk pipeline.
+
+    Protects against indirect prompt-injection carried in adversarial image
+    text: the VLM faithfully transcribes "Ignore all previous instructions"
+    written inside a slide, and we don't want that payload to flow into
+    downstream LLM prompts verbatim.
+    """
+    cleaned = (raw or "").strip()
+    if not cleaned:
+        return ""
+    if len(cleaned) > _CAPTION_MAX_CHARS:
+        cleaned = cleaned[:_CAPTION_MAX_CHARS] + "…"
+    if _CAPTION_INJECTION_PATTERNS.search(cleaned):
+        return "[Figure: (caption omitted — flagged pattern)]"
+    return cleaned
+
 
 _CAPTION_PROMPT = (
     "You are describing a figure from a university lecture slide or textbook "
@@ -106,7 +132,8 @@ async def caption_image(image_bytes: bytes, context: str = "") -> str | None:
                 max_tokens=_MAX_CAPTION_TOKENS,
             )
             caption = (response.choices[0].message.content or "").strip()
-            return caption or None
+            sanitized = _sanitize_caption(caption)
+            return sanitized or None
         except (
             openai.RateLimitError,
             openai.APITimeoutError,
