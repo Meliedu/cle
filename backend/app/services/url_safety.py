@@ -75,6 +75,8 @@ def validate_frontend_url(url: str) -> str:
     - must be non-empty
     - scheme must be https, OR http with a loopback/localhost host for dev
     - must have a hostname
+    - path must be empty or "/" (we append routes like /dashboard/canvas at
+      runtime; a configured path component would produce broken redirects)
 
     Returns the normalized URL (trailing slash stripped).
     """
@@ -91,5 +93,14 @@ def validate_frontend_url(url: str) -> str:
     else:
         raise ValueError(
             "frontend_url must use https:// (http:// is only allowed for localhost)"
+        )
+    if parsed.path not in ("", "/"):
+        raise ValueError(
+            "frontend_url must not contain a path component "
+            "(set scheme+host only, e.g. https://app.example.com)"
+        )
+    if parsed.query or parsed.fragment:
+        raise ValueError(
+            "frontend_url must not contain a query string or fragment"
         )
     return parsed.geturl().rstrip("/")
