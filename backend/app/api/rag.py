@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._helpers import verify_enrollment as _verify_enrollment
 from app.api.deps import get_current_user, get_db, require_instructor
-from app.models.course import Course, Enrollment
+from app.models.course import Course
 from app.models.summary import CourseSummary
 from app.models.task import Task
 from app.models.user import User
@@ -26,25 +27,6 @@ from app.services.retriever import fulltext_retrieve, hybrid_retrieve, retrieve_
 from app.utils.sanitize import sanitize_query as _sanitize_query
 
 router = APIRouter(prefix="/rag", tags=["rag"])
-
-
-async def _verify_enrollment(
-    db: AsyncSession,
-    course_id: uuid.UUID,
-    user_id: uuid.UUID,
-) -> None:
-    """Check that the user is enrolled in the course. Raises 403 if not."""
-    result = await db.execute(
-        select(Enrollment).where(
-            Enrollment.course_id == course_id,
-            Enrollment.user_id == user_id,
-        )
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enrolled in this course",
-        )
 
 
 async def _get_course_language(db: AsyncSession, course_id: uuid.UUID) -> str:
