@@ -57,17 +57,31 @@ def _get_client() -> AsyncOpenAI:
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Per-chunk and total caps on context sent to the LLM. Large retrieval sets
+# or pathological chunks would otherwise blow past model context windows and
+# inflate token cost. Numbers are chars, not tokens — generous but finite.
+MAX_CHUNK_CHARS = 2000
+MAX_CONTEXT_CHARS = 40000
+
 
 def _build_context(chunks: list[RetrievedChunk]) -> str:
     """Format retrieved chunks into a labelled context block.
 
     Uses ordinal source numbers rather than leaking internal document UUIDs
-    to the third-party LLM.
+    to the third-party LLM. Per-chunk content is truncated to
+    ``MAX_CHUNK_CHARS`` and the assembled context is truncated to
+    ``MAX_CONTEXT_CHARS`` so the prompt stays within bounded size.
     """
     parts: list[str] = []
     for idx, chunk in enumerate(chunks, start=1):
-        parts.append(f"[Source {idx}]\n{chunk.content}")
-    return "\n\n".join(parts)
+        content = chunk.content
+        if len(content) > MAX_CHUNK_CHARS:
+            content = content[:MAX_CHUNK_CHARS]
+        parts.append(f"[Source {idx}]\n{content}")
+    context = "\n\n".join(parts)
+    if len(context) > MAX_CONTEXT_CHARS:
+        context = context[:MAX_CONTEXT_CHARS]
+    return context
 
 
 async def _call_llm(
