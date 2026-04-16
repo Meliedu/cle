@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import tiktoken
 
@@ -22,6 +22,10 @@ class ChunkData:
     chunk_index: int
     page_number: int | None
     token_count: int
+    metadata: dict = field(default_factory=dict)
+
+
+_FIGURE_MARKER = "[Figure:"
 
 
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[.?!])\s+|\n{2,}")
@@ -116,12 +120,17 @@ def chunk_text(
         if page_ranges:
             page_number = _resolve_page(sentence_offsets[start_i], page_ranges)
 
+        metadata: dict = {}
+        if _FIGURE_MARKER in content:
+            metadata["has_figure"] = True
+
         chunks.append(
             ChunkData(
                 content=content,
                 chunk_index=chunk_index,
                 page_number=page_number,
                 token_count=_count_tokens(content),
+                metadata=metadata,
             )
         )
         chunk_index += 1

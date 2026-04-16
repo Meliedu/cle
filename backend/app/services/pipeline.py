@@ -87,6 +87,7 @@ async def process_document_pipeline(
                 page_number=chunk_data.page_number,
                 token_count=chunk_data.token_count,
                 embedding=embedding,
+                metadata_=dict(chunk_data.metadata) if chunk_data.metadata else {},
             )
             session.add(chunk)
 
