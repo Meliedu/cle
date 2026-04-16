@@ -12,22 +12,24 @@ from app.models.task import Task
 
 logger = logging.getLogger(__name__)
 
-# Replace full DB connection strings before they reach tasks.error_message.
-# Covers both postgres:// and postgresql:// (async+sync), any user/password,
-# host, port, and db path. Matches up to the first whitespace so it does not
-# eat surrounding context in the message.
-_DB_URL_RE = re.compile(r"postgres(?:ql)?(?:\+\w+)?://\S+")
+# Redact any URL that embeds credentials (``scheme://user[:pass]@host...``)
+# before it reaches tasks.error_message. Previously this only matched
+# postgres(ql) URIs, but failures from redis, mongodb, amqp, s3, http, etc.
+# can all surface bearer creds the same way. Requiring a userinfo segment
+# (``...@host``) keeps the pattern tight so innocuous URLs without
+# credentials are left untouched.
+_DB_URL_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9+\-.]*://[^\s/@]+@\S+")
 
 
 def _sanitize_error_message(exc: BaseException) -> str:
     """Return a bounded, redacted string suitable for tasks.error_message.
 
     - Prefixes with the exception class name so failure triage still works.
-    - Drops connection strings entirely (no password leaks).
+    - Drops credential-bearing URLs entirely (no password leaks).
     - Truncates to keep the column small and avoid logging blobs of internals.
     """
     raw = str(exc)
-    redacted = _DB_URL_RE.sub("<db-url>", raw)
+    redacted = _DB_URL_RE.sub("<redacted-url>", raw)
     if len(redacted) > 200:
         redacted = redacted[:200]
     return f"{type(exc).__name__}: {redacted}"
