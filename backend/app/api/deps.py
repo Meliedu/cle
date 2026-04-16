@@ -156,7 +156,7 @@ async def get_current_user(
             await db.rollback()
 
     await db.execute(
-        text("SELECT set_config('app.current_user_id', :uid, true)").bindparams(uid=str(user.id))
+        text("SELECT set_config('app.current_user_id', :uid, false)").bindparams(uid=str(user.id))
     )
     return user
 

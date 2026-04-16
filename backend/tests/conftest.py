@@ -36,6 +36,12 @@ def event_loop():
 
 
 @pytest_asyncio.fixture
+async def async_engine():
+    from app.database import engine
+    yield engine
+
+
+@pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

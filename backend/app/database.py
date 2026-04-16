@@ -1,3 +1,4 @@
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
@@ -20,6 +21,18 @@ if not _is_local(settings.database_url):
 
 engine = create_async_engine(settings.database_url, **_engine_kwargs)
 async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@event.listens_for(engine.sync_engine, "checkout")
+def _reset_rls_context(dbapi_conn, connection_record, connection_proxy):
+    """Reset the per-request RLS GUC on every pool checkout so that
+    ``app.current_user_id`` cannot leak from a prior request whose transaction
+    committed the value at the session level."""
+    cursor = dbapi_conn.cursor()
+    try:
+        cursor.execute("SELECT set_config('app.current_user_id', '', false)")
+    finally:
+        cursor.close()
 
 
 async def get_db():
