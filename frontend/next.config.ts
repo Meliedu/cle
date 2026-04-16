@@ -13,6 +13,10 @@ const apiOrigin = (() => {
   }
 })();
 
+const wsOrigin = apiOrigin.replace(/^https?:/, (match) =>
+  match === "https:" ? "wss:" : "ws:",
+);
+
 // Clerk requires script + connect to its FAPI + worker; img-src for avatars.
 // Tighten further by replacing 'unsafe-inline' on script-src once Next/Clerk
 // expose nonce-based bootstrapping in this version.
@@ -22,7 +26,7 @@ const cspDirectives = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' https://fonts.gstatic.com data:",
-  `connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://api.clerk.com wss: https://openrouter.ai${apiOrigin ? ` ${apiOrigin}` : ""}`,
+  `connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://api.clerk.com${apiOrigin ? ` ${apiOrigin}` : ""}${wsOrigin ? ` ${wsOrigin}` : ""}`,
   "frame-src 'self' https://challenges.cloudflare.com https://*.clerk.accounts.dev",
   "worker-src 'self' blob:",
   "object-src 'none'",
