@@ -115,12 +115,17 @@ class SessionState:
         self,
         top_n: int = 10,
         names: dict[str, str] | None = None,
+        include_user_ids: bool = False,
     ) -> list[dict]:
         """Return leaderboard entries with a display_name.
 
         - If a user opted in to anonymity, display_name is "Anonymous".
         - If a name lookup is provided, use it; otherwise fall back to a short
           user id stub so the frontend never has to do that itself.
+        - ``user_id`` is only emitted when ``include_user_ids=True``. Broadcast
+          paths (which reach every connected client) default to False so raw
+          UUIDs never leak to peers who shouldn't have them. Host-only views
+          that need to correlate rows to users must opt in explicitly.
         """
         names = names or {}
         sorted_players = sorted(
@@ -132,14 +137,14 @@ class SessionState:
                 display_name = "Anonymous"
             else:
                 display_name = names.get(uid) or f"Player {uid[:4]}"
-            result.append(
-                {
-                    "user_id": uid,
-                    "score": score,
-                    "rank": i + 1,
-                    "display_name": display_name,
-                }
-            )
+            entry: dict = {
+                "score": score,
+                "rank": i + 1,
+                "display_name": display_name,
+            }
+            if include_user_ids:
+                entry["user_id"] = uid
+            result.append(entry)
         return result
 
 

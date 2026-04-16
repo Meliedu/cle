@@ -301,7 +301,7 @@ async def get_live_state(
 
     names = await _name_lookup(db, set(state.player_scores.keys()))
     leaderboard: list[dict] = (
-        state.get_leaderboard(names=names)
+        state.get_leaderboard(names=names, include_user_ids=is_host)
         if is_host or show_leaderboard
         else []
     )
@@ -434,7 +434,11 @@ async def live_end_session(
         names = await _name_lookup(db, set(state.player_scores.keys()))
         return APIResponse(
             success=True,
-            data={"final_leaderboard": state.get_leaderboard(names=names)},
+            data={
+                "final_leaderboard": state.get_leaderboard(
+                    names=names, include_user_ids=True
+                )
+            },
         )
 
 
