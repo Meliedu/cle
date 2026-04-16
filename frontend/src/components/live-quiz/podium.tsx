@@ -59,7 +59,7 @@ export function Podium({ leaderboard }: PodiumProps) {
 
                 return (
                   <div
-                    key={entry.user_id}
+                    key={entry.user_id ?? `rank-${entry.rank}`}
                     className="flex flex-col items-center gap-2"
                   >
                     {/* Player info */}
@@ -67,7 +67,11 @@ export function Podium({ leaderboard }: PodiumProps) {
                       {style.icon}
                     </div>
                     <p className="max-w-[100px] truncate text-center text-sm font-semibold text-[var(--color-text)]">
-                      {entry.display_name ?? entry.full_name ?? `Player ${entry.user_id.slice(0, 4)}`}
+                      {entry.display_name ??
+                        entry.full_name ??
+                        (entry.user_id
+                          ? `Player ${entry.user_id.slice(0, 4)}`
+                          : `#${entry.rank}`)}
                     </p>
                     <p className="text-xs font-medium text-[var(--color-primary)]">
                       {entry.score.toLocaleString()} pts
@@ -98,14 +102,18 @@ export function Podium({ leaderboard }: PodiumProps) {
           <CardContent className="space-y-1">
             {rest.map((entry) => (
               <div
-                key={entry.user_id}
+                key={entry.user_id ?? `rank-${entry.rank}`}
                 className="flex items-center gap-3 rounded-[var(--radius-md)] px-2 py-2 hover:bg-[var(--color-surface-hover)]"
               >
                 <span className="flex size-7 items-center justify-center text-sm font-medium text-[var(--color-text-muted)]">
                   {entry.rank}
                 </span>
                 <span className="flex-1 truncate text-sm font-medium text-[var(--color-text)]">
-                  {entry.full_name ?? `Player ${entry.user_id.slice(0, 4)}`}
+                  {entry.display_name ??
+                    entry.full_name ??
+                    (entry.user_id
+                      ? `Player ${entry.user_id.slice(0, 4)}`
+                      : `#${entry.rank}`)}
                 </span>
                 <span className="text-sm font-semibold text-[var(--color-primary)]">
                   {entry.score.toLocaleString()} pts

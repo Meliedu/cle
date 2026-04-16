@@ -22,7 +22,9 @@ export interface LiveSessionResponse {
 
 export interface LeaderboardEntry {
   readonly rank: number;
-  readonly user_id: string;
+  /* Only emitted by the backend on host-only views and terminal broadcasts —
+   * default broadcasts omit user_id so raw UUIDs never leak to peers. */
+  readonly user_id?: string;
   readonly score: number;
   readonly display_name?: string;
   readonly full_name?: string;

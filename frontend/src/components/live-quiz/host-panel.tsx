@@ -239,7 +239,7 @@ export function HostPanel({
           <CardContent className="space-y-1">
             {leaderboard.slice(0, 5).map((entry) => (
               <div
-                key={entry.user_id}
+                key={entry.user_id ?? `rank-${entry.rank}`}
                 className="flex items-center gap-3 rounded-[var(--radius-md)] px-2 py-1.5"
               >
                 <span className="flex size-6 items-center justify-center text-xs font-bold text-[var(--color-text-muted)]">
@@ -248,7 +248,9 @@ export function HostPanel({
                 <span className="flex-1 truncate text-sm text-[var(--color-text)]">
                   {entry.display_name ??
                     entry.full_name ??
-                    `Player ${entry.user_id.slice(0, 4)}`}
+                    (entry.user_id
+                      ? `Player ${entry.user_id.slice(0, 4)}`
+                      : `#${entry.rank}`)}
                 </span>
                 <span className="text-sm font-semibold text-[var(--color-primary)]">
                   {entry.score.toLocaleString()}
