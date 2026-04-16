@@ -221,7 +221,9 @@ async def generate_quiz(
     """Generate quiz questions from retrieved chunks.
 
     Tries the primary model first. On JSON parse failure, falls back to the
-    secondary model. Raises ``ValueError`` if both attempts fail.
+    secondary model. Raises ``LLMGenerationError`` with a safe user-facing
+    message if both attempts fail; upstream SDK / parser details are logged
+    but never surfaced to the client.
     """
     types = question_types or [quiz_type]
     context = _build_context(chunks)
@@ -307,13 +309,34 @@ async def generate_summary(
     chunks: list[RetrievedChunk],
     language: str = "english",
 ) -> str:
-    """Generate a markdown summary from retrieved chunks."""
+    """Generate a markdown summary from retrieved chunks.
+
+    Tries the primary model first. On failure, falls back to the secondary
+    model. Raises ``LLMGenerationError`` with a safe user-facing message if
+    both attempts fail; upstream SDK / parser details are logged but never
+    surfaced to the client.
+    """
     context = _build_context(chunks)
     user_prompt = (
         f"Summarize the following {language} language learning material. "
         f"Write the summary in English.\n\n{context}"
     )
-    return await _call_llm(_SUMMARY_SYSTEM_PROMPT, user_prompt)
+
+    try:
+        return await _call_llm(_SUMMARY_SYSTEM_PROMPT, user_prompt)
+    except (ValueError, json.JSONDecodeError) as exc:
+        logger.warning("Primary model summary failed: %s — trying fallback", exc)
+        try:
+            return await _call_llm(
+                _SUMMARY_SYSTEM_PROMPT,
+                user_prompt,
+                model=settings.openrouter_fallback_model,
+            )
+        except Exception as fallback_exc:  # noqa: BLE001 — surface as domain error
+            logger.exception("Fallback summary generation failed")
+            raise LLMGenerationError(
+                "summary generation failed; please try again"
+            ) from fallback_exc
 
 
 # ---------------------------------------------------------------------------
@@ -339,7 +362,9 @@ async def generate_flashcards(
     """Generate flashcards from retrieved chunks.
 
     Tries the primary model first. On JSON parse failure, falls back to the
-    secondary model. Raises ``ValueError`` if both attempts fail.
+    secondary model. Raises ``LLMGenerationError`` with a safe user-facing
+    message if both attempts fail; upstream SDK / parser details are logged
+    but never surfaced to the client.
     """
     context = _build_context(chunks)
     user_prompt = (
@@ -360,9 +385,10 @@ async def generate_flashcards(
                 model=settings.openrouter_fallback_model,
             )
             items = _parse_json_response(raw)
-        except (ValueError, json.JSONDecodeError) as fallback_exc:
-            raise ValueError(
-                "Both primary and fallback models failed to produce valid flashcard JSON"
+        except Exception as fallback_exc:  # noqa: BLE001 — surface as domain error
+            logger.exception("Fallback flashcard generation failed")
+            raise LLMGenerationError(
+                "flashcard generation failed; please try again"
             ) from fallback_exc
 
     return [
@@ -412,7 +438,9 @@ async def generate_revision_quiz(
     """Generate difficulty-aware quiz questions from retrieved chunks.
 
     Tries the primary model first. On JSON parse failure, falls back to the
-    secondary model. Raises ``ValueError`` if both attempts fail.
+    secondary model. Raises ``LLMGenerationError`` with a safe user-facing
+    message if both attempts fail; upstream SDK / parser details are logged
+    but never surfaced to the client.
     """
     context = _build_context(chunks)
     user_prompt = (
@@ -436,9 +464,10 @@ async def generate_revision_quiz(
             )
             items = _parse_json_response(raw)
             results = _build_revision_quiz_results(items)
-        except (ValueError, json.JSONDecodeError) as fallback_exc:
-            raise ValueError(
-                "Both primary and fallback models failed to produce valid revision quiz JSON"
+        except Exception as fallback_exc:  # noqa: BLE001 — surface as domain error
+            logger.exception("Fallback revision quiz generation failed")
+            raise LLMGenerationError(
+                "revision quiz generation failed; please try again"
             ) from fallback_exc
 
     return results
@@ -500,7 +529,9 @@ async def generate_revision_flashcards(
     """Generate difficulty-aware flashcards from retrieved chunks.
 
     Tries the primary model first. On JSON parse failure, falls back to the
-    secondary model. Raises ``ValueError`` if both attempts fail.
+    secondary model. Raises ``LLMGenerationError`` with a safe user-facing
+    message if both attempts fail; upstream SDK / parser details are logged
+    but never surfaced to the client.
     """
     context = _build_context(chunks)
     user_prompt = (
@@ -521,9 +552,10 @@ async def generate_revision_flashcards(
                 model=settings.openrouter_fallback_model,
             )
             items = _parse_json_response(raw)
-        except (ValueError, json.JSONDecodeError) as fallback_exc:
-            raise ValueError(
-                "Both primary and fallback models failed to produce valid revision flashcard JSON"
+        except Exception as fallback_exc:  # noqa: BLE001 — surface as domain error
+            logger.exception("Fallback revision flashcard generation failed")
+            raise LLMGenerationError(
+                "revision flashcard generation failed; please try again"
             ) from fallback_exc
 
     return [
@@ -561,7 +593,9 @@ async def generate_revision_speaking(
     """Generate difficulty-aware speaking targets from retrieved chunks.
 
     Tries the primary model first. On JSON parse failure, falls back to the
-    secondary model. Raises ``ValueError`` if both attempts fail.
+    secondary model. Raises ``LLMGenerationError`` with a safe user-facing
+    message if both attempts fail; upstream SDK / parser details are logged
+    but never surfaced to the client.
     """
     context = _build_context(chunks)
     user_prompt = (
@@ -582,9 +616,10 @@ async def generate_revision_speaking(
                 model=settings.openrouter_fallback_model,
             )
             items = _parse_json_response(raw)
-        except (ValueError, json.JSONDecodeError) as fallback_exc:
-            raise ValueError(
-                "Both primary and fallback models failed to produce valid revision speaking JSON"
+        except Exception as fallback_exc:  # noqa: BLE001 — surface as domain error
+            logger.exception("Fallback revision speaking generation failed")
+            raise LLMGenerationError(
+                "revision speaking generation failed; please try again"
             ) from fallback_exc
 
     return [
