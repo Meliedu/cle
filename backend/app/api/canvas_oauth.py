@@ -6,7 +6,16 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    Cookie,
+    Depends,
+    HTTPException,
+    Path,
+    Query,
+    Response,
+    status,
+)
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -253,7 +262,7 @@ async def list_canvas_courses(
     "/courses/{canvas_course_id}/link", response_model=APIResponse[dict]
 )
 async def link_canvas_course(
-    canvas_course_id: str,
+    canvas_course_id: str = Path(..., pattern=r"^\d+$"),
     user: User = Depends(require_instructor),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[dict]:
@@ -352,7 +361,7 @@ async def link_canvas_course(
     "/courses/{canvas_course_id}/join", response_model=APIResponse[dict]
 )
 async def join_canvas_course(
-    canvas_course_id: str,
+    canvas_course_id: str = Path(..., pattern=r"^\d+$"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[dict]:
