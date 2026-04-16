@@ -80,7 +80,10 @@ async def decode_state(token: str, cookie_nonce: str | None = None) -> uuid.UUID
             algorithms=["HS256"],
         )
     except jwt.PyJWTError as exc:
-        raise StateInvalid(str(exc)) from exc
+        # Do not surface PyJWT's raw message — it can include token fragments
+        # or other internals. `from exc` preserves the chain for tooling while
+        # keeping the user-visible message generic.
+        raise StateInvalid("JWT verification failed") from exc
     nonce = payload.get("nonce")
     exp = int(payload.get("exp", 0))
     if not nonce or not exp:
