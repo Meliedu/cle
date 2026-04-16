@@ -23,7 +23,8 @@ boto3==1.38.12
 openai==1.82.0
 
 # Document parsing
-pymupdf4llm==0.0.17
+pymupdf==1.27.2.2
+docling==2.89.0
 python-docx==1.1.2
 python-pptx==1.0.2
 

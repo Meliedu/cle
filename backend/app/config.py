@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     openrouter_primary_model: str = "deepseek/deepseek-v3.2"
     openrouter_fallback_model: str = "google/gemini-2.5-flash-lite"
 
+    # Vision LLM (figure captioning for PDF/PPTX images, via OpenRouter)
+    vlm_model: str = "google/gemini-2.5-flash"
+    enable_figure_captions: bool = True
+    vlm_timeout_seconds: int = 30
+
     # Azure Speech (pronunciation assessment)
     azure_speech_key: str = ""
     azure_speech_region: str = "eastasia"
