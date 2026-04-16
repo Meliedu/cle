@@ -149,7 +149,11 @@ class CanvasClient:
                 except httpx.HTTPError as exc:
                     self._cred.status = "invalid"
                     await self._db.commit()
-                    raise CanvasReauthRequired(str(exc)) from exc
+                    # httpx HTTPError stringifies with the target URL (query
+                    # params included), which can leak internal infrastructure
+                    # details. Surface a generic message; preserve the chain
+                    # via ``from exc`` for logging/tooling.
+                    raise CanvasReauthRequired("token refresh failed") from exc
 
                 self._cred.access_token_encrypted = encrypt_secret(
                     payload["access_token"]
