@@ -73,7 +73,17 @@ def _get_client() -> AsyncOpenAI:
 
 # Per-chunk and total caps on context sent to the LLM. Large retrieval sets
 # or pathological chunks would otherwise blow past model context windows and
-# inflate token cost. Numbers are chars, not tokens — generous but finite.
+# inflate token cost. Numbers are chars, not tokens.
+#
+# Rough approximation: ~4 chars/token for English prose (OpenAI tokenizer
+# heuristic). MAX_CONTEXT_CHARS = 40_000 therefore caps the retrieved context
+# at roughly 10k tokens, leaving plenty of headroom on top of the system +
+# user prompt scaffolding for every currently-supported model:
+#   - openrouter_primary_model   — typically 128k+ context (GPT-4o / Claude 3.5)
+#   - openrouter_fallback_model  — typically 32k+ context (GPT-4 / Llama 3)
+# If a future model with a much smaller window is introduced, lower this
+# constant accordingly. If a much larger window is adopted, raising it trades
+# recall for token cost.
 MAX_CHUNK_CHARS = 2000
 MAX_CONTEXT_CHARS = 40000
 
