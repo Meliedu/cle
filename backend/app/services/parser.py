@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import io
 import logging
+import zipfile
 from collections import defaultdict
 from dataclasses import dataclass, field
 
@@ -25,6 +26,34 @@ DOCX_TYPE = "docx"
 PPTX_TYPE = "pptx"
 PDF_TYPE = "pdf"
 WHISPER_TYPES = {"mp3", "mp4"}
+
+# Hard cap on the total declared-uncompressed size of an Office zip archive.
+# python-docx / python-pptx will materialise the entire archive, so a 1 MB
+# file claiming 100 GB of uncompressed content can exhaust worker memory.
+_MAX_EXPANDED_BYTES = 500 * 1024 * 1024  # 500 MB
+
+
+def _guard_office_zip(file_data: bytes, filename: str) -> None:
+    """Refuse Office archives that claim to expand beyond ``_MAX_EXPANDED_BYTES``.
+
+    Guards DOCX/PPTX uploads against zip-bomb inputs whose declared
+    uncompressed size far exceeds the compressed bytes we've accepted at the
+    edge. Checked per-entry and cumulatively so a single oversized entry or a
+    swarm of small entries both trip the limit.
+    """
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(file_data))
+    except zipfile.BadZipFile as exc:
+        raise ValueError(f"Office file {filename} is not a valid zip") from exc
+    total = 0
+    for info in zf.infolist():
+        if info.file_size > _MAX_EXPANDED_BYTES:
+            raise ValueError(
+                f"Office file {filename} contains oversized entry {info.filename}"
+            )
+        total += info.file_size
+        if total > _MAX_EXPANDED_BYTES:
+            raise ValueError(f"Office file {filename} expands beyond safe limit")
 
 # Skip tiny embedded assets (template logos, bullet icons) — avoids wasting
 # VLM calls on decorative pixels. 4 KB is low enough to keep small chart
@@ -71,13 +100,22 @@ async def parse_document(
         return await _parse_pdf(file_data, filename)
 
     if normalized == DOCX_TYPE:
-        return await asyncio.to_thread(_parse_docx, file_data, filename)
+        return await asyncio.wait_for(
+            asyncio.to_thread(_parse_docx, file_data, filename),
+            timeout=settings.parser_timeout_seconds,
+        )
 
     if normalized == PPTX_TYPE:
-        return await _parse_pptx(file_data, filename)
+        return await asyncio.wait_for(
+            _parse_pptx(file_data, filename),
+            timeout=settings.parser_timeout_seconds,
+        )
 
     if normalized in WHISPER_TYPES:
-        return await _transcribe_with_whisper(file_data, normalized, filename)
+        return await asyncio.wait_for(
+            _transcribe_with_whisper(file_data, normalized, filename),
+            timeout=settings.parser_timeout_seconds,
+        )
 
     raise ValueError(f"Unsupported file type: {file_type}")
 
@@ -88,15 +126,31 @@ async def parse_document(
 
 
 async def _parse_pdf(file_data: bytes, filename: str) -> ParseResult:
-    """Prefer Docling (captures figures via VLM); fall back to pymupdf text-only."""
+    """Prefer Docling (captures figures via VLM); fall back to pymupdf text-only.
+
+    Each synchronous parser runs under an ``asyncio.wait_for`` wall-clock cap
+    (``settings.parser_timeout_seconds``). A stuck Docling/pymupdf call can
+    otherwise pin the worker indefinitely — we'd rather fail the job and let
+    retry logic reclaim the task than ship a hung worker.
+    """
     if settings.enable_figure_captions and settings.openrouter_api_key:
         try:
-            return await asyncio.to_thread(_parse_pdf_docling, file_data, filename)
+            return await asyncio.wait_for(
+                asyncio.to_thread(_parse_pdf_docling, file_data, filename),
+                timeout=settings.parser_timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Docling parse timed out for %s; falling back to pymupdf", filename
+            )
         except Exception:
             logger.exception(
                 "Docling parse failed for %s, falling back to pymupdf", filename
             )
-    return await asyncio.to_thread(_parse_pdf_pymupdf, file_data, filename)
+    return await asyncio.wait_for(
+        asyncio.to_thread(_parse_pdf_pymupdf, file_data, filename),
+        timeout=settings.parser_timeout_seconds,
+    )
 
 
 def _parse_pdf_pymupdf(file_data: bytes, filename: str) -> ParseResult:
@@ -275,6 +329,7 @@ def _page_text(document, page_no: int) -> str:
 
 def _parse_docx(file_data: bytes, filename: str) -> ParseResult:
     """Extract text from DOCX using python-docx."""
+    _guard_office_zip(file_data, filename)
     from docx import Document as DocxDocument
 
     doc = DocxDocument(io.BytesIO(file_data))
@@ -297,7 +352,7 @@ def _parse_docx(file_data: bytes, filename: str) -> ParseResult:
 async def _parse_pptx(file_data: bytes, filename: str) -> ParseResult:
     """Extract slide text and — where enabled — caption embedded Picture shapes."""
     text_by_slide, image_jobs = await asyncio.to_thread(
-        _collect_pptx_content, file_data
+        _collect_pptx_content, file_data, filename
     )
 
     captions_by_slide: dict[int, list[str]] = defaultdict(list)
@@ -393,11 +448,13 @@ def _iter_picture_blobs(shapes):
 
 def _collect_pptx_content(
     file_data: bytes,
+    filename: str = "<pptx>",
 ) -> tuple[dict[int, str], list[tuple[int, bytes, str]]]:
     """Walk slides synchronously, return (text_by_slide, image_jobs).
 
     image_jobs: list of (slide_num, image_bytes, surrounding_slide_text).
     """
+    _guard_office_zip(file_data, filename)
     from pptx import Presentation
 
     prs = Presentation(io.BytesIO(file_data))

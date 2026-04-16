@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     # Upload limits
     max_upload_size_mb: int = 100
 
+    # Hard wall-clock cap on a single parse job (Docling, pymupdf, etc.)
+    parser_timeout_seconds: int = 300
+
     # Run the document-processing worker + Canvas scheduler inside the API
     # process. Default True for dev (single container). In prod we run the
     # worker as a separate Railway service and set this to False on the API
