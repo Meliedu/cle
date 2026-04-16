@@ -41,7 +41,8 @@ class GenerateQuizRequest(BaseModel):
     num_questions: int = Field(default=5, ge=1, le=30)
     purpose: QuizPurpose = "after_class"
     question_types: list[QuestionType] = Field(
-        default_factory=lambda: ["multiple_choice"]
+        default_factory=lambda: ["multiple_choice"],
+        min_length=1,
     )
     mcq_option_count: int = Field(default=4, ge=2, le=MAX_MCQ_OPTIONS)
     difficulty: Difficulty = "medium"
