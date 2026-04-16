@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse as _urlparse
 
 import httpx
 from fastapi import (
@@ -37,6 +38,16 @@ from sqlalchemy.exc import IntegrityError
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/canvas", tags=["canvas-oauth"])
 
+# Evaluate the frontend scheme once at module load. ``settings.frontend_url``
+# is validated at startup (url_safety.validate_frontend_url) to be either
+# ``https://...`` or ``http://localhost...``, so the cookie's ``Secure`` flag
+# tracks the true transport the browser will use — not the abstract
+# environment name. Setting ``Secure`` when the frontend is served over
+# plain-http localhost would make the cookie undeliverable in dev; leaving
+# it off when the frontend is served over https would leak the nonce over
+# any plaintext downgrade.
+_FRONTEND_SCHEME = _urlparse(settings.frontend_url).scheme
+
 
 @router.get("/oauth/start")
 async def oauth_start(user: User = Depends(get_current_user)) -> JSONResponse:
@@ -64,7 +75,7 @@ async def oauth_start(user: User = Depends(get_current_user)) -> JSONResponse:
         value=nonce,
         max_age=canvas_oauth.STATE_TTL_SECONDS,
         httponly=True,
-        secure=settings.environment == "production",
+        secure=_FRONTEND_SCHEME == "https",
         samesite="lax",
         path="/api/canvas/oauth",
     )
