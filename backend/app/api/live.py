@@ -686,9 +686,15 @@ async def websocket_live(
                 # Trust server-side elapsed time, not the client's claim.
                 elapsed = state.elapsed_seconds()
                 points = calculate_points(is_correct, elapsed, state.time_limit)
-                state.record_answer(
+                recorded = state.record_answer(
                     str(user.id), answer, points, is_correct=is_correct
                 )
+
+                # Skip broadcast on duplicate submissions — prevents a client
+                # from amplifying a broadcast storm to every connected peer by
+                # spamming the same answer.
+                if not recorded:
+                    continue
 
                 await manager.broadcast(
                     session_id,
