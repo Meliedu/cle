@@ -45,9 +45,16 @@ def verify_clerk_token(token: str) -> dict:
     signing_key = jwks_client.get_signing_key_from_jwt(token)
 
     audience = settings.clerk_audience or None
+    issuer = settings.clerk_issuer or None
+
+    required = ["sub", "exp", "iat", "nbf", "email_verified"]
+    if issuer:
+        required.append("iss")
+
     decode_options = {
-        "require": ["sub", "exp", "iat"],
+        "require": required,
         "verify_aud": bool(audience),
+        "verify_iss": bool(issuer),
     }
 
     claims = jwt.decode(
@@ -55,9 +62,13 @@ def verify_clerk_token(token: str) -> dict:
         signing_key.key,
         algorithms=["RS256"],
         audience=audience,
+        issuer=issuer,
         options=decode_options,
         leeway=30,
     )
+
+    if claims.get("email_verified") is not True:
+        raise jwt.InvalidTokenError("email_verified claim must be true")
 
     allowed_azp = _allowed_azp()
     if allowed_azp:

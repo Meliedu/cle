@@ -1,5 +1,6 @@
 import logging
 
+import jwt
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
@@ -28,11 +29,21 @@ async def get_current_user(
 
     try:
         claims = verify_clerk_token(token)
-    except Exception as e:
-        logger.warning("JWT verification failed: %s", e.__class__.__name__)
+    except Exception as exc:
+        kid = None
+        try:
+            kid = jwt.get_unverified_header(token).get("kid")
+        except Exception:
+            pass
+        logger.warning(
+            "JWT verification failed: exc_class=%s kid=%s source_ip=%s",
+            exc.__class__.__name__,
+            kid,
+            request.client.host if request.client else "-",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+            detail="Invalid token",
         )
 
     clerk_id = claims.get("sub")
@@ -81,6 +92,42 @@ async def get_current_user(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="User provisioning failed",
             )
+
+    # Re-sync stored email and re-derive role from the JWT on every request so
+    # that revoked / domain-changed / role-elevated identities cannot keep using
+    # a cached session. Reject if the stored role no longer matches what the
+    # JWT email implies.
+    current_jwt_email = (claims.get("email") or "").strip().lower()
+    if not current_jwt_email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="JWT missing email claim",
+        )
+
+    try:
+        derived_role = detect_role_from_email(current_jwt_email)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        )
+
+    if user.role != derived_role:
+        logger.warning(
+            "Role mismatch for user_id=%s: stored=%s jwt_derived=%s - rejecting",
+            user.id,
+            user.role,
+            derived_role,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Role inconsistent with identity provider",
+        )
+
+    if user.email.lower() != current_jwt_email:
+        user.email = current_jwt_email
+        await db.commit()
+        await db.refresh(user)
 
     # Claim any PendingEnrollment rows pre-provisioned for this email by a
     # Canvas roster sync. Runs on every authenticated request — cheap (indexed
