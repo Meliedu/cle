@@ -88,8 +88,12 @@ async def decode_state(token: str, cookie_nonce: str | None = None) -> uuid.UUID
     exp = int(payload.get("exp", 0))
     if not nonce or not exp:
         raise StateInvalid("state token missing nonce/exp")
-    if cookie_nonce is None or not secrets.compare_digest(cookie_nonce, nonce):
-        raise StateInvalid("state cookie missing or does not match")
+    # Reject empty strings explicitly; compare_digest would return False anyway
+    # but this makes intent clear.
+    if not cookie_nonce:
+        raise StateInvalid("state cookie missing or empty")
+    if not secrets.compare_digest(cookie_nonce, nonce):
+        raise StateInvalid("state cookie does not match")
     await _consume_nonce(nonce, exp)
     return uuid.UUID(payload["uid"])
 
