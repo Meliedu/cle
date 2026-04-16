@@ -28,7 +28,7 @@ async def test_oauth_callback_stores_credential(
     async_client, logged_in_user, db_session, monkeypatch
 ):
     monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "s")
-    state = canvas_oauth.encode_state(logged_in_user.id)
+    state, nonce = canvas_oauth.encode_state(logged_in_user.id)
 
     async def fake_exchange(code):
         return {
@@ -43,6 +43,7 @@ async def test_oauth_callback_stores_credential(
     resp = await async_client.get(
         f"/api/canvas/oauth/callback?code=xyz&state={state}",
         follow_redirects=False,
+        cookies={canvas_oauth.STATE_COOKIE_NAME: nonce},
     )
     assert resp.status_code in (302, 303)
 
@@ -69,11 +70,42 @@ async def test_oauth_callback_rejects_bad_state(async_client):
 
 
 @pytest.mark.asyncio
+async def test_oauth_callback_rejects_missing_cookie(
+    async_client, logged_in_user, monkeypatch
+):
+    """Valid state JWT without the binding cookie must 400 ("Invalid or expired state")."""
+    monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "s")
+    state, _nonce = canvas_oauth.encode_state(logged_in_user.id)
+
+    resp = await async_client.get(
+        f"/api/canvas/oauth/callback?code=xyz&state={state}",
+        follow_redirects=False,
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_rejects_mismatched_cookie(
+    async_client, logged_in_user, monkeypatch
+):
+    """Valid state JWT with the wrong cookie nonce must 400."""
+    monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "s")
+    state, _nonce = canvas_oauth.encode_state(logged_in_user.id)
+
+    resp = await async_client.get(
+        f"/api/canvas/oauth/callback?code=xyz&state={state}",
+        follow_redirects=False,
+        cookies={canvas_oauth.STATE_COOKIE_NAME: "not-the-right-nonce"},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_disconnect_clears_credential(
     async_client, logged_in_user, db_session, monkeypatch
 ):
     monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "s")
-    state = canvas_oauth.encode_state(logged_in_user.id)
+    state, nonce = canvas_oauth.encode_state(logged_in_user.id)
 
     async def fake_exchange(code):
         return {
@@ -85,7 +117,9 @@ async def test_disconnect_clears_credential(
 
     monkeypatch.setattr(canvas_oauth, "exchange_code", fake_exchange)
     await async_client.get(
-        f"/api/canvas/oauth/callback?code=c&state={state}", follow_redirects=False
+        f"/api/canvas/oauth/callback?code=c&state={state}",
+        follow_redirects=False,
+        cookies={canvas_oauth.STATE_COOKIE_NAME: nonce},
     )
 
     resp = await async_client.delete("/api/canvas/connection")
@@ -112,7 +146,7 @@ async def test_get_connection_status(
 
     # After OAuth dance, connected=True
     monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "s")
-    state = canvas_oauth.encode_state(logged_in_user.id)
+    state, nonce = canvas_oauth.encode_state(logged_in_user.id)
 
     async def fake_exchange(code):
         return {
@@ -124,7 +158,9 @@ async def test_get_connection_status(
 
     monkeypatch.setattr(canvas_oauth, "exchange_code", fake_exchange)
     await async_client.get(
-        f"/api/canvas/oauth/callback?code=c&state={state}", follow_redirects=False
+        f"/api/canvas/oauth/callback?code=c&state={state}",
+        follow_redirects=False,
+        cookies={canvas_oauth.STATE_COOKIE_NAME: nonce},
     )
 
     resp = await async_client.get("/api/canvas/connection")

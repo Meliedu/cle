@@ -12,8 +12,8 @@ from app.services import canvas_oauth
 async def test_state_round_trip(monkeypatch):
     monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
     user_id = uuid.uuid4()
-    token = canvas_oauth.encode_state(user_id)
-    decoded = await canvas_oauth.decode_state(token)
+    token, nonce = canvas_oauth.encode_state(user_id)
+    decoded = await canvas_oauth.decode_state(token, nonce)
     assert decoded == user_id
 
 
@@ -21,29 +21,58 @@ async def test_state_round_trip(monkeypatch):
 async def test_state_expired(monkeypatch):
     monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
     monkeypatch.setattr(canvas_oauth, "STATE_TTL_SECONDS", 1)
-    token = canvas_oauth.encode_state(uuid.uuid4())
+    token, nonce = canvas_oauth.encode_state(uuid.uuid4())
     time.sleep(2)
     with pytest.raises(canvas_oauth.StateInvalid):
-        await canvas_oauth.decode_state(token)
+        await canvas_oauth.decode_state(token, nonce)
 
 
 @pytest.mark.asyncio
 async def test_state_tampered(monkeypatch):
     monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
-    token = canvas_oauth.encode_state(uuid.uuid4()) + "x"
+    token, nonce = canvas_oauth.encode_state(uuid.uuid4())
     with pytest.raises(canvas_oauth.StateInvalid):
-        await canvas_oauth.decode_state(token)
+        await canvas_oauth.decode_state(token + "x", nonce)
 
 
 @pytest.mark.asyncio
 async def test_state_replay_rejected(monkeypatch):
     monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
-    token = canvas_oauth.encode_state(uuid.uuid4())
+    token, nonce = canvas_oauth.encode_state(uuid.uuid4())
     # First use consumes the nonce.
-    await canvas_oauth.decode_state(token)
+    await canvas_oauth.decode_state(token, nonce)
     # Second use must be rejected as a replay.
     with pytest.raises(canvas_oauth.StateInvalid):
-        await canvas_oauth.decode_state(token)
+        await canvas_oauth.decode_state(token, nonce)
+
+
+@pytest.mark.asyncio
+async def test_state_missing_cookie_rejected(monkeypatch):
+    """A valid state JWT without the binding cookie must be rejected."""
+    monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
+    token, _nonce = canvas_oauth.encode_state(uuid.uuid4())
+    with pytest.raises(canvas_oauth.StateInvalid):
+        await canvas_oauth.decode_state(token, None)
+    with pytest.raises(canvas_oauth.StateInvalid):
+        await canvas_oauth.decode_state(token, "")
+
+
+@pytest.mark.asyncio
+async def test_state_mismatched_cookie_rejected(monkeypatch):
+    """A valid state JWT paired with the wrong cookie nonce must be rejected."""
+    monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
+    token, _nonce = canvas_oauth.encode_state(uuid.uuid4())
+    with pytest.raises(canvas_oauth.StateInvalid):
+        await canvas_oauth.decode_state(token, "definitely-not-the-nonce")
+
+
+@pytest.mark.asyncio
+async def test_state_correct_cookie_accepted(monkeypatch):
+    """A valid state JWT paired with the matching cookie nonce succeeds."""
+    monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
+    user_id = uuid.uuid4()
+    token, nonce = canvas_oauth.encode_state(user_id)
+    assert await canvas_oauth.decode_state(token, nonce) == user_id
 
 
 def test_authorize_url(monkeypatch):
