@@ -76,7 +76,8 @@ backend/app/
 │   ├── generator.py  # LLM generation via OpenRouter (primary + fallback model strategy)
 │   ├── retriever.py  # pgvector similarity search
 │   ├── embedder.py   # OpenAI text-embedding-3-large
-│   ├── parser.py     # Docling document parsing
+│   ├── parser.py     # PDF via Docling (+VLM figure captions) w/ pymupdf fallback; DOCX via python-docx; PPTX via python-pptx (+VLM image captions); mp3/mp4 via Whisper
+│   ├── vlm.py        # Vision-LLM caption client (OpenRouter) — non-raising
 │   ├── chunker.py    # Text chunking
 │   ├── storage.py    # Cloudflare R2 (S3-compatible via boto3)
 │   └── auth.py       # Clerk JWT verification
@@ -116,6 +117,7 @@ frontend/src/
 - **Environment**: Copy `.env.example` to `backend/.env`. Frontend env vars prefixed with `NEXT_PUBLIC_`.
 - **LLM calls**: OpenRouter with OpenAI SDK. Primary model is tried first; on JSON parse failure, falls back to secondary model. Both configured in settings.
 - **Embeddings**: Also via OpenRouter (not direct OpenAI). `embedder.py` uses `openai.AsyncOpenAI` with `base_url=settings.openrouter_base_url` and `api_key=settings.openrouter_api_key`. Model IDs must be provider-prefixed (e.g. `openai/text-embedding-3-large`). No `OPENAI_API_KEY` is required.
+- **Figure captions**: PDFs are parsed by Docling with its remote `PictureDescriptionApiOptions` pointed at OpenRouter (`vlm_model`, default `google/gemini-2.5-flash`). PPTX Picture shapes are captioned by `app/services/vlm.py::caption_image`. Captions are inlined into page text as `[Figure: ...]` so the chunker keeps them adjacent to surrounding context; resulting chunks get `metadata.has_figure=True`. Disable via `ENABLE_FIGURE_CAPTIONS=false` in dev to save OpenRouter spend. Docling runs in the async worker (not request path); first run downloads ~400 MB of model weights.
 - **Rate limiting**: Only applies to `/api/rag/*` endpoints. Tracked per-user per-hour in `api_usage` table. Instructors get 50 req/hr, students get 10.
 - **Email domains**: `ust.hk` = instructor, `connect.ust.hk` = student. Configured via `ALLOWED_EMAIL_DOMAINS`.
 - **Deployment**: Backend on Railway (Dockerfile), frontend on Vercel. Operate infra directly — Railway CLI + GraphQL API (`jq -r '.user.accessToken' ~/.railway/config.json`), Vercel CLI, Clerk REST API with `CLERK_SECRET_KEY`. Don't route the user through web dashboards when an API exists.
