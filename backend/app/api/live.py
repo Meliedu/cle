@@ -81,6 +81,10 @@ async def _backfill_missing_names(state: SessionState) -> None:
         return
     async with async_session_factory() as db:
         lookup = await _name_lookup(db, missing)
+    # Users deleted mid-session won't appear in ``lookup`` and stay absent from
+    # player_names; downstream rendering falls back to the ``Player abcd`` stub
+    # from ``get_leaderboard``. This is intentional — a leaderboard entry for a
+    # user who no longer exists shouldn't block the final broadcast.
     for uid, name in lookup.items():
         state.player_names.setdefault(uid, name)
 
