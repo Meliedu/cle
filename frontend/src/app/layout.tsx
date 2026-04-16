@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
+import { headers } from "next/headers";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/components/providers/query-provider";
@@ -20,9 +21,14 @@ export default async function RootLayout({
 }) {
   const locale = await getLocale();
   const messages = await getMessages();
+  // The proxy sets `x-nonce` on every request. Reading it here forces this
+  // layout into dynamic rendering (which is required when the CSP contains
+  // a per-request nonce) and lets us stamp the value onto Clerk's injected
+  // script tags so they pass the strict script-src policy.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
 
   return (
-    <ClerkProvider>
+    <ClerkProvider nonce={nonce} dynamic>
       <html lang={locale}>
         <body className={inter.className}>
           <NextIntlClientProvider messages={messages}>
