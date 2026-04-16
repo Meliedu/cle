@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
+import contextlib
 import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 import httpx
+import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,31 +17,32 @@ from app.models import CanvasUserCredential
 from app.services import canvas_oauth
 from app.services.crypto import decrypt_secret, encrypt_secret
 
-# Per-user lock registry for serializing refresh_access_token calls. Canvas
-# refresh tokens are single-use; two concurrent 401s racing to refresh would
-# corrupt the stored refresh_token and force re-auth.
-_REFRESH_LOCKS: dict[uuid.UUID, asyncio.Lock] = {}
-_REFRESH_LOCKS_GUARD = asyncio.Lock()
 
+@contextlib.asynccontextmanager
+async def _acquire_refresh_lock(db: AsyncSession, user_id: uuid.UUID):
+    """Postgres advisory lock scoped to ``user_id``.
 
-async def _get_refresh_lock(user_id: uuid.UUID) -> asyncio.Lock:
-    async with _REFRESH_LOCKS_GUARD:
-        lock = _REFRESH_LOCKS.get(user_id)
-        if lock is None:
-            lock = asyncio.Lock()
-            _REFRESH_LOCKS[user_id] = lock
-        return lock
+    Serialises Canvas refresh-token rotations across every worker sharing
+    this database — Canvas refresh tokens are single-use, so two concurrent
+    401 retries racing to refresh would corrupt the stored refresh_token and
+    force the user to re-auth. A prior in-process ``asyncio.Lock`` only
+    covered one uvicorn worker; this advisory lock covers the whole fleet.
 
-
-async def _discard_refresh_lock(user_id: uuid.UUID) -> None:
-    # Unconditionally remove the per-user lock entry. Callers invoke this
-    # from the finally block of _refresh(), after ``async with lock`` has
-    # released the lock. Leaving the ``not lock.locked()`` guard here meant
-    # the entry was never evicted because the current coroutine still held
-    # the lock when the finally ran in some call orderings, causing
-    # _REFRESH_LOCKS to grow unboundedly across users.
-    async with _REFRESH_LOCKS_GUARD:
-        _REFRESH_LOCKS.pop(user_id, None)
+    ``hashtext()`` maps the UUID string to a 32-bit int; collisions are
+    harmless — they only cause unrelated users to briefly queue behind each
+    other during a refresh window.
+    """
+    key_row = await db.execute(
+        sa.text("SELECT hashtext(:k)::bigint AS k").bindparams(k=str(user_id))
+    )
+    lock_key = key_row.scalar_one()
+    await db.execute(sa.text("SELECT pg_advisory_lock(:k)").bindparams(k=lock_key))
+    try:
+        yield
+    finally:
+        await db.execute(
+            sa.text("SELECT pg_advisory_unlock(:k)").bindparams(k=lock_key)
+        )
 
 
 # Allowlist of Canvas-operated hosts that may serve file payloads in
@@ -122,55 +124,57 @@ class CanvasClient:
         )
 
     async def _refresh(self) -> None:
-        user_id = self._cred.user_id
-        lock = await _get_refresh_lock(user_id)
-
         # Snapshot the access token we observed as "failing"; while waiting
-        # for the lock another coroutine may have completed a refresh and
-        # rotated the credential, in which case we should just use the new
-        # one instead of burning another refresh_token.
+        # for the advisory lock another worker may have completed a refresh
+        # and rotated the credential, in which case we should just adopt the
+        # new one instead of burning another single-use refresh_token.
         stale_access_ciphertext = self._cred.access_token_encrypted
 
-        async with lock:
-            try:
-                # Re-read the credential row under the lock to pick up a
-                # refresh that another request may have just performed.
-                await self._db.refresh(self._cred)
-                if (
-                    self._cred.access_token_encrypted != stale_access_ciphertext
-                    and self._cred.status == "active"
-                ):
-                    # A concurrent refresh already rotated the token. Skip.
-                    return
-
-                refresh = decrypt_secret(self._cred.refresh_token_encrypted)
-                try:
-                    payload = await canvas_oauth.refresh_access_token(refresh)
-                except httpx.HTTPError as exc:
-                    self._cred.status = "invalid"
-                    await self._db.commit()
-                    # httpx HTTPError stringifies with the target URL (query
-                    # params included), which can leak internal infrastructure
-                    # details. Surface a generic message; preserve the chain
-                    # via ``from exc`` for logging/tooling.
-                    raise CanvasReauthRequired("token refresh failed") from exc
-
-                self._cred.access_token_encrypted = encrypt_secret(
-                    payload["access_token"]
-                )
-                if "refresh_token" in payload:
-                    self._cred.refresh_token_encrypted = encrypt_secret(
-                        payload["refresh_token"]
+        async with _acquire_refresh_lock(self._db, self._cred.user_id):
+            # Re-read the credential row under the lock to pick up a refresh
+            # that another worker may have just performed. Use a fresh SELECT
+            # rather than ``Session.refresh()`` so we see committed writes
+            # from other backend connections (other workers).
+            current = (
+                await self._db.execute(
+                    select(CanvasUserCredential).where(
+                        CanvasUserCredential.user_id == self._cred.user_id
                     )
-                self._cred.access_token_expires_at = datetime.now(
-                    timezone.utc
-                ) + timedelta(seconds=int(payload.get("expires_in", 3600)))
-                self._cred.status = "active"
+                )
+            ).scalar_one()
+            if (
+                current.access_token_encrypted != stale_access_ciphertext
+                and current.status == "active"
+            ):
+                # A concurrent refresh already rotated the token — adopt it.
+                self._cred = current
+                return
+
+            self._cred = current
+            refresh = decrypt_secret(self._cred.refresh_token_encrypted)
+            try:
+                payload = await canvas_oauth.refresh_access_token(refresh)
+            except httpx.HTTPError as exc:
+                self._cred.status = "invalid"
                 await self._db.commit()
-            finally:
-                # Drop the lock entry if no other waiter holds it, to avoid
-                # unbounded growth of _REFRESH_LOCKS across many users.
-                await _discard_refresh_lock(user_id)
+                # httpx HTTPError stringifies with the target URL (query
+                # params included), which can leak internal infrastructure
+                # details. Surface a generic message; preserve the chain
+                # via ``from exc`` for logging/tooling.
+                raise CanvasReauthRequired("token refresh failed") from exc
+
+            self._cred.access_token_encrypted = encrypt_secret(
+                payload["access_token"]
+            )
+            if "refresh_token" in payload:
+                self._cred.refresh_token_encrypted = encrypt_secret(
+                    payload["refresh_token"]
+                )
+            self._cred.access_token_expires_at = datetime.now(
+                timezone.utc
+            ) + timedelta(seconds=int(payload.get("expires_in", 3600)))
+            self._cred.status = "active"
+            await self._db.commit()
 
     async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
         async with self._http() as http:
