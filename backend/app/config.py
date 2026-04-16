@@ -147,6 +147,19 @@ class Settings(BaseSettings):
                 "one with: python -c \"from cryptography.fernet import "
                 "Fernet; print(Fernet.generate_key().decode())\""
             )
+
+        # Warn when CANVAS_ALLOWED_HOSTS is unset. Canvas deployments that
+        # redirect file downloads to S3-signed URLs (e.g. canvas-*.s3.*.
+        # amazonaws.com) will fail host-validation unless the operator
+        # allowlists those hosts here.
+        if not self.canvas_allowed_hosts.strip():
+            logger.warning(
+                "CANVAS_ALLOWED_HOSTS is unset; file downloads from Canvas "
+                "deployments that redirect to S3 signed URLs will be "
+                "rejected. Set CANVAS_ALLOWED_HOSTS to a comma-separated "
+                "list of permitted hostnames if your Canvas delivers files "
+                "via S3 or another CDN."
+            )
         return self
 
 
