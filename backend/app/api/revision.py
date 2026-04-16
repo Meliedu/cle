@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._helpers import verify_enrollment
 from app.api.deps import get_current_user, get_db, require_student
-from app.models.course import Enrollment
 from app.models.revision import (
     BanditModel,
     RevisionAttempt,
@@ -50,17 +50,6 @@ FLASHCARD_QUALITY_TO_SCORE = {0: 0.0, 1: 0.2, 2: 0.4, 3: 0.7, 4: 0.85, 5: 1.0}
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-async def _verify_enrollment(db: AsyncSession, course_id: uuid.UUID, user_id: uuid.UUID) -> None:
-    result = await db.execute(
-        select(Enrollment).where(
-            Enrollment.course_id == course_id,
-            Enrollment.user_id == user_id,
-        )
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enrolled in this course")
 
 
 async def _verify_session_owner(db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID) -> RevisionSession:
@@ -294,7 +283,7 @@ async def start_revision(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_student),
 ):
-    await _verify_enrollment(db, course_id, user.id)
+    await verify_enrollment(db, course_id, user.id)
 
     session = RevisionSession(
         user_id=user.id,

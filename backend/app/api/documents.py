@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._helpers import verify_enrollment
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.config import settings
 from app.models.course import Enrollment
@@ -15,7 +16,7 @@ from app.models.task import Task
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.schemas.document import DocumentResponse
-from app.services.storage import build_r2_key, upload_file
+from app.services.storage import build_r2_key, sanitize_filename, upload_file
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +79,26 @@ async def upload_document(
             detail=f"File type {content_type} not allowed. Allowed: {', '.join(ALLOWED_TYPES.values())}",
         )
 
-    file_data = await file.read()
-    file_size = len(file_data)
+    # Stream the upload in 1 MiB chunks, tracking total size as we go.
+    # This caps memory to ~max_upload_size_mb + 1 MiB instead of buffering
+    # whatever the client chose to send (which could be orders of magnitude
+    # larger than our limit) before we reject it.
+    max_size = settings.max_upload_size_mb * 1024 * 1024
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File exceeds {settings.max_upload_size_mb}MB limit",
+            )
+        chunks.append(chunk)
+    file_data = b"".join(chunks)
+    file_size = total
 
     if not _matches_magic(content_type, file_data):
         raise HTTPException(
@@ -87,15 +106,12 @@ async def upload_document(
             detail="File content does not match declared type",
         )
 
-    max_size = settings.max_upload_size_mb * 1024 * 1024
-    if file_size > max_size:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File exceeds {settings.max_upload_size_mb}MB limit",
-        )
-
     document_id = uuid.uuid4()
-    r2_key = build_r2_key(course_id, document_id, file.filename or "unnamed")
+    # Sanitize once and reuse everywhere so the DB row, R2 key, and any
+    # admin UI rendering all see the same safe value. Prevents stored XSS
+    # from attacker-controlled filenames.
+    safe_name = sanitize_filename(file.filename or "unnamed")
+    r2_key = build_r2_key(course_id, document_id, safe_name)
 
     # Persist DB row first so a failed R2 write leaves only a pending orphan
     # that can be reconciled, rather than an unreferenced R2 object.
@@ -103,7 +119,7 @@ async def upload_document(
         id=document_id,
         course_id=course_id,
         uploaded_by=user.id,
-        filename=file.filename or "unnamed",
+        filename=safe_name,
         file_type=ALLOWED_TYPES[content_type],
         file_size=file_size,
         r2_key=r2_key,
@@ -142,13 +158,7 @@ async def list_documents(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    enrollment = await db.execute(
-        select(Enrollment).where(
-            Enrollment.course_id == course_id, Enrollment.user_id == user.id
-        )
-    )
-    if not enrollment.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enrolled")
+    await verify_enrollment(db, course_id, user.id)
 
     result = await db.execute(
         select(Document).where(
