@@ -12,7 +12,10 @@ from sqlalchemy.orm import selectinload
 
 logger = logging.getLogger(__name__)
 
-from app.api._helpers import verify_enrollment as _verify_enrollment
+from app.api._helpers import (
+    verify_enrollment as _verify_enrollment,
+    verify_instructor_enrollment as _verify_instructor_enrollment,
+)
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument, QuizFolder
 from app.models.user import User
@@ -645,7 +648,7 @@ async def import_to_live(
     The new quiz is created published (live bank entries are directly usable) and
     marked purpose='live'. Source quiz is untouched.
     """
-    await _verify_enrollment(db, course_id, user.id)
+    await _verify_instructor_enrollment(db, course_id, user.id)
 
     source = await db.get(Quiz, body.source_quiz_id)
     if (
@@ -679,10 +682,10 @@ async def import_to_live(
             detail="No questions matched the selection",
         )
 
-    # Dedup guard: reject a second identical live import from the same
-    # instructor within 5 seconds to mitigate rapid double-submit races.
-    # A proper unique constraint would be preferable; this is the pre-flush
-    # mitigation until one is added.
+    # Reject if an identical live-purpose quiz from the same user was created
+    # in the last 5 seconds (inclusive window). Mitigates rapid double-submit
+    # races. A proper unique constraint would be preferable; this is the
+    # pre-flush mitigation until one is added.
     dedup_cutoff = datetime.now(timezone.utc) - timedelta(seconds=5)
     dup_stmt = select(Quiz.id).where(
         Quiz.course_id == course_id,
