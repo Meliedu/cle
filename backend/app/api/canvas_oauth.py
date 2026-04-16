@@ -6,8 +6,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,25 +28,44 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/canvas", tags=["canvas-oauth"])
 
 
-@router.get("/oauth/start", response_model=APIResponse[dict])
-async def oauth_start(user: User = Depends(get_current_user)) -> APIResponse[dict]:
-    """Return the Canvas authorize URL with a signed state JWT."""
+@router.get("/oauth/start")
+async def oauth_start(user: User = Depends(get_current_user)) -> JSONResponse:
+    """Return the Canvas authorize URL with a signed state JWT.
+
+    Also sets an HttpOnly, SameSite=Lax cookie containing the state nonce.
+    The callback handler verifies the cookie against the JWT's embedded
+    nonce to bind the OAuth flow to the browser session that started it
+    (blocks state-fixation where a leaked state JWT is consumed by a
+    different browser).
+    """
     if not settings.canvas_client_id or not settings.canvas_state_secret:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Canvas integration not configured",
         )
-    state = canvas_oauth.encode_state(user.id)
-    return APIResponse(
+    state, nonce = canvas_oauth.encode_state(user.id)
+    body = APIResponse(
         success=True,
         data={"authorize_url": canvas_oauth.build_authorize_url(state)},
     )
+    response = JSONResponse(content=body.model_dump())
+    response.set_cookie(
+        key=canvas_oauth.STATE_COOKIE_NAME,
+        value=nonce,
+        max_age=canvas_oauth.STATE_TTL_SECONDS,
+        httponly=True,
+        secure=settings.environment == "production",
+        samesite="lax",
+        path="/api/canvas/oauth",
+    )
+    return response
 
 
 @router.get("/oauth/callback", include_in_schema=False)
 async def oauth_callback(
     code: str = Query(...),
     state: str = Query(...),
+    canvas_oauth_nonce: str | None = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
     """OAuth redirect target — exchange code, store credential, redirect to UI."""
@@ -58,7 +77,7 @@ async def oauth_callback(
             detail="Canvas integration not configured: CANVAS_STATE_SECRET is unset",
         )
     try:
-        user_id = await canvas_oauth.decode_state(state)
+        user_id = await canvas_oauth.decode_state(state, canvas_oauth_nonce)
     except canvas_oauth.StateInvalid:
         raise HTTPException(status_code=400, detail="Invalid or expired state")
 
@@ -111,10 +130,15 @@ async def oauth_callback(
     # url_safety.validate_frontend_url): non-empty, https or localhost http,
     # and trailing slash already stripped. We can build the redirect
     # directly without a runtime falsey check.
-    return RedirectResponse(
+    redirect = RedirectResponse(
         url=f"{settings.frontend_url}/dashboard/canvas?connected=1",
         status_code=303,
     )
+    # Clear the session-binding cookie now that it has been consumed.
+    redirect.delete_cookie(
+        canvas_oauth.STATE_COOKIE_NAME, path="/api/canvas/oauth"
+    )
+    return redirect
 
 
 @router.delete("/connection", response_model=APIResponse[None])

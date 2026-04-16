@@ -15,6 +15,11 @@ from app.config import settings
 
 STATE_TTL_SECONDS = 600  # 10 minutes
 
+# Name of the HttpOnly cookie that binds an OAuth state JWT to the browser
+# session that initiated it. Verified in the callback to block state-fixation
+# attacks where a leaked state JWT is consumed by a different browser.
+STATE_COOKIE_NAME = "canvas_oauth_nonce"
+
 
 class StateInvalid(Exception):
     """Raised when the OAuth state token fails verification."""
@@ -45,16 +50,29 @@ async def _consume_nonce(nonce: str, exp: int) -> None:
         _consumed_nonces[nonce] = exp
 
 
-def encode_state(user_id: uuid.UUID) -> str:
+def encode_state(user_id: uuid.UUID) -> tuple[str, str]:
+    """Return (state_jwt, nonce). The caller must set ``nonce`` as an
+    HttpOnly cookie on the response so the callback can verify the request
+    came from the same browser session that started the OAuth flow. The
+    nonce is also embedded in the signed JWT; cookie match == session bind.
+    """
+    nonce = secrets.token_urlsafe(16)
     payload = {
         "uid": str(user_id),
-        "nonce": secrets.token_urlsafe(16),
+        "nonce": nonce,
         "exp": int(time.time()) + STATE_TTL_SECONDS,
     }
-    return jwt.encode(payload, settings.canvas_state_secret, algorithm="HS256")
+    return (
+        jwt.encode(payload, settings.canvas_state_secret, algorithm="HS256"),
+        nonce,
+    )
 
 
-async def decode_state(token: str) -> uuid.UUID:
+async def decode_state(token: str, cookie_nonce: str | None = None) -> uuid.UUID:
+    """Verify signature, expiry, one-shot nonce, and — if supplied — the
+    session-binding cookie nonce. ``cookie_nonce`` must match the JWT's
+    ``nonce`` claim; a missing or mismatched cookie is rejected.
+    """
     try:
         payload = jwt.decode(
             token,
@@ -67,6 +85,8 @@ async def decode_state(token: str) -> uuid.UUID:
     exp = int(payload.get("exp", 0))
     if not nonce or not exp:
         raise StateInvalid("state token missing nonce/exp")
+    if cookie_nonce is None or not secrets.compare_digest(cookie_nonce, nonce):
+        raise StateInvalid("state cookie missing or does not match")
     await _consume_nonce(nonce, exp)
     return uuid.UUID(payload["uid"])
 
