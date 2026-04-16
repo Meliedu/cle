@@ -90,8 +90,14 @@ async def decode_state(token: str, cookie_nonce: str | None = None) -> uuid.UUID
         raise StateInvalid("state token missing nonce/exp")
     # Reject empty strings explicitly; compare_digest would return False anyway
     # but this makes intent clear.
+    # NOTE: StateInvalid messages below are intentionally internal-only — the
+    # API handler must catch StateInvalid generically and return a single
+    # opaque 400 ("Invalid or expired state") so the distinct reasons aren't
+    # surfaced to callers (would hand an attacker a cookie-presence oracle).
     if not cookie_nonce:
         raise StateInvalid("state cookie missing or empty")
+    # NOTE: This StateInvalid message is intentionally internal-only; never
+    # surface the distinct reason to the HTTP response (see note above).
     if not secrets.compare_digest(cookie_nonce, nonce):
         raise StateInvalid("state cookie does not match")
     await _consume_nonce(nonce, exp)
