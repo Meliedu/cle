@@ -8,7 +8,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -684,10 +684,13 @@ async def import_to_live(
             detail="No questions matched the selection",
         )
 
-    # Reject if an identical live-purpose quiz from the same user was created
-    # in the last 5 seconds (inclusive window). Mitigates rapid double-submit
-    # races. A proper unique constraint would be preferable; this is the
-    # pre-flush mitigation until one is added.
+    # Fast-path dedup: reject if an identical live-purpose quiz from the same
+    # user was created in the last 5 seconds. This avoids hitting the partial
+    # unique index on common double-click traffic. The authoritative guard is
+    # the partial unique index ``uq_quizzes_live_title_per_course_creator``
+    # (migration f2247f8be863), whose IntegrityError is caught below and
+    # surfaced as 409. Together they close the TOCTOU race the pre-flush
+    # select alone could not.
     dedup_cutoff = datetime.now(timezone.utc) - timedelta(seconds=5)
     dup_stmt = select(Quiz.id).where(
         Quiz.course_id == course_id,
@@ -700,7 +703,7 @@ async def import_to_live(
     if (await db.execute(dup_stmt)).scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="duplicate import detected, please retry in a few seconds",
+            detail="duplicate_live_import",
         )
 
     new_quiz = Quiz(
@@ -713,24 +716,35 @@ async def import_to_live(
         is_published=True,
     )
     db.add(new_quiz)
-    await db.flush()
 
-    for idx, q in enumerate(source_questions):
-        db.add(
-            Question(
-                quiz_id=new_quiz.id,
-                question_index=idx,
-                type=q.type,
-                question_text=q.question_text,
-                options=q.options,
-                correct_answer=q.correct_answer,
-                explanation=q.explanation,
-                difficulty=q.difficulty,
-                source_chunk_id=q.source_chunk_id,
+    try:
+        await db.flush()
+
+        for idx, q in enumerate(source_questions):
+            db.add(
+                Question(
+                    quiz_id=new_quiz.id,
+                    question_index=idx,
+                    type=q.type,
+                    question_text=q.question_text,
+                    options=q.options,
+                    correct_answer=q.correct_answer,
+                    explanation=q.explanation,
+                    difficulty=q.difficulty,
+                    source_chunk_id=q.source_chunk_id,
+                )
             )
-        )
 
-    await db.commit()
+        await db.commit()
+    except IntegrityError:
+        # Partial unique index tripped: a concurrent request won the race
+        # between our select fast-path and this flush. Roll back and return
+        # the same 409 the fast-path would have.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="duplicate_live_import",
+        )
     await db.refresh(new_quiz)
 
     return APIResponse(
