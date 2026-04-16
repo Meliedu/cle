@@ -22,6 +22,7 @@ from app.schemas.common import APIResponse
 from app.services import canvas_client as canvas_client_svc
 from app.services import canvas_oauth
 from app.services.crypto import encrypt_secret
+from app.services.worker import _sanitize_error_message
 from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,9 @@ async def oauth_callback(
     try:
         token_payload = await canvas_oauth.exchange_code(code)
     except httpx.HTTPError as exc:
-        logger.warning("Canvas code exchange failed: %s", exc)
+        logger.warning(
+            "Canvas code exchange failed: %s", _sanitize_error_message(exc)
+        )
         raise HTTPException(status_code=502, detail="Canvas token exchange failed")
 
     access = token_payload["access_token"]

@@ -25,6 +25,6 @@ class LiveSessionResponse(BaseModel):
 
 class LiveLeaderboardEntry(BaseModel):
     rank: int
-    user_id: str
+    user_id: str | None = None
     full_name: str
     score: int
