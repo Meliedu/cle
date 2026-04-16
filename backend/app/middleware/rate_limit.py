@@ -1,19 +1,25 @@
 """Per-user rate limiting middleware using the api_usage table.
 
-Counts requests per user per hour on the ``/api/rag/*`` endpoints. Limits are
-configured via ``settings.student_rate_limit`` and
-``settings.instructor_rate_limit``.
+Enforces two limits on ``/api/rag/*``:
 
-Flow: decode the Clerk JWT to identify the user, count recent rows in
-``api_usage``, reject with 429 if over limit, otherwise call the wrapped app
-and record a new row on the way back out so future requests are counted.
+* Non-GET (LLM generation) — per-hour cap from ``settings.student_rate_limit``
+  / ``settings.instructor_rate_limit``.
+* GET (summary reads, job polling) — per-minute cap of 60 to prevent
+  unbounded DB load from aggressive client polling.
+
+The read-check-insert sequence is serialised per user via a Postgres
+advisory transaction lock (``pg_advisory_xact_lock``) so concurrent bursts
+can't all observe count=0 before any INSERT lands and bypass the limit.
+The usage row is *pre-inserted* inside the lock; if the downstream request
+returns non-2xx we roll it back so failed calls don't burn the quota.
 """
 
 import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+import sqlalchemy as sa
+from sqlalchemy import func, select, text
 from starlette.responses import Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -59,16 +65,6 @@ def _get_rate_limit(role: str) -> int:
     return settings.student_rate_limit
 
 
-async def _record_usage(user_id, endpoint: str) -> None:
-    """Write an ApiUsage row. Best-effort: never propagates exceptions."""
-    try:
-        async with async_session_factory() as session:
-            session.add(ApiUsage(user_id=user_id, endpoint=endpoint[:100]))
-            await session.commit()
-    except Exception:  # noqa: BLE001
-        logger.exception("Failed to record api_usage for user=%s", user_id)
-
-
 class RateLimitMiddleware:
     """Enforce per-user hourly request limits on /api/rag/* endpoints."""
 
@@ -93,11 +89,11 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # GET reads under /api/rag/* (e.g. fetching a persisted course summary)
-        # are not LLM calls and shouldn't count against the generation quota.
-        if method == "GET":
-            await self.app(scope, receive, send)
-            return
+        # GET reads under /api/rag/* (e.g. fetching a persisted course summary
+        # or polling a job) are cheap individually but can hammer the DB under
+        # aggressive client polling. Apply a lighter per-minute cap instead of
+        # bypassing the limiter entirely.
+        is_get_poll = method == "GET"
 
         # Extract token from Authorization header
         headers = dict(scope.get("headers", []))
@@ -124,6 +120,7 @@ class RateLimitMiddleware:
 
         # Look up user and check rate limit
         user_id = None
+        reserved_usage_id = None
         try:
             async with async_session_factory() as session:
                 result = await session.execute(
@@ -136,36 +133,61 @@ class RateLimitMiddleware:
                     await self.app(scope, receive, send)
                     return
 
-                limit = _get_rate_limit(user.role)
-                one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+                # Serialise the read-check-insert sequence per user via an
+                # advisory transaction lock. Held only for the microseconds of
+                # the COUNT+INSERT, NOT for the duration of the downstream LLM
+                # call, so concurrent requests from different users are not
+                # blocked and a single user's bursts can't bypass the limit by
+                # all observing count=0 before any INSERT lands.
+                lock_key = f"ratelimit:{user.id}"
+                await session.execute(
+                    text(
+                        "SELECT pg_advisory_xact_lock(hashtext(:k)::bigint)"
+                    ).bindparams(k=lock_key)
+                )
+
+                window = timedelta(minutes=1) if is_get_poll else timedelta(hours=1)
+                effective_limit = 60 if is_get_poll else _get_rate_limit(user.role)
+                window_start = datetime.now(timezone.utc) - window
 
                 count_result = await session.execute(
                     select(func.count(ApiUsage.id)).where(
                         ApiUsage.user_id == user.id,
-                        ApiUsage.created_at >= one_hour_ago,
+                        ApiUsage.created_at >= window_start,
                     )
                 )
                 request_count = count_result.scalar_one()
 
-                if request_count >= limit:
+                if request_count >= effective_limit:
+                    retry_after = 60 if is_get_poll else 3600
                     # Log only opaque identifiers, not PII.
                     logger.warning(
-                        "Rate limit exceeded for user_id=%s role=%s: %d/%d",
+                        "Rate limit exceeded for user_id=%s role=%s window=%s: %d/%d",
                         user.id,
                         user.role,
+                        "1m" if is_get_poll else "1h",
                         request_count,
-                        limit,
+                        effective_limit,
                     )
-                    body = json.dumps(_rate_limit_response(3600)).encode("utf-8")
+                    body = json.dumps(_rate_limit_response(retry_after)).encode("utf-8")
                     response = Response(
                         content=body,
                         status_code=429,
                         media_type="application/json",
-                        headers={"Retry-After": "3600"},
+                        headers={"Retry-After": str(retry_after)},
                     )
                     await response(scope, receive, send)
                     return
 
+                # Reserve the slot now — pre-insert the usage row inside the
+                # advisory-lock-protected transaction. If the downstream
+                # request fails (non-2xx) we delete this row below so failed
+                # calls don't burn the quota.
+                usage = ApiUsage(user_id=user.id, endpoint=path[:100])
+                session.add(usage)
+                await session.commit()
+                await session.refresh(usage)
+                reserved_usage_id = usage.id
                 user_id = user.id
 
         except Exception:
@@ -181,8 +203,9 @@ class RateLimitMiddleware:
             await response(scope, receive, send)
             return
 
-        # Wrap send so we can observe the final status code and only count
-        # successful requests against the quota (4xx/5xx should not burn it).
+        # Wrap send so we can observe the final status code. The usage row is
+        # already reserved; if the downstream request fails (non-2xx) we roll
+        # it back so failed calls don't burn the user's quota.
         status_code: dict[str, int] = {"code": 0}
 
         async def send_wrapper(message: Message) -> None:
@@ -192,5 +215,16 @@ class RateLimitMiddleware:
 
         await self.app(scope, receive, send_wrapper)
 
-        if user_id is not None and 200 <= status_code["code"] < 300:
-            await _record_usage(user_id, path)
+        if (
+            user_id is not None
+            and reserved_usage_id is not None
+            and not (200 <= status_code["code"] < 300)
+        ):
+            try:
+                async with async_session_factory() as rollback_session:
+                    await rollback_session.execute(
+                        sa.delete(ApiUsage).where(ApiUsage.id == reserved_usage_id)
+                    )
+                    await rollback_session.commit()
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to roll back reserved rate-limit row")

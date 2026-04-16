@@ -58,6 +58,23 @@ async def rag_query(
             detail="Query is empty after sanitization",
         )
 
+    if body.document_ids:
+        from app.models.document import Document
+        result = await db.execute(
+            select(Document.id).where(
+                Document.id.in_(body.document_ids),
+                Document.course_id == body.course_id,
+                Document.deleted_at.is_(None),
+            )
+        )
+        owned_ids = {row[0] for row in result.all()}
+        missing = set(body.document_ids) - owned_ids
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail="One or more document_ids do not belong to this course",
+            )
+
     if body.search_mode == "fulltext":
         chunks = await fulltext_retrieve(
             db,
