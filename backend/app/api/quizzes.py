@@ -745,7 +745,17 @@ async def import_to_live(
             status_code=status.HTTP_409_CONFLICT,
             detail="duplicate_live_import",
         )
-    await db.refresh(new_quiz)
+
+    # Best-effort refresh to pick up any DB-side defaults. The row is already
+    # committed, so failure here (e.g. transient connection drop) must not
+    # turn a successful import into a 500 — log and fall through with the
+    # data we already have on ``new_quiz``.
+    try:
+        await db.refresh(new_quiz)
+    except Exception:  # noqa: BLE001 — post-commit refresh is best-effort
+        logger.exception(
+            "post-commit refresh failed for live-imported quiz %s", new_quiz.id
+        )
 
     return APIResponse(
         success=True,
