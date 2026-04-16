@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -603,55 +603,91 @@ async def move_flashcard_folder(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
-    # Lock both the folder being moved and (when set) the target parent to
-    # prevent concurrent-move races that could create cycles under READ
-    # COMMITTED.
-    #
-    # Sort lock acquisition order by UUID bytes so two concurrent moves with
-    # swapped (folder, parent) pairs can't deadlock against each other.
+    # Hoisted auth check — verify enrollment before taking row locks.
+    preview = await db.get(FlashcardFolder, folder_id)
+    if preview is None or preview.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    await _verify_enrollment(db, preview.course_id, user.id)
+    await db.rollback()
+
+    # Serialize the move under SERIALIZABLE isolation with row-level locks on
+    # the two endpoints; sort lock IDs by UUID bytes to prevent deadlock
+    # against a concurrent swapped move. SERIALIZABLE covers the
+    # ancestor-chain reads that aren't explicitly locked.
     candidate_ids = {folder_id}
     if body.parent_id is not None and body.parent_id != folder_id:
         candidate_ids.add(body.parent_id)
     lock_ids: list[uuid.UUID] = sorted(candidate_ids, key=lambda x: x.bytes)
-    locked_rows = (
-        await db.execute(
-            select(FlashcardFolder)
-            .where(FlashcardFolder.id.in_(lock_ids))
-            .order_by(FlashcardFolder.id)
-            .with_for_update()
-        )
-    ).scalars().all()
-    locked_by_id = {row.id: row for row in locked_rows}
 
-    folder = locked_by_id.get(folder_id)
-    if folder is None or folder.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Folder not found")
-    await _verify_enrollment(db, folder.course_id, user.id)
-    if body.parent_id is not None:
-        if body.parent_id == folder_id:
-            raise HTTPException(status_code=400, detail="Cannot nest folder inside itself")
-        parent = locked_by_id.get(body.parent_id)
-        if (
-            parent is None
-            or parent.deleted_at is not None
-            or parent.course_id != folder.course_id
-        ):
-            raise HTTPException(status_code=400, detail="Parent folder not found in this course")
-        descendants = await _fc_folder_descendant_ids(db, folder_id)
-        if body.parent_id in descendants:
-            raise HTTPException(status_code=400, detail="Cannot move folder into its own descendant")
-        parent_depth = await _fc_folder_ancestor_depth(db, parent.id)
-        subtree_height = await _fc_folder_subtree_height(db, folder_id)
-        if parent_depth + subtree_height > MAX_FOLDER_DEPTH:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Folder nesting exceeds maximum depth of {MAX_FOLDER_DEPTH}",
+    folder: FlashcardFolder | None = None
+    for attempt in range(3):
+        try:
+            await db.connection(
+                execution_options={"isolation_level": "SERIALIZABLE"}
             )
-        # Note: FlashcardFolder has no `purpose` column today, so no
-        # purpose-equality check is enforced here. Intentional asymmetry with
-        # QuizFolder pending schema evolution.
-    folder.parent_id = body.parent_id
-    await db.commit()
+            locked_rows = (
+                await db.execute(
+                    select(FlashcardFolder)
+                    .where(FlashcardFolder.id.in_(lock_ids))
+                    .order_by(FlashcardFolder.id)
+                    .with_for_update()
+                )
+            ).scalars().all()
+            locked_by_id = {row.id: row for row in locked_rows}
+
+            folder = locked_by_id.get(folder_id)
+            if folder is None or folder.deleted_at is not None:
+                raise HTTPException(status_code=404, detail="Folder not found")
+            if body.parent_id is not None:
+                if body.parent_id == folder_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Cannot nest folder inside itself",
+                    )
+                parent = locked_by_id.get(body.parent_id)
+                if (
+                    parent is None
+                    or parent.deleted_at is not None
+                    or parent.course_id != folder.course_id
+                ):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Parent folder not found in this course",
+                    )
+                descendants = await _fc_folder_descendant_ids(db, folder_id)
+                if body.parent_id in descendants:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Cannot move folder into its own descendant",
+                    )
+                parent_depth = await _fc_folder_ancestor_depth(db, parent.id)
+                subtree_height = await _fc_folder_subtree_height(db, folder_id)
+                if parent_depth + subtree_height > MAX_FOLDER_DEPTH:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Folder nesting exceeds maximum depth of {MAX_FOLDER_DEPTH}",
+                    )
+                # Note: FlashcardFolder has no `purpose` column today, so no
+                # purpose-equality check is enforced here. Intentional
+                # asymmetry with QuizFolder pending schema evolution.
+            folder.parent_id = body.parent_id
+            await db.commit()
+            break
+        except DBAPIError as exc:
+            pgcode = getattr(exc.orig, "pgcode", None) if exc.orig else None
+            if pgcode in ("40001", "40P01") and attempt < 2:
+                await db.rollback()
+                await asyncio.sleep(0.05 * (2**attempt))
+                continue
+            if pgcode in ("40001", "40P01"):
+                await db.rollback()
+                raise HTTPException(
+                    status_code=409,
+                    detail="conflicting_move_please_retry",
+                ) from exc
+            raise
+
+    assert folder is not None
     await db.refresh(folder)
     return APIResponse(success=True, data=FlashcardFolderResponse.model_validate(folder))
 
