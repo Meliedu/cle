@@ -975,13 +975,18 @@ async def move_quiz_folder(
     # Acquire row-level locks on the folder being moved and, when applicable,
     # the target parent to prevent concurrent-move races that could otherwise
     # create cycles under READ COMMITTED.
-    lock_ids: list[uuid.UUID] = [folder_id]
+    #
+    # Sort lock acquisition order by UUID bytes so two concurrent moves with
+    # swapped (folder, parent) pairs can't deadlock against each other.
+    candidate_ids = {folder_id}
     if body.parent_id is not None and body.parent_id != folder_id:
-        lock_ids.append(body.parent_id)
+        candidate_ids.add(body.parent_id)
+    lock_ids: list[uuid.UUID] = sorted(candidate_ids, key=lambda x: x.bytes)
     locked_rows = (
         await db.execute(
             select(QuizFolder)
             .where(QuizFolder.id.in_(lock_ids))
+            .order_by(QuizFolder.id)
             .with_for_update()
         )
     ).scalars().all()

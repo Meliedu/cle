@@ -1,10 +1,12 @@
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -604,13 +606,18 @@ async def move_flashcard_folder(
     # Lock both the folder being moved and (when set) the target parent to
     # prevent concurrent-move races that could create cycles under READ
     # COMMITTED.
-    lock_ids: list[uuid.UUID] = [folder_id]
+    #
+    # Sort lock acquisition order by UUID bytes so two concurrent moves with
+    # swapped (folder, parent) pairs can't deadlock against each other.
+    candidate_ids = {folder_id}
     if body.parent_id is not None and body.parent_id != folder_id:
-        lock_ids.append(body.parent_id)
+        candidate_ids.add(body.parent_id)
+    lock_ids: list[uuid.UUID] = sorted(candidate_ids, key=lambda x: x.bytes)
     locked_rows = (
         await db.execute(
             select(FlashcardFolder)
             .where(FlashcardFolder.id.in_(lock_ids))
+            .order_by(FlashcardFolder.id)
             .with_for_update()
         )
     ).scalars().all()
