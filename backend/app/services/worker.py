@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -10,6 +11,26 @@ from app.database import async_session_factory
 from app.models.task import Task
 
 logger = logging.getLogger(__name__)
+
+# Replace full DB connection strings before they reach tasks.error_message.
+# Covers both postgres:// and postgresql:// (async+sync), any user/password,
+# host, port, and db path. Matches up to the first whitespace so it does not
+# eat surrounding context in the message.
+_DB_URL_RE = re.compile(r"postgres(?:ql)?(?:\+\w+)?://\S+")
+
+
+def _sanitize_error_message(exc: BaseException) -> str:
+    """Return a bounded, redacted string suitable for tasks.error_message.
+
+    - Prefixes with the exception class name so failure triage still works.
+    - Drops connection strings entirely (no password leaks).
+    - Truncates to keep the column small and avoid logging blobs of internals.
+    """
+    raw = str(exc)
+    redacted = _DB_URL_RE.sub("<db-url>", raw)
+    if len(redacted) > 200:
+        redacted = redacted[:200]
+    return f"{type(exc).__name__}: {redacted}"
 
 POLL_INTERVAL_SECONDS = 5
 # Tasks stuck in "running" beyond this threshold (e.g., because the worker
@@ -254,7 +275,9 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
                 logger.exception("Task %s failed", task_id)
                 try:
                     async with async_session_factory() as fail_session:
-                        await fail_task(fail_session, task_id, str(exc))
+                        await fail_task(
+                            fail_session, task_id, _sanitize_error_message(exc)
+                        )
                 except Exception:  # noqa: BLE001
                     logger.exception("fail_task itself failed for %s", task_id)
 
