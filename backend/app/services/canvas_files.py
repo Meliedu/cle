@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Document, Task
 from app.services import storage
 from app.services.canvas_client import CanvasClient
+from app.services.worker import _sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,12 @@ async def import_canvas_files(
         except Exception as exc:  # noqa: BLE001 — per-file isolation
             logger.exception("Canvas import failed for file %s", file_id)
             await db.rollback()
-            result.errors.append({"file_id": file_id, "error": str(exc)})
+            # Sanitize exception text before surfacing it in an API response:
+            # raw str(exc) can leak DB connection strings, internal paths, or
+            # other internals to the caller.
+            result.errors.append(
+                {"file_id": file_id, "error": _sanitize_error_message(exc)}
+            )
             continue
 
     await db.commit()
