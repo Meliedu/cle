@@ -16,6 +16,20 @@ from app.services.retriever import RetrievedChunk
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
+
+
+class LLMGenerationError(Exception):
+    """Raised when LLM generation fails after all fallback attempts.
+
+    Carries a user-facing message (safe to surface in task ``error_message``)
+    and hides any upstream SDK / network detail that should not leak to the
+    client.
+    """
+
+
+# ---------------------------------------------------------------------------
 # Dataclasses
 # ---------------------------------------------------------------------------
 
@@ -233,9 +247,10 @@ async def generate_quiz(
             )
             items = _parse_json_response(raw)
             results = _build_quiz_results(items, difficulty)
-        except (ValueError, json.JSONDecodeError) as fallback_exc:
-            raise ValueError(
-                "Both primary and fallback models failed to produce valid quiz JSON"
+        except Exception as fallback_exc:  # noqa: BLE001 — surface as domain error
+            logger.exception("Fallback quiz generation failed")
+            raise LLMGenerationError(
+                "quiz generation failed; please try again"
             ) from fallback_exc
 
     return results
