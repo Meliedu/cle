@@ -149,7 +149,25 @@ async def disconnect_canvas(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[None]:
-    """Revoke this user's Canvas credential and disconnect their integrations."""
+    """Revoke this user's Canvas credential and disconnect their integrations.
+
+    We ask Canvas to revoke the refresh token server-side before wiping the
+    local credential row. ``revoke_token`` is best-effort and will never
+    raise — a Canvas outage must not block the user from disconnecting
+    locally. If the credential is already missing or marked invalid,
+    ``get_client_for_user`` raises ``CanvasNotConnected`` / ``CanvasReauthRequired``
+    and we skip the remote revoke.
+    """
+    try:
+        client = await canvas_client_svc.get_client_for_user(db, user.id)
+    except (
+        canvas_client_svc.CanvasNotConnected,
+        canvas_client_svc.CanvasReauthRequired,
+    ):
+        client = None
+    if client is not None:
+        await client.revoke_token()
+
     await db.execute(
         delete(CanvasUserCredential).where(CanvasUserCredential.user_id == user.id)
     )

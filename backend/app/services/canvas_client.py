@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
@@ -16,6 +17,8 @@ from app.config import settings
 from app.models import CanvasUserCredential
 from app.services import canvas_oauth
 from app.services.crypto import decrypt_secret, encrypt_secret
+
+logger = logging.getLogger(__name__)
 
 
 @contextlib.asynccontextmanager
@@ -228,6 +231,34 @@ class CanvasClient:
 
     async def get_file(self, file_id: str) -> dict:
         return (await self._request("GET", f"/files/{file_id}")).json()
+
+    async def revoke_token(self) -> None:
+        """Best-effort call to Canvas ``DELETE /login/oauth2/token``.
+
+        Canvas refresh tokens are long-lived and reusable; revoking at
+        disconnect prevents later reuse even if the encrypted credential
+        row is later exfiltrated. Never raises — a failure here must not
+        block the local credential delete.
+
+        ``/login/oauth2/token`` lives outside the ``/api/v1`` namespace that
+        ``_http()`` is scoped to, so we issue the call against the institution
+        root URL directly.
+        """
+        try:
+            access = decrypt_secret(self._cred.access_token_encrypted)
+            revoke_url = (
+                f"{self._cred.canvas_base_url.rstrip('/')}/login/oauth2/token"
+            )
+            async with httpx.AsyncClient(
+                headers={"Authorization": f"Bearer {access}"},
+                timeout=30.0,
+                transport=self._transport,
+            ) as http:
+                await http.delete(revoke_url)
+        except Exception:
+            logger.exception(
+                "Canvas token revoke failed — proceeding with local delete"
+            )
 
     async def download_file(self, download_url: str) -> bytes:
         # Guard against SSRF: Canvas's list_course_files returns attacker-
