@@ -43,3 +43,8 @@ build/
 CLAUDE.md
 prompt/
 .vercel
+
+# Environment files — catch all variants anywhere in the tree
+**/.env
+**/.env.*
+!**/.env.example
