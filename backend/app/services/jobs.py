@@ -62,7 +62,9 @@ async def run_generate_quiz(
             "document_ids": payload.get("document_ids"),
             "num_questions": payload.get("num_questions", 5),
             "purpose": payload.get("purpose", "after_class"),
-            "question_types": payload.get("question_types") or ["multiple_choice"],
+            # Schema guarantees min_length=1 with a default; the .get() default
+            # is belt-and-suspenders only.
+            "question_types": payload.get("question_types", ["multiple_choice"]),
             "mcq_option_count": payload.get("mcq_option_count", 4),
             "difficulty": payload.get("difficulty", "medium"),
         }
