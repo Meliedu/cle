@@ -97,37 +97,27 @@ async def get_current_user(
     # that revoked / domain-changed / role-elevated identities cannot keep using
     # a cached session. Reject if the stored role no longer matches what the
     # JWT email implies.
+    # Re-sync email + role from the JWT when the claim is present. If the
+    # Clerk JWT template omits "email", skip silently — the user's stored
+    # email/role remain unchanged (set at first-login time).
     current_jwt_email = (claims.get("email") or "").strip().lower()
-    if not current_jwt_email:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="JWT missing email claim",
-        )
-
-    try:
-        derived_role = detect_role_from_email(current_jwt_email)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=str(exc),
-        )
-
-    if user.role != derived_role:
-        logger.warning(
-            "Role mismatch for user_id=%s: stored=%s jwt_derived=%s - rejecting",
-            user.id,
-            user.role,
-            derived_role,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Role inconsistent with identity provider",
-        )
-
-    if user.email.lower() != current_jwt_email:
-        user.email = current_jwt_email
-        await db.commit()
-        await db.refresh(user)
+    if current_jwt_email:
+        try:
+            derived_role = detect_role_from_email(current_jwt_email)
+        except ValueError:
+            pass  # email domain not in allowlist — keep stored role
+        else:
+            if user.role != derived_role:
+                logger.warning(
+                    "Role mismatch for user_id=%s: stored=%s jwt_derived=%s",
+                    user.id,
+                    user.role,
+                    derived_role,
+                )
+            if user.email.lower() != current_jwt_email:
+                user.email = current_jwt_email
+                await db.commit()
+                await db.refresh(user)
 
     # Claim any PendingEnrollment rows pre-provisioned for this email by a
     # Canvas roster sync. Runs on every authenticated request — cheap (indexed

@@ -47,7 +47,7 @@ def verify_clerk_token(token: str) -> dict:
     audience = settings.clerk_audience or None
     issuer = settings.clerk_issuer or None
 
-    required = ["sub", "exp", "iat", "nbf", "email_verified"]
+    required = ["sub", "exp", "iat"]
     if issuer:
         required.append("iss")
 
@@ -67,8 +67,11 @@ def verify_clerk_token(token: str) -> dict:
         leeway=30,
     )
 
-    if claims.get("email_verified") is not True:
-        raise jwt.InvalidTokenError("email_verified claim must be true")
+    # Soft-check: reject explicitly unverified emails but allow tokens where
+    # the claim is absent (Clerk custom JWT templates may not include it).
+    email_verified = claims.get("email_verified")
+    if email_verified is False:
+        raise jwt.InvalidTokenError("email_verified claim is false")
 
     allowed_azp = _allowed_azp()
     if allowed_azp:
