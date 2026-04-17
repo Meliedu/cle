@@ -4,9 +4,19 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse as _urlparse
 
 import httpx
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    Cookie,
+    Depends,
+    HTTPException,
+    Path,
+    Query,
+    Response,
+    status,
+)
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -27,6 +37,16 @@ from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/canvas", tags=["canvas-oauth"])
+
+# Evaluate the frontend scheme once at module load. ``settings.frontend_url``
+# is validated at startup (url_safety.validate_frontend_url) to be either
+# ``https://...`` or ``http://localhost...``, so the cookie's ``Secure`` flag
+# tracks the true transport the browser will use — not the abstract
+# environment name. Setting ``Secure`` when the frontend is served over
+# plain-http localhost would make the cookie undeliverable in dev; leaving
+# it off when the frontend is served over https would leak the nonce over
+# any plaintext downgrade.
+_FRONTEND_SCHEME = _urlparse(settings.frontend_url).scheme
 
 
 @router.get("/oauth/start")
@@ -55,7 +75,7 @@ async def oauth_start(user: User = Depends(get_current_user)) -> JSONResponse:
         value=nonce,
         max_age=canvas_oauth.STATE_TTL_SECONDS,
         httponly=True,
-        secure=settings.environment == "production",
+        secure=_FRONTEND_SCHEME == "https",
         samesite="lax",
         path="/api/canvas/oauth",
     )
@@ -78,7 +98,7 @@ async def oauth_callback(
             detail="Canvas integration not configured: CANVAS_STATE_SECRET is unset",
         )
     try:
-        user_id = await canvas_oauth.decode_state(state, canvas_oauth_nonce)
+        user_id = await canvas_oauth.decode_state(state, canvas_oauth_nonce, db=db)
     except canvas_oauth.StateInvalid:
         raise HTTPException(status_code=400, detail="Invalid or expired state")
 
@@ -149,7 +169,25 @@ async def disconnect_canvas(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[None]:
-    """Revoke this user's Canvas credential and disconnect their integrations."""
+    """Revoke this user's Canvas credential and disconnect their integrations.
+
+    We ask Canvas to revoke the refresh token server-side before wiping the
+    local credential row. ``revoke_token`` is best-effort and will never
+    raise — a Canvas outage must not block the user from disconnecting
+    locally. If the credential is already missing or marked invalid,
+    ``get_client_for_user`` raises ``CanvasNotConnected`` / ``CanvasReauthRequired``
+    and we skip the remote revoke.
+    """
+    try:
+        client = await canvas_client_svc.get_client_for_user(db, user.id)
+    except (
+        canvas_client_svc.CanvasNotConnected,
+        canvas_client_svc.CanvasReauthRequired,
+    ):
+        client = None
+    if client is not None:
+        await client.revoke_token()
+
     await db.execute(
         delete(CanvasUserCredential).where(CanvasUserCredential.user_id == user.id)
     )
@@ -235,7 +273,7 @@ async def list_canvas_courses(
     "/courses/{canvas_course_id}/link", response_model=APIResponse[dict]
 )
 async def link_canvas_course(
-    canvas_course_id: str,
+    canvas_course_id: str = Path(..., pattern=r"^\d+$"),
     user: User = Depends(require_instructor),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[dict]:
@@ -334,7 +372,7 @@ async def link_canvas_course(
     "/courses/{canvas_course_id}/join", response_model=APIResponse[dict]
 )
 async def join_canvas_course(
-    canvas_course_id: str,
+    canvas_course_id: str = Path(..., pattern=r"^\d+$"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[dict]:

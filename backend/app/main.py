@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import api_router
 from app.config import settings
-from app.middleware import AuthMiddleware, RateLimitMiddleware
+from app.middleware import AuthMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware
 from app.services.canvas_sync import run_scheduler as run_canvas_scheduler
 from app.services.worker import worker_loop
 
@@ -79,6 +79,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
 # Rate limiting only applies to /api/rag/* endpoints.
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(AuthMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_url],

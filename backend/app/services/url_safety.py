@@ -66,6 +66,30 @@ def validate_canvas_base_url(url: str, allowed_hosts: str | None = None) -> str:
     return parsed.geturl().rstrip("/")
 
 
+def validate_canvas_api_url(url: str, canvas_base_url: str) -> None:
+    """Ensure ``url`` is a same-origin continuation of the user's Canvas base URL.
+
+    Canvas Link headers let the server point clients at the next page; an
+    attacker-controlled response could inject a ``rel="next"`` pointing at an
+    internal metadata endpoint (e.g. 169.254.169.254) or a different host
+    entirely. We only accept URLs that share the host — and an https scheme —
+    of the credential's ``canvas_base_url``.
+
+    Raises ``ValueError`` on mismatch; returns ``None`` on success.
+    """
+    parsed = urlparse(url)
+    base = urlparse(canvas_base_url)
+    if parsed.scheme != "https":
+        raise ValueError(
+            f"Canvas next-link must be https, got {parsed.scheme}"
+        )
+    if parsed.hostname != base.hostname:
+        raise ValueError(
+            f"Canvas next-link host {parsed.hostname} does not match "
+            f"base {base.hostname}"
+        )
+
+
 def validate_frontend_url(url: str) -> str:
     """Validate ``frontend_url`` used for post-OAuth redirects.
 

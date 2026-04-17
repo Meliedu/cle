@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-import asyncio
 import secrets
 import time
 import uuid
+from datetime import datetime, timezone
 from urllib.parse import urlencode
 
 import httpx
 import jwt
+import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.models.oauth_nonce import OAuthConsumedNonce
 
 STATE_TTL_SECONDS = 600  # 10 minutes
 
@@ -25,29 +29,43 @@ class StateInvalid(Exception):
     """Raised when the OAuth state token fails verification."""
 
 
-# In-memory record of already-consumed state nonces. Bounded by STATE_TTL —
-# expired entries are reaped on each check. In-memory is acceptable here
-# because the callback is served by the same process that issued the state;
-# re-auth in a rolling deploy window costs only one extra user flow, which
-# is preferable to a replay in the single-process case.
-_consumed_nonces: dict[str, int] = {}
-_consumed_nonces_lock = asyncio.Lock()
+async def _consume_nonce(db: AsyncSession, nonce: str, exp_ts: int) -> bool:
+    """Atomically record a nonce as consumed.
+
+    Returns True when the nonce is newly inserted, False when it was already
+    present (i.e. a replay). Uses ``INSERT ... ON CONFLICT DO NOTHING`` so
+    the check is atomic across workers — a second worker racing on the same
+    nonce will see ``rowcount == 0`` and reject.
+
+    The previous in-memory dict could not protect against replays when the
+    callback was served by a different worker than the one that issued the
+    state JWT.
+    """
+    expires_at = datetime.fromtimestamp(exp_ts, tz=timezone.utc)
+    stmt = (
+        pg_insert(OAuthConsumedNonce.__table__)
+        .values(nonce=nonce, expires_at=expires_at)
+        .on_conflict_do_nothing(index_elements=["nonce"])
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    return bool(result.rowcount)
 
 
-async def _reap_expired_nonces(now: int) -> None:
-    expired = [n for n, exp in _consumed_nonces.items() if exp <= now]
-    for n in expired:
-        _consumed_nonces.pop(n, None)
+async def prune_expired_nonces(db: AsyncSession) -> int:
+    """Delete nonce rows whose ``expires_at`` is in the past.
 
-
-async def _consume_nonce(nonce: str, exp: int) -> None:
-    """Record a nonce as used; raise StateInvalid if it was already consumed."""
-    now = int(time.time())
-    async with _consumed_nonces_lock:
-        await _reap_expired_nonces(now)
-        if nonce in _consumed_nonces:
-            raise StateInvalid("state token already consumed")
-        _consumed_nonces[nonce] = exp
+    Safe to run periodically from a background scheduler; consumed nonces are
+    only useful until their JWT would have expired anyway, after which any
+    replay attempt is already rejected by the ``exp`` claim check.
+    """
+    result = await db.execute(
+        sa.delete(OAuthConsumedNonce).where(
+            OAuthConsumedNonce.expires_at < datetime.now(timezone.utc)
+        )
+    )
+    await db.commit()
+    return result.rowcount or 0
 
 
 def encode_state(user_id: uuid.UUID) -> tuple[str, str]:
@@ -68,10 +86,18 @@ def encode_state(user_id: uuid.UUID) -> tuple[str, str]:
     )
 
 
-async def decode_state(token: str, cookie_nonce: str | None = None) -> uuid.UUID:
+async def decode_state(
+    token: str,
+    cookie_nonce: str | None = None,
+    db: AsyncSession | None = None,
+) -> uuid.UUID:
     """Verify signature, expiry, one-shot nonce, and — if supplied — the
     session-binding cookie nonce. ``cookie_nonce`` must match the JWT's
     ``nonce`` claim; a missing or mismatched cookie is rejected.
+
+    ``db`` must be provided so the consumed nonce can be recorded in the
+    multi-worker-safe Postgres store. The request-path caller
+    (``oauth_callback``) already holds an ``AsyncSession`` via ``get_db``.
     """
     try:
         payload = jwt.decode(
@@ -100,7 +126,14 @@ async def decode_state(token: str, cookie_nonce: str | None = None) -> uuid.UUID
     # surface the distinct reason to the HTTP response (see note above).
     if not secrets.compare_digest(cookie_nonce, nonce):
         raise StateInvalid("state cookie does not match")
-    await _consume_nonce(nonce, exp)
+    if db is None:
+        # Defensive: prior in-memory implementation did not require a db
+        # parameter. Every in-tree caller now passes one; refuse to skip the
+        # replay check silently.
+        raise StateInvalid("state consumption requires database session")
+    consumed = await _consume_nonce(db, nonce, exp)
+    if not consumed:
+        raise StateInvalid("state token already consumed")
     return uuid.UUID(payload["uid"])
 
 

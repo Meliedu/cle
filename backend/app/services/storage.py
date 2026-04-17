@@ -13,13 +13,24 @@ _FILENAME_SANITIZE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _MAX_FILENAME_LEN = 200
 
 
-def _sanitize_filename(filename: str) -> str:
+def sanitize_filename(filename: str) -> str:
+    """Normalize an uploaded filename for safe storage and display.
+
+    Strips any path components, collapses disallowed characters to
+    underscores, trims leading/trailing punctuation, and caps the length.
+    The result is safe to persist to the database and to render in admin
+    UIs without XSS risk.
+    """
     base = os.path.basename(filename.replace("\\", "/")).strip()
     if not base or base in {".", ".."}:
         return "unnamed"
     cleaned = _FILENAME_SANITIZE_RE.sub("_", base)
     cleaned = re.sub(r"_+", "_", cleaned).strip("._") or "unnamed"
     return cleaned[:_MAX_FILENAME_LEN]
+
+
+# Backwards-compatible alias. Prefer ``sanitize_filename`` for new call sites.
+_sanitize_filename = sanitize_filename
 
 
 def get_s3_client():

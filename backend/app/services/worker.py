@@ -4,10 +4,12 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import sqlalchemy as sa
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_factory
+from app.models.api_usage import ApiUsage
 from app.models.task import Task
 
 logger = logging.getLogger(__name__)
@@ -117,6 +119,41 @@ async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
     await session.commit()
 
 
+async def prune_api_usage() -> int:
+    """Delete ``api_usage`` rows older than the rate-limit window (2 h).
+
+    Rate limiting only reads rows from the last hour; keeping a 2-hour
+    retention buffer provides slack for clock skew and long-running windows
+    while still bounding growth on this high-churn table.
+    """
+    async with async_session_factory() as session:
+        cutoff = _utcnow() - timedelta(hours=2)
+        result = await session.execute(
+            sa.delete(ApiUsage).where(ApiUsage.created_at < cutoff)
+        )
+        await session.commit()
+        return result.rowcount or 0
+
+
+async def prune_nonces_and_usage() -> None:
+    """Run the hourly cleanup job: api_usage + expired OAuth nonces.
+
+    Wrapped in a broad ``try/except`` so a transient DB error can't kill the
+    worker loop — the next hourly tick will retry.
+    """
+    try:
+        # Imported locally to avoid pulling canvas_oauth (+ jwt, httpx) into
+        # the worker's import graph for installations that don't use Canvas.
+        from app.services.canvas_oauth import prune_expired_nonces
+
+        async with async_session_factory() as session:
+            nonces = await prune_expired_nonces(session)
+        usage = await prune_api_usage()
+        logger.info("Prune: api_usage=%d nonces=%d", usage, nonces)
+    except Exception:  # noqa: BLE001
+        logger.exception("Prune job failed")
+
+
 async def claim_task(session: AsyncSession) -> Task | None:
     result = await session.execute(
         select(Task)
@@ -224,6 +261,10 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
 async def worker_loop(shutdown_event: asyncio.Event) -> None:
     logger.info("Task worker started")
     last_stuck_reset = _utcnow() - timedelta(hours=1)
+    # Seed ``last_prune_run`` so the first prune tick runs ~1 h after startup
+    # rather than immediately — keeps boot quiet while still guaranteeing
+    # hourly cadence.
+    last_prune_run = _utcnow()
 
     while not shutdown_event.is_set():
         try:
@@ -236,6 +277,12 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
                 except Exception:  # noqa: BLE001
                     logger.exception("Failed to run reconciliation")
                 last_stuck_reset = _utcnow()
+
+            # Hourly prune of api_usage + expired OAuth nonces. Runs inside
+            # this loop so we don't need a second scheduler asyncio task.
+            if _utcnow() - last_prune_run > timedelta(hours=1):
+                await prune_nonces_and_usage()
+                last_prune_run = _utcnow()
 
             # Short-lived claim session so we don't hold a DB connection open
             # during the full processing pipeline.

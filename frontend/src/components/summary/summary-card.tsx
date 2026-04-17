@@ -2,8 +2,20 @@
 
 import { useState } from "react";
 import { FileText, Loader2, RefreshCw, Sparkles } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+// Links inside AI-generated markdown point at unvetted external content.
+// Force target=_blank with rel=noopener,noreferrer so the tab opening the
+// link cannot reach back through window.opener and so the referrer header
+// does not leak our dashboard URL (which may contain course IDs).
+const markdownComponents: Components = {
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ),
+};
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -147,7 +159,10 @@ export function SummaryCard({ courseId, isInstructor }: SummaryCardProps) {
         {summary && !pickerOpen && (
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-4">
             <div className="prose-summary text-sm leading-relaxed text-[var(--color-text-secondary)]">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={markdownComponents}
+              >
                 {summary.summary_text}
               </ReactMarkdown>
             </div>

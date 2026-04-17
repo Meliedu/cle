@@ -289,16 +289,22 @@ export function GenerationJobsProvider({ children }: { children: ReactNode }) {
 
 function handleOpen(job: GenerationJob) {
   if (!job.result) return;
+  // encodeURIComponent each id segment so any stray path or query character
+  // in a course/quiz/flashcard id can never break out of the intended
+  // dashboard route.
+  const courseId = encodeURIComponent(job.courseId);
   if (job.kind === "generate_quiz" && job.result.quiz_id) {
-    window.location.href = `/dashboard/courses/${job.courseId}/quizzes/${job.result.quiz_id}`;
+    const quizId = encodeURIComponent(job.result.quiz_id);
+    window.location.href = `/dashboard/courses/${courseId}/quizzes/${quizId}`;
     return;
   }
   if (job.kind === "generate_flashcards" && job.result.flashcard_set_id) {
-    window.location.href = `/dashboard/courses/${job.courseId}/flashcards/${job.result.flashcard_set_id}`;
+    const setId = encodeURIComponent(job.result.flashcard_set_id);
+    window.location.href = `/dashboard/courses/${courseId}/flashcards/${setId}`;
     return;
   }
   if (job.kind === "generate_summary") {
-    window.location.href = `/dashboard/courses/${job.courseId}`;
+    window.location.href = `/dashboard/courses/${courseId}`;
   }
 }
 

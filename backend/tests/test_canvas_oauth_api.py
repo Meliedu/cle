@@ -61,7 +61,8 @@ async def test_oauth_callback_stores_credential(
 
 
 @pytest.mark.asyncio
-async def test_oauth_callback_rejects_bad_state(async_client):
+async def test_oauth_callback_rejects_bad_state(async_client, monkeypatch):
+    monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "s")
     resp = await async_client.get(
         "/api/canvas/oauth/callback?code=xyz&state=not-a-real-jwt",
         follow_redirects=False,
