@@ -9,11 +9,11 @@ from app.services import canvas_oauth
 
 
 @pytest.mark.asyncio
-async def test_state_round_trip(monkeypatch):
+async def test_state_round_trip(monkeypatch, db_session):
     monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
     user_id = uuid.uuid4()
     token, nonce = canvas_oauth.encode_state(user_id)
-    decoded = await canvas_oauth.decode_state(token, nonce)
+    decoded = await canvas_oauth.decode_state(token, nonce, db=db_session)
     assert decoded == user_id
 
 
@@ -36,14 +36,14 @@ async def test_state_tampered(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_state_replay_rejected(monkeypatch):
+async def test_state_replay_rejected(monkeypatch, db_session):
     monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
     token, nonce = canvas_oauth.encode_state(uuid.uuid4())
     # First use consumes the nonce.
-    await canvas_oauth.decode_state(token, nonce)
+    await canvas_oauth.decode_state(token, nonce, db=db_session)
     # Second use must be rejected as a replay.
     with pytest.raises(canvas_oauth.StateInvalid):
-        await canvas_oauth.decode_state(token, nonce)
+        await canvas_oauth.decode_state(token, nonce, db=db_session)
 
 
 @pytest.mark.asyncio
@@ -67,12 +67,12 @@ async def test_state_mismatched_cookie_rejected(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_state_correct_cookie_accepted(monkeypatch):
+async def test_state_correct_cookie_accepted(monkeypatch, db_session):
     """A valid state JWT paired with the matching cookie nonce succeeds."""
     monkeypatch.setattr(canvas_oauth.settings, "canvas_state_secret", "test-secret")
     user_id = uuid.uuid4()
     token, nonce = canvas_oauth.encode_state(user_id)
-    assert await canvas_oauth.decode_state(token, nonce) == user_id
+    assert await canvas_oauth.decode_state(token, nonce, db=db_session) == user_id
 
 
 def test_authorize_url(monkeypatch):

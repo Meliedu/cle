@@ -188,7 +188,7 @@ async def test_client_thin_methods_dispatch(db_session, logged_in_user):
 
 
 @pytest.mark.asyncio
-async def test_client_download_file_returns_bytes(db_session, logged_in_user):
+async def test_client_download_file_returns_bytes(db_session, logged_in_user, monkeypatch):
     cred = _make_cred(logged_in_user.id)
     db_session.add(cred)
     await db_session.commit()
@@ -200,6 +200,7 @@ async def test_client_download_file_returns_bytes(db_session, logged_in_user):
     client = await canvas_client_svc.get_client_for_user(
         db_session, logged_in_user.id, transport=transport
     )
+    monkeypatch.setattr(canvas_client_svc.settings, "canvas_allowed_hosts", "cdn")
     body = await client.download_file("https://cdn/signed")
     assert body == b"the-bytes"
 

@@ -98,7 +98,7 @@ async def oauth_callback(
             detail="Canvas integration not configured: CANVAS_STATE_SECRET is unset",
         )
     try:
-        user_id = await canvas_oauth.decode_state(state, canvas_oauth_nonce)
+        user_id = await canvas_oauth.decode_state(state, canvas_oauth_nonce, db=db)
     except canvas_oauth.StateInvalid:
         raise HTTPException(status_code=400, detail="Invalid or expired state")
 
