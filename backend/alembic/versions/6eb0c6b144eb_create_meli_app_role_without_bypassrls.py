@@ -43,7 +43,18 @@ def upgrade() -> None:
         END $$;
         """
     )
-    op.execute("GRANT CONNECT ON DATABASE langassistant TO meli_app")
+    # Use current_database() so this migration is portable across deploys
+    # where the DB is named differently (Railway, prod, staging all differ).
+    op.execute(
+        """
+        DO $$
+        DECLARE
+            dbname text := current_database();
+        BEGIN
+            EXECUTE format('GRANT CONNECT ON DATABASE %I TO meli_app', dbname);
+        END $$;
+        """
+    )
     op.execute("GRANT USAGE ON SCHEMA public TO meli_app")
     op.execute(
         "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public "
@@ -68,5 +79,14 @@ def downgrade() -> None:
     op.execute("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM meli_app")
     op.execute("REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM meli_app")
     op.execute("REVOKE ALL ON SCHEMA public FROM meli_app")
-    op.execute("REVOKE ALL ON DATABASE langassistant FROM meli_app")
+    op.execute(
+        """
+        DO $$
+        DECLARE
+            dbname text := current_database();
+        BEGIN
+            EXECUTE format('REVOKE ALL ON DATABASE %I FROM meli_app', dbname);
+        END $$;
+        """
+    )
     op.execute("DROP ROLE IF EXISTS meli_app")
