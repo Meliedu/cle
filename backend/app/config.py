@@ -119,17 +119,26 @@ class Settings(BaseSettings):
             )
 
         if self.environment == "production":
-            if not self.clerk_audience:
-                raise ValueError(
-                    "CLERK_AUDIENCE must be set when ENVIRONMENT=production"
-                )
-            if not self.clerk_issuer:
-                raise ValueError(
-                    "CLERK_ISSUER must be set when ENVIRONMENT=production"
-                )
+            # JWKS URL is the only hard requirement — without it, JWT verification
+            # cannot happen at all. audience/issuer/azp are defense-in-depth
+            # checks; each claim is enforced in verify_clerk_token only when the
+            # corresponding setting is populated. Warn loudly on missing values
+            # but don't block boot.
             if not self.clerk_jwks_url:
                 raise ValueError(
                     "CLERK_JWKS_URL must be set when ENVIRONMENT=production"
+                )
+            if not self.clerk_audience:
+                logger.warning(
+                    "CLERK_AUDIENCE is unset in production — audience claim "
+                    "will not be verified. Set this to your Clerk JWT template "
+                    "audience for defense in depth."
+                )
+            if not self.clerk_issuer:
+                logger.warning(
+                    "CLERK_ISSUER is unset in production — issuer claim will "
+                    "not be verified. Set this to your Clerk frontend-api URL "
+                    "for defense in depth."
                 )
             if not self.clerk_allowed_azp.strip():
                 logger.warning(

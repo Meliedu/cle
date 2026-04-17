@@ -55,27 +55,43 @@ def test_invalid_fernet_key_rejected():
         )
 
 
-def test_missing_clerk_audience_rejected_in_prod():
-    with pytest.raises(ValidationError, match="CLERK_AUDIENCE"):
+def test_missing_clerk_audience_warns_in_prod(caplog):
+    import logging
+    caplog.set_level(logging.WARNING)
+    Settings(
+        environment="production",
+        database_url="postgresql+asyncpg://u:p@db/x",
+        integrations_encryption_key="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=",
+        clerk_jwks_url="https://example.clerk.dev/.well-known/jwks.json",
+        clerk_audience="",
+        clerk_issuer="https://example.clerk.dev",
+    )
+    assert any("CLERK_AUDIENCE" in r.message for r in caplog.records)
+
+
+def test_missing_clerk_issuer_warns_in_prod(caplog):
+    import logging
+    caplog.set_level(logging.WARNING)
+    Settings(
+        environment="production",
+        database_url="postgresql+asyncpg://u:p@db/x",
+        integrations_encryption_key="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=",
+        clerk_jwks_url="https://example.clerk.dev/.well-known/jwks.json",
+        clerk_audience="meli-backend",
+        clerk_issuer="",
+    )
+    assert any("CLERK_ISSUER" in r.message for r in caplog.records)
+
+
+def test_missing_clerk_jwks_url_still_rejected_in_prod():
+    with pytest.raises(ValidationError, match="CLERK_JWKS_URL"):
         Settings(
             environment="production",
             database_url="postgresql+asyncpg://u:p@db/x",
             integrations_encryption_key="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=",
-            clerk_jwks_url="https://example.clerk.dev/.well-known/jwks.json",
-            clerk_audience="",
-            clerk_issuer="https://example.clerk.dev",
-        )
-
-
-def test_missing_clerk_issuer_rejected_in_prod():
-    with pytest.raises(ValidationError, match="CLERK_ISSUER"):
-        Settings(
-            environment="production",
-            database_url="postgresql+asyncpg://u:p@db/x",
-            integrations_encryption_key="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=",
-            clerk_jwks_url="https://example.clerk.dev/.well-known/jwks.json",
+            clerk_jwks_url="",
             clerk_audience="meli-backend",
-            clerk_issuer="",
+            clerk_issuer="https://example.clerk.dev",
         )
 
 
