@@ -3,9 +3,22 @@ FROM python:3.12-slim@sha256:804ddf3251a60bbf9c92e73b7566c40428d54d0e79d3428194e
 
 WORKDIR /app
 
-# System deps: libgomp1 for Docling's onnxruntime.
+# System deps:
+#   libgomp1                   — Docling's onnxruntime
+#   libgl1 libglib2.0-0 libxcb1 libsm6 libxext6 libxrender1
+#                              — OpenCV (cv2) runtime, pulled in transitively by
+#                                docling_ibm_models/tableformer. Without these,
+#                                docling's PDF pipeline raises ImportError on
+#                                first use and we fall back to pymupdf (losing
+#                                figure captions).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
+    libgl1 \
+    libglib2.0-0 \
+    libxcb1 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
