@@ -409,6 +409,14 @@ async def live_next_question(
         session.current_question_index = state.current_question_index
         if state.status == "active" and session.started_at is None:
             session.started_at = datetime.now(timezone.utc)
+        # If advancing past the last question naturally finished the quiz,
+        # persist QuizAttempt rows so /review still works after a backend
+        # restart. The dedicated /end endpoint does the same — both paths
+        # converge on the same termination semantics.
+        if state.status == "finished":
+            await _persist_session_activity(db, session, state)
+            if session.ended_at is None:
+                session.ended_at = datetime.now(timezone.utc)
         await db.commit()
 
         return APIResponse(
@@ -788,6 +796,14 @@ async def websocket_live(
                             and db_session.started_at is None
                         ):
                             db_session.started_at = datetime.now(timezone.utc)
+                        if state.status == "finished":
+                            # Same as REST /next-question: natural finish must
+                            # persist QuizAttempts so /review survives restart.
+                            await _persist_session_activity(
+                                db, db_session, state
+                            )
+                            if db_session.ended_at is None:
+                                db_session.ended_at = datetime.now(timezone.utc)
                         await db.commit()
                 if state.status == "finished":
                     await _backfill_missing_names(state)
