@@ -33,9 +33,19 @@ logger = logging.getLogger(__name__)
 
 _PUBLIC_PATH_PREFIXES = ("/health", "/docs", "/openapi.json", "/redoc")
 
+# Paths outside /api/rag/ that still invoke the LLM pipeline and therefore
+# must share the same per-user rate limits.
+_EXTRA_GENERATION_PATHS = ("/api/speech/generate-prompts",)
+
 
 def _is_public_path(path: str) -> bool:
     return any(path.startswith(prefix) for prefix in _PUBLIC_PATH_PREFIXES)
+
+
+def _is_rate_limited_path(path: str) -> bool:
+    if path.startswith("/api/rag/"):
+        return True
+    return any(path == extra for extra in _EXTRA_GENERATION_PATHS)
 
 
 def _rate_limit_response(retry_after_seconds: int) -> dict:
@@ -85,7 +95,7 @@ class RateLimitMiddleware:
             return
 
         # Only rate-limit AI generation endpoints, not every API call
-        if not path.startswith("/api/rag/"):
+        if not _is_rate_limited_path(path):
             await self.app(scope, receive, send)
             return
 

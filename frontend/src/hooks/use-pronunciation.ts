@@ -89,6 +89,59 @@ export function usePronunciationGrade() {
   });
 }
 
+// --- Generate practice prompts ---
+
+export type PronunciationDifficulty = "easy" | "medium" | "hard" | "mixed";
+
+export interface PracticePrompt {
+  readonly target_text: string;
+}
+
+interface GeneratePromptsInput {
+  readonly courseId: string;
+  // Backend enforces 1..10; clamped here so bad client values fail fast
+  // before hitting the network.
+  readonly numPrompts: number;
+  readonly difficulty: PronunciationDifficulty;
+  readonly documentIds?: readonly string[];
+}
+
+function clampPromptCount(n: number): number {
+  if (!Number.isFinite(n)) return 5;
+  return Math.max(1, Math.min(10, Math.floor(n)));
+}
+
+export function useGeneratePronunciationPrompts() {
+  const { getToken } = useAuth();
+
+  return useMutation({
+    mutationFn: async ({
+      courseId,
+      numPrompts,
+      difficulty,
+      documentIds,
+    }: GeneratePromptsInput): Promise<readonly PracticePrompt[]> => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const response = await apiFetch<ApiEnvelope<PracticePrompt[]>>(
+        "/speech/generate-prompts",
+        {
+          method: "POST",
+          token,
+          body: JSON.stringify({
+            course_id: courseId,
+            num_prompts: clampPromptCount(numPrompts),
+            difficulty,
+            document_ids:
+              documentIds && documentIds.length > 0 ? documentIds : undefined,
+          }),
+        }
+      );
+      return response.data;
+    },
+  });
+}
+
 export function usePronunciationHistory(courseId: string) {
   const { getToken, isSignedIn } = useAuth();
 

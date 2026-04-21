@@ -2,7 +2,7 @@
 
 import { use, useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Mic, Languages } from "lucide-react";
+import { ArrowLeft, Mic, Languages, Sparkles, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,8 +13,14 @@ import { HistoryChart } from "@/components/pronunciation/history-chart";
 import { useCourse } from "@/hooks/use-courses";
 import {
   usePronunciationGrade,
+  useGeneratePronunciationPrompts,
   type PronunciationGradeResponse,
+  type PracticePrompt,
 } from "@/hooks/use-pronunciation";
+import {
+  DifficultySelector,
+  type Difficulty,
+} from "@/components/ui/difficulty-selector";
 
 interface PronunciationPageProps {
   params: Promise<{ courseId: string }>;
@@ -30,8 +36,26 @@ export default function PronunciationPage({ params }: PronunciationPageProps) {
   const [lastResult, setLastResult] = useState<PronunciationGradeResponse | null>(
     null
   );
+  const [promptDifficulty, setPromptDifficulty] = useState<Difficulty>("medium");
+  const [generatedPrompts, setGeneratedPrompts] = useState<
+    readonly PracticePrompt[]
+  >([]);
+  const generatePromptsMutation = useGeneratePronunciationPrompts();
 
   const language = course?.language ?? "english";
+
+  const handleGeneratePrompts = useCallback(async () => {
+    try {
+      const prompts = await generatePromptsMutation.mutateAsync({
+        courseId,
+        numPrompts: 5,
+        difficulty: promptDifficulty,
+      });
+      setGeneratedPrompts(prompts);
+    } catch {
+      // error surfaced via mutation.error below
+    }
+  }, [courseId, promptDifficulty, generatePromptsMutation]);
 
   const handleRecordingComplete = useCallback(
     async (audioBlob: Blob) => {
@@ -106,6 +130,72 @@ export default function PronunciationPage({ params }: PronunciationPageProps) {
           </div>
         </div>
       </section>
+
+      {/* Generate practice prompts */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="size-4 text-[var(--color-primary)]" />
+            Generate Practice Prompts
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p
+            className="text-sm"
+            style={{ color: "var(--color-text-muted)" }}
+          >
+            Need ideas? Pick a difficulty and we&apos;ll generate 5 practice
+            sentences from your course materials. Tap one to use it as your
+            reference text.
+          </p>
+          <DifficultySelector
+            value={promptDifficulty}
+            onChange={setPromptDifficulty}
+            disabled={generatePromptsMutation.isPending}
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              onClick={handleGeneratePrompts}
+              disabled={generatePromptsMutation.isPending}
+            >
+              {generatePromptsMutation.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Sparkles className="size-4" />
+              )}
+              {generatePromptsMutation.isPending
+                ? "Generating…"
+                : "Generate prompts"}
+            </Button>
+          </div>
+          {generatePromptsMutation.error && (
+            <p
+              className="text-sm"
+              style={{ color: "var(--color-error)" }}
+            >
+              {generatePromptsMutation.error instanceof Error
+                ? generatePromptsMutation.error.message
+                : "Prompt generation failed. Please try again."}
+            </p>
+          )}
+          {generatedPrompts.length > 0 && (
+            <ul className="flex flex-col gap-2">
+              {generatedPrompts.map((p, idx) => (
+                <li key={idx}>
+                  <button
+                    type="button"
+                    onClick={() => setReferenceText(p.target_text)}
+                    className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-left text-sm transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]"
+                  >
+                    {p.target_text}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Reference text input */}
       <Card>

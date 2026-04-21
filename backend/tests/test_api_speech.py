@@ -1,7 +1,14 @@
 """Basic import and schema tests for the speech API."""
 
-from app.api.speech import grade, pronunciation_history, router
+import uuid
+
+import pytest
+from pydantic import ValidationError
+
+from app.api.speech import generate_prompts, grade, pronunciation_history, router
 from app.schemas.speech import (
+    GeneratePromptsRequest,
+    PracticePromptResponse,
     PronunciationGradeResponse,
     PronunciationHistoryEntry,
     WordScoreResponse,
@@ -82,3 +89,33 @@ class TestSpeechRouterRegistered:
     def test_endpoint_functions_exist(self):
         assert callable(grade)
         assert callable(pronunciation_history)
+        assert callable(generate_prompts)
+
+
+class TestGeneratePromptsSchema:
+    def test_defaults(self):
+        req = GeneratePromptsRequest(course_id=uuid.uuid4())
+        assert req.num_prompts == 5
+        assert req.difficulty == "medium"
+        assert req.document_ids is None
+
+    def test_all_difficulty_levels_accepted(self):
+        for d in ("easy", "medium", "hard", "mixed"):
+            req = GeneratePromptsRequest(course_id=uuid.uuid4(), difficulty=d)
+            assert req.difficulty == d
+
+    def test_rejects_invalid_difficulty(self):
+        with pytest.raises(ValidationError):
+            GeneratePromptsRequest(course_id=uuid.uuid4(), difficulty="trivial")
+
+    def test_num_prompts_bounds(self):
+        GeneratePromptsRequest(course_id=uuid.uuid4(), num_prompts=1)
+        GeneratePromptsRequest(course_id=uuid.uuid4(), num_prompts=10)
+        with pytest.raises(ValidationError):
+            GeneratePromptsRequest(course_id=uuid.uuid4(), num_prompts=0)
+        with pytest.raises(ValidationError):
+            GeneratePromptsRequest(course_id=uuid.uuid4(), num_prompts=11)
+
+    def test_practice_prompt_response(self):
+        resp = PracticePromptResponse(target_text="hello world")
+        assert resp.target_text == "hello world"

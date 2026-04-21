@@ -8,14 +8,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._helpers import verify_enrollment
 from app.api.deps import get_current_user, get_db
+from app.models.course import Course
 from app.models.score import PronunciationScore
 from app.schemas.common import APIResponse
 from app.schemas.speech import (
+    GeneratePromptsRequest,
+    PracticePromptResponse,
     PronunciationGradeResponse,
     PronunciationHistoryEntry,
     WordScoreResponse,
 )
+from app.services.embedder import embed_query
 from app.services.gamification import award_xp
+from app.services.generator import generate_revision_speaking
+from app.services.retriever import retrieve_chunks
 from app.services.speech import grade_pronunciation
 from app.services.storage import _sanitize_filename, upload_file
 
@@ -143,6 +149,64 @@ async def grade(
             provider=result.provider,
         ),
     )
+
+
+@router.post(
+    "/generate-prompts",
+    response_model=APIResponse[list[PracticePromptResponse]],
+)
+async def generate_prompts(
+    body: GeneratePromptsRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse[list[PracticePromptResponse]]:
+    """Generate practice sentences from course materials at a chosen difficulty.
+
+    Runs synchronously — LLM call completes in a few seconds and results
+    are ephemeral (no persistence). The frontend uses these as suggestions
+    that populate the reference-text input.
+    """
+    await verify_enrollment(db, body.course_id, user.id)
+
+    course_row = await db.execute(
+        select(Course).where(
+            Course.id == body.course_id, Course.deleted_at.is_(None)
+        )
+    )
+    course = course_row.scalar_one_or_none()
+    if course is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Course not found"
+        )
+
+    document_uuids = list(body.document_ids) if body.document_ids else None
+    difficulty_for_prompt = (
+        body.difficulty if body.difficulty != "mixed" else "medium"
+    )
+
+    query_embedding = await embed_query("speaking practice sentences")
+    chunks = await retrieve_chunks(
+        db,
+        course_id=body.course_id,
+        query_embedding=query_embedding,
+        top_k=12,
+        document_ids=document_uuids,
+    )
+    if not chunks:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No course materials available to generate prompts from",
+        )
+
+    targets = await generate_revision_speaking(
+        chunks,
+        difficulty=difficulty_for_prompt,
+        num_items=body.num_prompts,
+        language=course.language,
+    )
+
+    data = [PracticePromptResponse(target_text=t.target_text) for t in targets]
+    return APIResponse(success=True, data=data)
 
 
 @router.get(
