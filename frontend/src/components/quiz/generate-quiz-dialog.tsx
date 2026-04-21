@@ -13,13 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Sparkles } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import {
@@ -27,6 +20,15 @@ import {
   useDocumentSelection,
 } from "@/components/documents/document-selector";
 import { useGenerationJobs } from "@/hooks/use-generation-jobs";
+import {
+  DifficultySelector,
+  type Difficulty,
+} from "@/components/ui/difficulty-selector";
+import {
+  McqOptionCountInput,
+  QuestionTypeToggle,
+  type QuestionType,
+} from "@/components/quiz/quiz-generation-controls";
 
 interface GenerateQuizDialogProps {
   readonly courseId: string;
@@ -36,15 +38,19 @@ interface GenerateQuizDialogProps {
 
 interface FormState {
   readonly title: string;
-  readonly numQuestions: string;
+  readonly numQuestions: number;
+  readonly types: readonly QuestionType[];
+  readonly optionCount: number;
+  readonly difficulty: Difficulty;
 }
 
 const initialForm: FormState = {
   title: "",
-  numQuestions: "10",
+  numQuestions: 10,
+  types: ["multiple_choice"],
+  optionCount: 4,
+  difficulty: "medium",
 };
-
-const questionCounts = ["5", "10", "15", "20", "30"] as const;
 
 interface EnqueueResponse {
   readonly success: boolean;
@@ -92,8 +98,12 @@ export function GenerateQuizDialog({
             body: JSON.stringify({
               course_id: courseId,
               title: form.title.trim(),
-              num_questions: Number(form.numQuestions),
+              num_questions: form.numQuestions,
               document_ids: selectedIds.length > 0 ? selectedIds : undefined,
+              purpose: "after_class",
+              question_types: form.types,
+              mcq_option_count: form.optionCount,
+              difficulty: form.difficulty,
             }),
           }
         );
@@ -134,110 +144,120 @@ export function GenerateQuizDialog({
     [onOpenChange, isSubmitting]
   );
 
+  const includesMCQ = form.types.includes("multiple_choice");
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <>
-          <DialogHeader>
-            <DialogTitle>Generate Quiz</DialogTitle>
-            <DialogDescription>
-              Create a quiz from your course materials using AI. You can keep
-              browsing while it generates; we&apos;ll notify you when it&apos;s
-              ready.
-            </DialogDescription>
-          </DialogHeader>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Generate Quiz</DialogTitle>
+          <DialogDescription>
+            Create a quiz from your course materials using AI. Pick question
+            types, difficulty, and MCQ option count — we&apos;ll notify you when
+            it&apos;s ready.
+          </DialogDescription>
+        </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="quiz-title">
-                  Title <span className="text-[var(--color-error)]">*</span>
-                </Label>
-                <Input
-                  id="quiz-title"
-                  placeholder="e.g. Chapter 3 Review"
-                  value={form.title}
-                  onChange={(e) => {
-                    setForm((prev) => ({ ...prev, title: e.target.value }));
-                    if (titleError) setTitleError(null);
-                  }}
-                  aria-invalid={!!titleError}
-                  aria-describedby={titleError ? "quiz-title-error" : undefined}
-                />
-                {titleError && (
-                  <p
-                    id="quiz-title-error"
-                    className="text-xs text-[var(--color-error)]"
-                  >
-                    {titleError}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Number of Questions</Label>
-                <Select
-                  value={form.numQuestions}
-                  onValueChange={(val) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      numQuestions: val ?? "10",
-                    }))
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {questionCounts.map((count) => (
-                      <SelectItem key={count} value={count}>
-                        {count} questions
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <DocumentSelector
-                courseId={courseId}
-                selectedIds={selectedIds}
-                onSelectionChange={setSelectedIds}
-              />
-
-              {submitError && (
-                <p className="text-sm text-[var(--color-error)]">
-                  {submitError}
-                </p>
-              )}
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => handleOpenChange(false)}
-                disabled={isSubmitting}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="quiz-title">
+              Title <span className="text-[var(--color-error)]">*</span>
+            </Label>
+            <Input
+              id="quiz-title"
+              placeholder="e.g. Chapter 3 Review"
+              value={form.title}
+              onChange={(e) => {
+                setForm((prev) => ({ ...prev, title: e.target.value }));
+                if (titleError) setTitleError(null);
+              }}
+              aria-invalid={!!titleError}
+              aria-describedby={titleError ? "quiz-title-error" : undefined}
+            />
+            {titleError && (
+              <p
+                id="quiz-title-error"
+                className="text-xs text-[var(--color-error)]"
               >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={selectedIds.length === 0 || isSubmitting}
-                title={
-                  selectedIds.length === 0
-                    ? "Upload or select course materials first"
-                    : undefined
+                {titleError}
+              </p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Questions</Label>
+              <Input
+                type="number"
+                min={1}
+                max={30}
+                value={form.numQuestions}
+                onChange={(e) =>
+                  setForm((p) => ({
+                    ...p,
+                    numQuestions: Math.max(
+                      1,
+                      Math.min(30, Number(e.target.value) || 1)
+                    ),
+                  }))
                 }
-              >
-                <Sparkles className="size-4" />
-                {isSubmitting ? "Starting…" : "Generate"}
-              </Button>
-              {selectedIds.length === 0 && (
-                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                  Upload or select at least one document to enable generation.
-                </p>
-              )}
-            </DialogFooter>
-          </form>
-        </>
+              />
+            </div>
+            <McqOptionCountInput
+              value={form.optionCount}
+              disabled={!includesMCQ}
+              onChange={(n) => setForm((p) => ({ ...p, optionCount: n }))}
+            />
+          </div>
+
+          <QuestionTypeToggle
+            value={form.types}
+            onChange={(next) => setForm((p) => ({ ...p, types: next }))}
+          />
+
+          <DifficultySelector
+            value={form.difficulty}
+            onChange={(d) => setForm((p) => ({ ...p, difficulty: d }))}
+          />
+
+          <DocumentSelector
+            courseId={courseId}
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
+          />
+
+          {submitError && (
+            <p className="text-sm text-[var(--color-error)]">{submitError}</p>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleOpenChange(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={selectedIds.length === 0 || isSubmitting}
+              title={
+                selectedIds.length === 0
+                  ? "Upload or select course materials first"
+                  : undefined
+              }
+            >
+              <Sparkles className="size-4" />
+              {isSubmitting ? "Starting…" : "Generate"}
+            </Button>
+            {selectedIds.length === 0 && (
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                Upload or select at least one document to enable generation.
+              </p>
+            )}
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
