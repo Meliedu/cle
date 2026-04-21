@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { headers } from "next/headers";
 import { Inter } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { QueryProvider } from "@/components/providers/query-provider";
 
@@ -34,6 +35,7 @@ export default async function RootLayout({
           <NextIntlClientProvider messages={messages}>
             <QueryProvider>{children}</QueryProvider>
           </NextIntlClientProvider>
+          <Analytics />
         </body>
       </html>
     </ClerkProvider>
