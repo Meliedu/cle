@@ -48,3 +48,7 @@ prompt/
 **/.env
 **/.env.*
 !**/.env.example
+
+# Claude Code harness runtime state (per-session locks, caches)
+.claude/*.lock
+.claude/.cache/
