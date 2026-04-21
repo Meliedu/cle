@@ -70,6 +70,7 @@ class GenerateFlashcardsRequest(BaseModel):
     title: str
     document_ids: list[uuid.UUID] | None = None
     num_cards: int = Field(default=10, ge=1, le=50)
+    difficulty: Difficulty = "medium"
 
 
 # ---------------------------------------------------------------------------

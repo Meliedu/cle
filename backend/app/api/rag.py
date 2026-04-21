@@ -294,6 +294,7 @@ async def rag_generate_flashcards(
         extra={
             "num_cards": body.num_cards,
             "document_ids": [str(d) for d in (body.document_ids or [])] or None,
+            "difficulty": body.difficulty,
         },
     )
     response.status_code = status.HTTP_202_ACCEPTED

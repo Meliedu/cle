@@ -20,7 +20,11 @@ from app.models.course import Course
 from app.models.flashcard import FlashcardCard, FlashcardSet, FlashcardSetDocument
 from app.models.quiz import Question, Quiz, QuizDocument
 from app.models.summary import CourseSummary
-from app.schemas.rag import GenerateQuizRequest
+from app.schemas.rag import (
+    GenerateFlashcardsRequest,
+    GenerateQuizRequest,
+    GenerateSummaryRequest,
+)
 from app.services.embedder import embed_query
 from app.services.generator import (
     generate_flashcards,
@@ -136,12 +140,23 @@ async def run_generate_quiz(
 async def run_generate_flashcards(
     session: AsyncSession, payload: dict[str, Any]
 ) -> dict[str, Any]:
-    course_id = uuid.UUID(payload["course_id"])
+    # Default difficulty to "medium" when missing so tasks enqueued before
+    # the difficulty field was added keep flowing through the worker.
+    validated = GenerateFlashcardsRequest.model_validate(
+        {
+            "course_id": payload["course_id"],
+            "title": payload["title"],
+            "document_ids": payload.get("document_ids"),
+            "num_cards": payload.get("num_cards", 10),
+            "difficulty": payload.get("difficulty", "medium"),
+        }
+    )
+    course_id = validated.course_id
     user_id = uuid.UUID(payload["user_id"])
-    title = payload["title"]
-    num_cards: int = int(payload.get("num_cards", 10))
-    document_ids = payload.get("document_ids") or None
-    document_uuids = [uuid.UUID(d) for d in document_ids] if document_ids else None
+    title = validated.title
+    num_cards = validated.num_cards
+    document_uuids = list(validated.document_ids) if validated.document_ids else None
+    difficulty = validated.difficulty
 
     language = await _course_language(session, course_id)
     safe_title = _sanitize(title)
@@ -155,7 +170,10 @@ async def run_generate_flashcards(
         document_ids=document_uuids,
     )
     generated = await generate_flashcards(
-        chunks, num_cards=num_cards, language=language
+        chunks,
+        num_cards=num_cards,
+        language=language,
+        difficulty=difficulty,
     )
 
     fc_set = FlashcardSet(
@@ -167,6 +185,10 @@ async def run_generate_flashcards(
     session.add(fc_set)
     await session.flush()
 
+    # Flashcards generated at mixed difficulty are stored as "medium" per-card
+    # since the generator doesn't currently emit a per-card difficulty. A
+    # specific-difficulty run tags all cards with that difficulty.
+    card_difficulty = difficulty if difficulty != "mixed" else "medium"
     for idx, gc in enumerate(generated):
         session.add(
             FlashcardCard(
@@ -174,6 +196,7 @@ async def run_generate_flashcards(
                 card_index=idx,
                 front=gc.front,
                 back=gc.back,
+                difficulty=card_difficulty,
             )
         )
 
@@ -193,10 +216,15 @@ async def run_generate_flashcards(
 async def run_generate_summary(
     session: AsyncSession, payload: dict[str, Any]
 ) -> dict[str, Any]:
-    course_id = uuid.UUID(payload["course_id"])
+    validated = GenerateSummaryRequest.model_validate(
+        {
+            "course_id": payload["course_id"],
+            "document_ids": payload.get("document_ids"),
+        }
+    )
+    course_id = validated.course_id
     user_id = uuid.UUID(payload["user_id"])
-    document_ids = payload.get("document_ids") or None
-    document_uuids = [uuid.UUID(d) for d in document_ids] if document_ids else None
+    document_uuids = list(validated.document_ids) if validated.document_ids else None
 
     language = await _course_language(session, course_id)
 

@@ -401,6 +401,7 @@ async def generate_flashcards(
     chunks: list[RetrievedChunk],
     num_cards: int = 10,
     language: str = "english",
+    difficulty: str = "medium",
 ) -> list[GeneratedFlashcard]:
     """Generate flashcards from retrieved chunks.
 
@@ -410,8 +411,13 @@ async def generate_flashcards(
     but never surfaced to the client.
     """
     context = _build_context(chunks)
+    difficulty_clause = (
+        "with a mix of easy, medium, and hard cards"
+        if difficulty == "mixed"
+        else f"at **{difficulty}** difficulty"
+    )
     user_prompt = (
-        f"Create {num_cards} flashcards about the following {language} language learning material. "
+        f"Create {num_cards} flashcards {difficulty_clause} about the following {language} language learning material. "
         f"Write prompts (front) in English. Answers (back) may include {language} vocabulary/phrases where relevant.\n\n{context}"
     )
 

@@ -27,6 +27,10 @@ import {
   useDocumentSelection,
 } from "@/components/documents/document-selector";
 import { useGenerationJobs } from "@/hooks/use-generation-jobs";
+import {
+  DifficultySelector,
+  type Difficulty,
+} from "@/components/ui/difficulty-selector";
 
 interface EnqueueResponse {
   readonly success: boolean;
@@ -56,6 +60,7 @@ export function GenerateFlashcardsDialog({
   const { selectedIds, setSelectedIds } = useDocumentSelection(courseId);
   const [title, setTitle] = useState("");
   const [numCards, setNumCards] = useState("10");
+  const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [titleError, setTitleError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -95,6 +100,7 @@ export function GenerateFlashcardsDialog({
               title: title.trim(),
               num_cards: Number(numCards),
               document_ids: selectedIds.length > 0 ? selectedIds : undefined,
+              difficulty,
             }),
           }
         );
@@ -107,6 +113,7 @@ export function GenerateFlashcardsDialog({
         onOpenChange(false);
         setTitle("");
         setNumCards("10");
+        setDifficulty("medium");
         setTitleError(null);
       } catch (error: unknown) {
         const message =
@@ -118,7 +125,16 @@ export function GenerateFlashcardsDialog({
         setIsSubmitting(false);
       }
     },
-    [title, numCards, courseId, selectedIds, onOpenChange, getToken, trackJob]
+    [
+      title,
+      numCards,
+      difficulty,
+      courseId,
+      selectedIds,
+      onOpenChange,
+      getToken,
+      trackJob,
+    ]
   );
 
   const handleOpenChange = useCallback(
@@ -126,6 +142,7 @@ export function GenerateFlashcardsDialog({
       if (!nextOpen) {
         setTitle("");
         setNumCards("10");
+        setDifficulty("medium");
         setTitleError(null);
         setSubmitError(null);
       }
@@ -192,6 +209,12 @@ export function GenerateFlashcardsDialog({
               </SelectContent>
             </Select>
           </div>
+
+          <DifficultySelector
+            value={difficulty}
+            onChange={setDifficulty}
+            disabled={isSubmitting}
+          />
 
           <DocumentSelector
             courseId={courseId}
