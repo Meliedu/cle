@@ -131,6 +131,7 @@ async def get_flashcard_set(
             card_index=c.card_index,
             front=c.front,
             back=c.back,
+            difficulty=c.difficulty,
             created_at=c.created_at,
         )
         for c in fc_set.cards

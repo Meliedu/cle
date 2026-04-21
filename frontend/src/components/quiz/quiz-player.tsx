@@ -21,6 +21,7 @@ import {
   SendHorizontal,
 } from "lucide-react";
 import { QuizResults } from "@/components/quiz/quiz-results";
+import { DifficultyBadge } from "@/components/ui/difficulty-badge";
 
 interface QuizOption {
   readonly label: string;
@@ -31,6 +32,7 @@ interface QuizQuestion {
   readonly id: string;
   readonly text: string;
   readonly options: readonly QuizOption[];
+  readonly difficulty: string;
 }
 
 interface QuizDetail {
@@ -95,6 +97,7 @@ export function QuizPlayer({ quizId, courseId }: QuizPlayerProps) {
             question_text: string;
             options: Record<string, string> | null;
             explanation: string | null;
+            difficulty: string;
           }[];
         }>
       >(`/quizzes/${quizId}`, { token });
@@ -105,6 +108,7 @@ export function QuizPlayer({ quizId, courseId }: QuizPlayerProps) {
         questions: (res.data.questions ?? []).map((q) => ({
           id: q.id,
           text: q.question_text,
+          difficulty: q.difficulty ?? "medium",
           options: Object.entries(q.options ?? {}).map(([label, text]) => ({
             label,
             text,
@@ -229,9 +233,12 @@ export function QuizPlayer({ quizId, courseId }: QuizPlayerProps) {
 
       {/* Question */}
       <div className="space-y-6 pt-2">
-        <h2 className="text-lg font-semibold leading-relaxed text-[var(--color-text)]">
-          {currentQuestion.text}
-        </h2>
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="flex-1 text-lg font-semibold leading-relaxed text-[var(--color-text)]">
+            {currentQuestion.text}
+          </h2>
+          <DifficultyBadge value={currentQuestion.difficulty} size="sm" />
+        </div>
 
         {/* Options */}
         <div className="space-y-3">

@@ -15,11 +15,13 @@ import {
   Trophy,
 } from "lucide-react";
 import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
+import { DifficultyBadge } from "@/components/ui/difficulty-badge";
 
 interface Flashcard {
   readonly id: string;
   readonly front: string;
   readonly back: string;
+  readonly difficulty: string;
 }
 
 interface FlashcardSetDetail {
@@ -317,6 +319,11 @@ export function FlashcardPlayer({ setId, courseId }: FlashcardPlayerProps) {
             className="absolute inset-0 flex items-center justify-center rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-8 shadow-[var(--shadow-lg)]"
             style={{ backfaceVisibility: "hidden" }}
           >
+            {currentCard?.difficulty && (
+              <div className="absolute right-3 top-3">
+                <DifficultyBadge value={currentCard.difficulty} size="sm" />
+              </div>
+            )}
             <p className="text-center text-xl font-medium leading-relaxed text-[var(--color-text)]">
               {currentCard?.front}
             </p>
@@ -330,6 +337,11 @@ export function FlashcardPlayer({ setId, courseId }: FlashcardPlayerProps) {
               transform: "rotateY(180deg)",
             }}
           >
+            {currentCard?.difficulty && (
+              <div className="absolute right-3 top-3">
+                <DifficultyBadge value={currentCard.difficulty} size="sm" />
+              </div>
+            )}
             <p className="text-center text-xl font-medium leading-relaxed text-[var(--color-text)]">
               {currentCard?.back}
             </p>

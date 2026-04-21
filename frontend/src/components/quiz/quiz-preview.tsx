@@ -30,6 +30,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { DifficultyBadge } from "@/components/ui/difficulty-badge";
 
 interface PreviewQuestion {
   readonly id: string;
@@ -38,6 +39,7 @@ interface PreviewQuestion {
   readonly options: Record<string, string> | null;
   readonly correct_answer: string;
   readonly explanation: string | null;
+  readonly difficulty: string;
 }
 
 interface QuizPreviewData {
@@ -369,6 +371,7 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
                   <p className="flex-1 pt-0.5 font-medium text-[var(--color-text)]">
                     {question.question_text}
                   </p>
+                  <DifficultyBadge value={question.difficulty} size="sm" />
                 </div>
 
                 <div className="ml-10 space-y-2">

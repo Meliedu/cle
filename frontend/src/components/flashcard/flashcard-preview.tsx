@@ -15,12 +15,14 @@ import {
   Layers,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { DifficultyBadge } from "@/components/ui/difficulty-badge";
 
 interface FlashcardCard {
   readonly id: string;
   readonly card_index: number;
   readonly front: string;
   readonly back: string;
+  readonly difficulty: string;
   readonly created_at: string;
 }
 
@@ -167,6 +169,9 @@ export function FlashcardPreview({ setId, courseId }: FlashcardPreviewProps) {
                   {idx + 1}
                 </span>
                 <div className="flex-1 space-y-2">
+                  <div className="-mt-1 flex justify-end">
+                    <DifficultyBadge value={card.difficulty} size="sm" />
+                  </div>
                   <div>
                     <p className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">
                       Front

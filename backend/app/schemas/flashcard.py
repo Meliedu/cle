@@ -10,6 +10,7 @@ class FlashcardCardResponse(BaseModel):
     card_index: int
     front: str
     back: str
+    difficulty: str = "medium"
     created_at: datetime
 
     model_config = {"from_attributes": True}

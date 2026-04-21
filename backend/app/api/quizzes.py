@@ -136,6 +136,7 @@ async def get_quiz(
             question_text=q.question_text,
             options=q.options,
             explanation=q.explanation,
+            difficulty=q.difficulty,
             correct_answer=q.correct_answer if include_answers else None,
         )
         for q in quiz.questions
@@ -187,6 +188,7 @@ async def preview_quiz(
             question_text=q.question_text,
             options=q.options,
             explanation=q.explanation,
+            difficulty=q.difficulty,
             correct_answer=q.correct_answer,
         )
         for q in quiz.questions
@@ -482,6 +484,7 @@ async def add_question(
             question_text=question.question_text,
             options=question.options,
             explanation=question.explanation,
+            difficulty=question.difficulty,
             correct_answer=question.correct_answer,
         ),
     )
@@ -539,7 +542,15 @@ async def regenerate_question(
         document_ids=doc_ids,
     )
 
-    generated = await generate_quiz(chunks, num_questions=1, language=course.language)
+    # Preserve the existing difficulty when regenerating — instructors expect
+    # a "hard" question to be replaced by another "hard" question, not reset
+    # to the generator default.
+    generated = await generate_quiz(
+        chunks,
+        num_questions=1,
+        language=course.language,
+        difficulty=question.difficulty or "medium",
+    )
     if not generated:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -551,6 +562,10 @@ async def regenerate_question(
     question.options = new_q.options
     question.correct_answer = new_q.correct_answer
     question.explanation = new_q.explanation
+    # Trust the model's tag only when the original was "mixed"; otherwise the
+    # instructor asked for a specific level and we keep it.
+    if question.difficulty == "mixed":
+        question.difficulty = new_q.difficulty
 
     await db.commit()
     await db.refresh(question)
@@ -564,6 +579,7 @@ async def regenerate_question(
             question_text=question.question_text,
             options=question.options,
             explanation=question.explanation,
+            difficulty=question.difficulty,
             correct_answer=question.correct_answer,
         ),
     )
