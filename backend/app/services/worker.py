@@ -39,9 +39,17 @@ def _sanitize_error_message(exc: BaseException) -> str:
 POLL_INTERVAL_SECONDS = 5
 # Tasks stuck in "running" beyond this threshold (e.g., because the worker
 # crashed mid-processing) are reset to "pending" so another attempt can claim
-# them. Worth being generous here — document processing with large PDFs and
-# embeddings can run for several minutes.
-STUCK_TASK_TIMEOUT = timedelta(minutes=30)
+# them. Tuned against real parser timings: Docling on ~30-page PDFs finishes
+# in under a minute, chunking + embedding adds another minute at most. A
+# 10-minute ceiling catches genuine crashes quickly while still leaving
+# headroom for unusually large Canvas imports.
+STUCK_TASK_TIMEOUT = timedelta(minutes=10)
+# Grace period before a document stuck in ``processing`` without a live task
+# is tombstoned. Kept short so the UI's "processing" spinner surfaces real
+# problems to instructors quickly; the ``AND NOT EXISTS`` clause on live
+# tasks already protects in-flight uploads, so this mostly guards against
+# the narrow window between upload-endpoint commit and task enqueue.
+ORPHAN_DOC_GRACE = timedelta(minutes=5)
 
 
 def _utcnow() -> datetime:
@@ -58,7 +66,7 @@ async def _reset_stuck_tasks(session: AsyncSession) -> None:
     oscillate between ``running`` and ``pending`` forever.
     """
     cutoff = _utcnow() - STUCK_TASK_TIMEOUT
-    await session.execute(
+    requeued = await session.execute(
         update(Task)
         .where(
             Task.status == "running",
@@ -68,7 +76,7 @@ async def _reset_stuck_tasks(session: AsyncSession) -> None:
         )
         .values(status="pending")
     )
-    await session.execute(
+    failed = await session.execute(
         update(Task)
         .where(
             Task.status == "running",
@@ -79,6 +87,15 @@ async def _reset_stuck_tasks(session: AsyncSession) -> None:
         .values(status="failed")
     )
     await session.commit()
+    # Log only when we actually touched rows so the steady-state worker loop
+    # stays quiet but stuck-task events surface in logs for triage.
+    if requeued.rowcount or failed.rowcount:
+        logger.info(
+            "Reclaimed stuck tasks: requeued=%d failed=%d (threshold=%sm)",
+            requeued.rowcount or 0,
+            failed.rowcount or 0,
+            int(STUCK_TASK_TIMEOUT.total_seconds() // 60),
+        )
 
 
 async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
@@ -93,12 +110,14 @@ async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
     the document row BEFORE uploading to R2 and creating the task row.
     During that window (seconds to tens of seconds for large PDFs) there
     is no task referencing the doc — but it's a valid in-flight upload.
-    The 10-minute floor on updated_at is longer than any realistic R2
-    upload and shorter than any tolerable "stuck spinner" experience.
+    ``ORPHAN_DOC_GRACE`` is longer than any realistic R2 upload and shorter
+    than any tolerable "stuck spinner" experience.
     """
+    # Grace in whole seconds so the INTERVAL literal is deterministic.
+    grace_seconds = int(ORPHAN_DOC_GRACE.total_seconds())
     # A document is orphaned if status='processing', older than the grace
     # period, and no process_document task referencing it is pending/running.
-    await session.execute(
+    result = await session.execute(
         text(
             """
             UPDATE documents
@@ -106,7 +125,7 @@ async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
                    updated_at = now()
              WHERE status = 'processing'
                AND deleted_at IS NULL
-               AND updated_at < now() - INTERVAL '10 minutes'
+               AND updated_at < now() - make_interval(secs => :grace_seconds)
                AND NOT EXISTS (
                    SELECT 1 FROM tasks t
                     WHERE t.task_type = 'process_document'
@@ -114,9 +133,16 @@ async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
                       AND t.status IN ('pending', 'running')
                )
             """
-        )
+        ),
+        {"grace_seconds": grace_seconds},
     )
     await session.commit()
+    if result.rowcount:
+        logger.info(
+            "Tombstoned orphaned processing documents: count=%d (grace=%ds)",
+            result.rowcount,
+            grace_seconds,
+        )
 
 
 async def prune_api_usage() -> int:
