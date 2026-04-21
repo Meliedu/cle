@@ -20,6 +20,7 @@ from app.api._helpers import (
 )
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument, QuizFolder
+from app.models.session import LiveSession
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.services.gamification import award_xp
@@ -202,6 +203,58 @@ async def preview_quiz(
             is_published=quiz.is_published,
             questions=question_responses,
             created_at=quiz.created_at,
+        ),
+    )
+
+
+class QuizActiveSessionResponse(BaseModel):
+    active: bool
+    session_id: uuid.UUID | None = None
+    status: Literal["waiting", "active", "finished"] | None = None
+
+
+@router.get(
+    "/quizzes/{quiz_id}/active-session",
+    response_model=APIResponse[QuizActiveSessionResponse],
+)
+async def quiz_active_session(
+    quiz_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    quiz_result = await db.execute(
+        select(Quiz).where(Quiz.id == quiz_id, Quiz.deleted_at.is_(None))
+    )
+    quiz = quiz_result.scalar_one_or_none()
+    if not quiz:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found"
+        )
+    await _verify_enrollment(db, quiz.course_id, user.id)
+
+    session_result = await db.execute(
+        select(LiveSession)
+        .where(
+            LiveSession.quiz_id == quiz_id,
+            LiveSession.status.in_(("waiting", "active")),
+            LiveSession.ended_at.is_(None),
+        )
+        .order_by(LiveSession.created_at.desc())
+        .limit(1)
+    )
+    session = session_result.scalar_one_or_none()
+
+    if session is None:
+        return APIResponse(
+            success=True,
+            data=QuizActiveSessionResponse(active=False),
+        )
+    return APIResponse(
+        success=True,
+        data=QuizActiveSessionResponse(
+            active=True,
+            session_id=session.id,
+            status=session.status,
         ),
     )
 

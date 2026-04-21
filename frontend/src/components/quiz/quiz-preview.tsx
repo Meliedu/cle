@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -70,6 +70,11 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
   const { getToken, isSignedIn } = useAuth();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromLive = searchParams.get("from") === "live";
+  const backHref = fromLive
+    ? `/dashboard/courses/${courseId}/live`
+    : `/dashboard/courses/${courseId}?tab=quizzes`;
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
@@ -77,6 +82,12 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["quiz-preview", quizId] });
     queryClient.invalidateQueries({ queryKey: ["quizzes", courseId] });
+    // Refresh the active-session lock state after any mutation so a stale
+    // lock (session ended mid-poll) doesn't keep destructive buttons
+    // disabled longer than necessary.
+    queryClient.invalidateQueries({
+      queryKey: ["quiz-active-session", quizId],
+    });
   };
 
   const {
@@ -96,6 +107,35 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
     },
     enabled: isSignedIn === true,
   });
+
+  interface ActiveSessionData {
+    readonly active: boolean;
+    readonly session_id: string | null;
+    readonly status: string | null;
+  }
+
+  const { data: activeSession } = useQuery<ActiveSessionData>({
+    queryKey: ["quiz-active-session", quizId],
+    queryFn: async () => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const res = await apiFetch<{
+        success: boolean;
+        data: ActiveSessionData;
+      }>(`/quizzes/${quizId}/active-session`, { token: token! });
+      return res.data;
+    },
+    enabled: isSignedIn === true,
+    // 15s balances lock freshness against server load; mutation success
+    // invalidates this key too so an action-triggered refresh catches up
+    // faster than the interval.
+    refetchInterval: 15_000,
+  });
+
+  const sessionActive = activeSession?.active === true;
+  const lockTooltip = sessionActive
+    ? "A live session is in progress — end it before editing questions."
+    : undefined;
 
   const publishMutation = useMutation({
     mutationFn: async () => {
@@ -120,7 +160,7 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quizzes", courseId] });
-      router.push(`/dashboard/courses/${courseId}?tab=quizzes`);
+      router.push(backHref);
     },
   });
 
@@ -223,9 +263,7 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() =>
-                router.push(`/dashboard/courses/${courseId}?tab=quizzes`)
-              }
+              onClick={() => router.push(backHref)}
             >
               <ArrowLeft className="size-4" />
             </Button>
@@ -255,6 +293,8 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
             variant="outline"
             size="sm"
             onClick={() => setAddOpen(true)}
+            disabled={sessionActive}
+            title={lockTooltip}
           >
             <Plus className="size-4" />
             Add Question
@@ -281,7 +321,8 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
             variant="outline"
             size="sm"
             onClick={() => deleteQuizMutation.mutate()}
-            disabled={deleteQuizMutation.isPending}
+            disabled={deleteQuizMutation.isPending || sessionActive}
+            title={lockTooltip}
             className="text-[var(--color-error)] hover:bg-[oklch(93%_0.05_25)]"
           >
             <Trash2 className="size-4" />
@@ -293,6 +334,16 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
         <p className="pl-9 text-sm text-[var(--color-text-secondary)]">
           {quiz.description}
         </p>
+      )}
+
+      {sessionActive && (
+        <div
+          role="status"
+          className="rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-light)] px-3 py-2 text-sm text-[var(--color-warning)]"
+        >
+          A live session using this quiz is in progress. Editing, regenerating,
+          or deleting questions is disabled until the session ends.
+        </div>
       )}
 
       <Separator />
@@ -384,7 +435,12 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
                     variant="ghost"
                     size="sm"
                     onClick={() => regenerateMutation.mutate(question.id)}
-                    disabled={isRegenerating || regenerateMutation.isPending}
+                    disabled={
+                      isRegenerating ||
+                      regenerateMutation.isPending ||
+                      sessionActive
+                    }
+                    title={lockTooltip}
                     className="text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
                   >
                     {isRegenerating ? (
@@ -402,8 +458,10 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
                     }
                     disabled={
                       deleteQuestionMutation.isPending ||
-                      quiz.questions.length <= 1
+                      quiz.questions.length <= 1 ||
+                      sessionActive
                     }
+                    title={lockTooltip}
                     className="text-[var(--color-text-muted)] hover:text-[var(--color-error)]"
                   >
                     <Trash2 className="size-3.5" />

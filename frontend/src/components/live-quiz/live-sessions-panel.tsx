@@ -281,6 +281,11 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
             setCreateOpen(true);
           }}
           onDeleteQuiz={(quizId) => setDeleteQuizConfirmId(quizId)}
+          onOpenQuiz={(quizId) =>
+            router.push(
+              `/dashboard/courses/${courseId}/quizzes/${quizId}?from=live`
+            )
+          }
           onGenerate={() => setGenerateOpen(true)}
           onImport={() => setImportOpen(true)}
         />

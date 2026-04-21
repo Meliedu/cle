@@ -1,11 +1,8 @@
 "use client";
 
-import { FileQuestion, Sparkles, Download, Trash2 } from "lucide-react";
+import { FileQuestion, Sparkles, Download, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { FolderBrowser, ItemActionsMenu } from "@/components/folders/folder-browser";
 import type { NewMenuAction } from "@/components/folders/folder-browser";
 import type { QuizResponse } from "@/hooks/use-quizzes";
@@ -22,6 +19,7 @@ export interface QuizBankBrowserProps {
   readonly onMoveQuiz: (quizId: string, folderId: string | null) => void;
   readonly onStartSession: (quizId: string) => void;
   readonly onDeleteQuiz: (quizId: string) => void;
+  readonly onOpenQuiz: (quizId: string) => void;
   readonly onGenerate: () => void;
   readonly onImport: () => void;
 }
@@ -36,6 +34,7 @@ export function QuizBankBrowser({
   onMoveQuiz,
   onStartSession,
   onDeleteQuiz,
+  onOpenQuiz,
   onGenerate,
   onImport,
 }: QuizBankBrowserProps) {
@@ -72,9 +71,28 @@ export function QuizBankBrowser({
       onMoveFolder={onMoveFolder}
       onMoveItem={onMoveQuiz}
       renderItem={(quiz, { view, onMove }) => {
+        const openExtra = (
+          <DropdownMenuItem onClick={() => onOpenQuiz(quiz.id)}>
+            <Eye className="size-4" />
+            Review questions
+          </DropdownMenuItem>
+        );
+        const handleActivate = () => onOpenQuiz(quiz.id);
+        const handleKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleActivate();
+          }
+        };
         if (view === "list") {
           return (
-            <div className="group flex items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 transition-all hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-sm)]">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={handleActivate}
+              onKeyDown={handleKey}
+              className="group flex cursor-pointer items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-left transition-all hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-sm)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+            >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary)]">
                 <FileQuestion className="size-5" />
               </span>
@@ -90,19 +108,29 @@ export function QuizBankBrowser({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => onStartSession(quiz.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStartSession(quiz.id);
+                }}
               >
                 Start
               </Button>
               <ItemActionsMenu
                 onMove={onMove}
                 onDelete={() => onDeleteQuiz(quiz.id)}
+                extra={openExtra}
               />
             </div>
           );
         }
         return (
-          <div className="group flex h-full flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-all hover:-translate-y-0.5 hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)]">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={handleActivate}
+            onKeyDown={handleKey}
+            className="group flex h-full cursor-pointer flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left transition-all hover:-translate-y-0.5 hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          >
             <div className="flex items-start justify-between">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary)]">
                 <FileQuestion className="size-5" />
@@ -111,6 +139,7 @@ export function QuizBankBrowser({
                 <ItemActionsMenu
                   onMove={onMove}
                   onDelete={() => onDeleteQuiz(quiz.id)}
+                  extra={openExtra}
                 />
               </div>
             </div>
@@ -126,7 +155,10 @@ export function QuizBankBrowser({
             <Button
               size="sm"
               className="w-full"
-              onClick={() => onStartSession(quiz.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onStartSession(quiz.id);
+              }}
             >
               Start Session
             </Button>
@@ -137,5 +169,3 @@ export function QuizBankBrowser({
   );
 }
 
-// Re-exports kept in case downstream imports use them
-export { DropdownMenuItem, DropdownMenuSeparator, Trash2 };
