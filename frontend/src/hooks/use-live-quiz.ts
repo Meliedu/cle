@@ -38,6 +38,28 @@ export interface QuestionMessage {
 export type LiveStatus = "connecting" | "connected" | "active" | "finished" | "error";
 export type ReviewMode = "per_question" | "final";
 
+export interface CurrentReveal {
+  readonly correct_answer: string;
+  readonly explanation: string | null;
+}
+
+export interface LiveReviewQuestion {
+  readonly question_id: string;
+  readonly question_index: number;
+  readonly question_text: string;
+  readonly options: Record<string, string> | null;
+  readonly correct_answer: string;
+  readonly explanation: string | null;
+  readonly your_answer: string | null;
+  readonly is_correct: boolean | null;
+  readonly answer_distribution?: Record<string, number>;
+}
+
+export interface LiveReviewResponse {
+  readonly is_host: boolean;
+  readonly questions: readonly LiveReviewQuestion[];
+}
+
 interface ApiEnvelope<T> {
   readonly success: boolean;
   readonly data: T;
@@ -53,6 +75,7 @@ interface LiveStateResponse {
   readonly answer_distribution?: Record<string, number>;
   readonly review_mode?: ReviewMode;
   readonly is_anonymous?: boolean;
+  readonly current_reveal?: CurrentReveal | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -110,6 +133,7 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
   const elapsedSeconds = state?.elapsed_seconds ?? 0;
   const reviewMode: ReviewMode = state?.review_mode ?? "per_question";
   const isAnonymous = state?.is_anonymous ?? false;
+  const currentReveal: CurrentReveal | null = state?.current_reveal ?? null;
 
   /* Actions */
   const nextQuestionMut = useMutation({
@@ -205,12 +229,45 @@ export function useLiveQuiz(sessionId: string, token: string | null) {
     elapsedSeconds,
     reviewMode,
     isAnonymous,
+    currentReveal,
     error: pollError?.message ?? null,
     sendAnswer,
     nextQuestion,
     endSession,
     setAnonymity,
   } as const;
+}
+
+/* ------------------------------------------------------------------ */
+/*  useLiveReview — end-of-session per-question review                */
+/* ------------------------------------------------------------------ */
+
+export function useLiveReview(sessionId: string, enabled: boolean) {
+  const { getToken, isSignedIn } = useAuth();
+
+  return useQuery({
+    queryKey: ["live-review", sessionId],
+    queryFn: async () => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const response = await apiFetch<ApiEnvelope<LiveReviewResponse>>(
+        `/live-sessions/${sessionId}/review`,
+        { token }
+      );
+      return response.data;
+    },
+    enabled: isSignedIn === true && !!sessionId && enabled,
+    // The review payload is a snapshot of a finished session — never refetch
+    // on focus/mount/reconnect, and never go stale.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    retry: (count, error) => {
+      if (isAuthError(error)) return false;
+      return count < 2;
+    },
+  });
 }
 
 /* ------------------------------------------------------------------ */

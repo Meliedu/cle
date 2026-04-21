@@ -10,8 +10,10 @@ import { Lobby } from "@/components/live-quiz/lobby";
 import { HostPanel } from "@/components/live-quiz/host-panel";
 import { PlayerView } from "@/components/live-quiz/player-view";
 import { Podium } from "@/components/live-quiz/podium";
+import { LiveReview } from "@/components/live-quiz/live-review";
 import {
   useLiveQuiz,
+  useLiveReview,
   useLiveSession,
 } from "@/hooks/use-live-quiz";
 import { useQuiz } from "@/hooks/use-quizzes";
@@ -52,6 +54,7 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
     elapsedSeconds,
     reviewMode,
     isAnonymous,
+    currentReveal,
     error: wsError,
     sendAnswer,
     nextQuestion,
@@ -60,6 +63,16 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
   } = useLiveQuiz(sessionId, token);
 
   const isHost = session?.is_host ?? false;
+
+  /* Per-question review is fetched once the session is finished — for both
+   * roles. Hosts have the live host panel mid-session (no need to also pull
+   * a stale review snapshot), and students are 403'd by the backend until
+   * status="finished" anyway. Single fetch path keeps the staleTime:Infinity
+   * cache valid for the whole session lifetime. */
+  const { data: reviewData } = useLiveReview(
+    sessionId,
+    status === "finished"
+  );
 
   const joinUrl =
     typeof window !== "undefined"
@@ -125,7 +138,15 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
 
       {/* Session state routing */}
       {status === "finished" ? (
-        <Podium leaderboard={leaderboard} />
+        <div className="space-y-6">
+          <Podium leaderboard={leaderboard} />
+          {reviewData && (
+            <LiveReview
+              questions={reviewData.questions}
+              isHost={reviewData.is_host}
+            />
+          )}
+        </div>
       ) : status === "connecting" || status === "connected" ? (
         <Lobby
           joinCode={session?.join_code ?? "------"}
@@ -166,11 +187,11 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
           options={currentQuestionData?.options ?? undefined}
           questionType={currentQuestionData?.type}
           elapsedSeconds={elapsedSeconds}
-          // Defense in depth: never pass the correct answer to the student
-          // client path. The server already strips it from useQuiz for
-          // non-host users, but enforce it here too so a misconfigured
-          // backend can't leak answers through this component.
-          correctAnswer={undefined}
+          // currentReveal is server-gated: only populated in per_question
+          // mode and only after the server-side timer has elapsed, so this
+          // can't leak the answer before "time's up".
+          correctAnswer={currentReveal?.correct_answer}
+          explanation={currentReveal?.explanation}
           onAnswer={handleAnswer}
         />
       )}

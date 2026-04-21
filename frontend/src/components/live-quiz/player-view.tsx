@@ -17,6 +17,7 @@ interface PlayerViewProps {
   readonly questionType?: string;
   readonly elapsedSeconds?: number;
   readonly correctAnswer?: string;
+  readonly explanation?: string | null;
   readonly onAnswer: (answer: string) => void;
 }
 
@@ -27,6 +28,7 @@ export function PlayerView({
   questionType,
   elapsedSeconds = 0,
   correctAnswer,
+  explanation,
   onAnswer,
 }: PlayerViewProps) {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -147,6 +149,13 @@ export function PlayerView({
                   Time is up! Correct answer: {correctAnswer}.
                 </p>
               </>
+            )}
+            {explanation && (
+              <div className="w-full rounded-[var(--radius-md)] bg-[var(--color-surface-hover)] p-3">
+                <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
+                  {explanation}
+                </p>
+              </div>
             )}
             <p className="text-xs text-[var(--color-text-muted)]">
               Waiting for the next question...
