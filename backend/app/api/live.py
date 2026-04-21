@@ -525,7 +525,27 @@ async def live_review(
     await verify_enrollment(db, session.course_id, user.id)
 
     is_host = session.host_id == user.id
-    if not is_host and session.status != "finished":
+    state = manager.get_session(session_id)
+    # Treat the session as "finished for students" when either the DB row or
+    # the in-memory state says so. The /state poll reports state.status
+    # without taking the per-session lock, so a student's frontend can see
+    # "finished" in the gap between state.next_question() and the db.commit()
+    # that lands session.status = "finished". Checking both sources closes
+    # that race; TanStack Query's useLiveReview disables retry on 401/403,
+    # so a transient 403 here becomes permanent for the student.
+    #
+    # Intentional side effect: if the end-session commit fails (e.g. an
+    # exception inside _persist_session_activity or award_xp) but the
+    # in-memory transition already happened, students can still see their
+    # review via the in-memory state.player_answers. In-memory is the
+    # authoritative source of truth during a live session — it's what the
+    # host's "session ended" broadcast is derived from. We accept this as
+    # the safer failure mode: students get their data; the stuck DB row is
+    # a host/ops problem, not a student-facing one.
+    is_finished = session.status == "finished" or (
+        state is not None and state.status == "finished"
+    )
+    if not is_host and not is_finished:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="session_not_finished",
@@ -538,7 +558,6 @@ async def live_review(
     )
     questions = q_result.scalars().all()
 
-    state = manager.get_session(session_id)
     user_id_str = str(user.id)
     user_answers: dict[int, str] = (
         state.player_answers.get(user_id_str, {}) if state else {}
@@ -547,7 +566,7 @@ async def live_review(
     # If the in-memory state was lost (backend restart between session-end
     # and the student opening the review tab), fall back to the persisted
     # QuizAttempt.answers so students can still see their submissions.
-    if not is_host and not user_answers and session.status == "finished":
+    if not is_host and not user_answers and is_finished:
         attempt_result = await db.execute(
             select(QuizAttempt).where(
                 QuizAttempt.live_session_id == session.id,
