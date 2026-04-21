@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     enable_figure_captions: bool = True
     vlm_timeout_seconds: int = 30
 
+    # Low-text page rescue: render PDF pages whose extracted text is below
+    # `page_rescue_min_words` to an image and ask the VLM to transcribe them
+    # verbatim. Catches scanned/image-only PDFs and slide decks exported as
+    # PDF. Capped at `page_rescue_max_pages` to bound cost on long docs.
+    enable_page_rescue: bool = True
+    page_rescue_min_words: int = 30
+    page_rescue_max_pages: int = 40
+    page_rescue_render_dpi: int = 144
+
     # Azure Speech (pronunciation assessment)
     azure_speech_key: str = ""
     azure_speech_region: str = "eastasia"

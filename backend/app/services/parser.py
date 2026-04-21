@@ -66,11 +66,19 @@ _MIN_IMAGE_BYTES = 4 * 1024
 _VLM_CONCURRENCY = 4
 
 # Shared prompt so PDF (Docling-invoked) and PPTX (vlm.py-invoked) captions
-# drift together.
+# drift together. Asks the VLM to transcribe embedded text verbatim before
+# describing visuals — so slide exports, screenshots, and scanned pages
+# surface their actual content instead of a vague summary.
 _FIGURE_PROMPT = (
-    "Describe this figure from a university lecture or textbook for a "
-    "student who can't see it. Be concrete: labels, axes, values, "
-    "relationships, what it's about. Under 80 words. No preamble."
+    "You are extracting content from a university lecture slide, textbook "
+    "page, or figure for a student. If the image contains substantial "
+    "readable text (slide bullets, screenshot, scanned page), transcribe "
+    "ALL visible text VERBATIM first, preserving order and line breaks. "
+    "Then, only if there is additional visual content (diagram, chart, "
+    "photograph), briefly describe it — labels, axes, data points, "
+    "relationships. Omit the description when the image is pure text. "
+    "Keep total output under 300 words. Output only the content — no "
+    "preamble, no 'This figure shows…'."
 )
 
 
@@ -132,10 +140,15 @@ async def _parse_pdf(file_data: bytes, filename: str) -> ParseResult:
     (``settings.parser_timeout_seconds``). A stuck Docling/pymupdf call can
     otherwise pin the worker indefinitely — we'd rather fail the job and let
     retry logic reclaim the task than ship a hung worker.
+
+    After primary extraction, a VLM rescue pass fills in pages with very
+    little text (typical of scanned PDFs or slide decks exported to raster
+    PDF). See :func:`_rescue_low_text_pdf_pages`.
     """
+    result: ParseResult | None = None
     if settings.enable_figure_captions and settings.openrouter_api_key:
         try:
-            return await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 asyncio.to_thread(_parse_pdf_docling, file_data, filename),
                 timeout=settings.parser_timeout_seconds,
             )
@@ -147,10 +160,129 @@ async def _parse_pdf(file_data: bytes, filename: str) -> ParseResult:
             logger.exception(
                 "Docling parse failed for %s, falling back to pymupdf", filename
             )
-    return await asyncio.wait_for(
-        asyncio.to_thread(_parse_pdf_pymupdf, file_data, filename),
-        timeout=settings.parser_timeout_seconds,
+    if result is None:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(_parse_pdf_pymupdf, file_data, filename),
+            timeout=settings.parser_timeout_seconds,
+        )
+
+    if (
+        settings.enable_page_rescue
+        and settings.enable_figure_captions
+        and settings.openrouter_api_key
+    ):
+        result = await _rescue_low_text_pdf_pages(result, file_data, filename)
+    return result
+
+
+def _pdf_page_count(file_data: bytes) -> int:
+    import pymupdf
+
+    doc = pymupdf.open(stream=file_data, filetype="pdf")
+    try:
+        return doc.page_count
+    finally:
+        doc.close()
+
+
+def _render_pdf_pages(
+    file_data: bytes, page_numbers: list[int], dpi: int
+) -> list[bytes]:
+    """Render specific 1-based PDF page numbers to PNG bytes."""
+    import pymupdf
+
+    doc = pymupdf.open(stream=file_data, filetype="pdf")
+    try:
+        zoom = max(1.0, dpi / 72.0)  # pymupdf native is 72 dpi
+        matrix = pymupdf.Matrix(zoom, zoom)
+        out: list[bytes] = []
+        for pn in page_numbers:
+            if pn < 1 or pn > doc.page_count:
+                out.append(b"")
+                continue
+            page = doc.load_page(pn - 1)
+            pix = page.get_pixmap(matrix=matrix, alpha=False)
+            out.append(pix.tobytes("png"))
+        return out
+    finally:
+        doc.close()
+
+
+async def _rescue_low_text_pdf_pages(
+    result: ParseResult, file_data: bytes, filename: str
+) -> ParseResult:
+    """Replace near-empty pages with a verbatim VLM transcription.
+
+    A page is a rescue candidate when the primary parser extracted fewer than
+    :attr:`Settings.page_rescue_min_words` words for it, which is the pattern
+    for scanned textbook pages or slide decks exported as raster-only PDFs.
+    Rescues are capped at :attr:`Settings.page_rescue_max_pages` per document
+    to bound VLM cost on long image-heavy files; pages beyond the cap keep
+    their original (empty) text.
+    """
+    # Lazy import to avoid a parser↔vlm import cycle at module load.
+    from app.services.vlm import transcribe_page
+
+    try:
+        doc_page_count = await asyncio.to_thread(_pdf_page_count, file_data)
+    except Exception:
+        logger.exception("Page rescue: could not read page count for %s", filename)
+        return result
+
+    page_text: dict[int, str] = {p.page_number: p.text for p in result.pages}
+    min_words = settings.page_rescue_min_words
+    targets = [
+        pn
+        for pn in range(1, doc_page_count + 1)
+        if len(page_text.get(pn, "").split()) < min_words
+    ]
+    if not targets:
+        return result
+    capped = targets[: settings.page_rescue_max_pages]
+
+    try:
+        rendered = await asyncio.to_thread(
+            _render_pdf_pages, file_data, capped, settings.page_rescue_render_dpi
+        )
+    except Exception:
+        logger.exception("Page rescue: render failed for %s", filename)
+        return result
+
+    transcriptions = await asyncio.gather(
+        *(transcribe_page(img) if img else _none() for img in rendered)
     )
+
+    rescued = 0
+    for pn, transcribed in zip(capped, transcriptions):
+        if transcribed:
+            page_text[pn] = transcribed
+            rescued += 1
+
+    logger.info(
+        "Page rescue: %d/%d low-text pages transcribed (total=%d, filename=%s)",
+        rescued,
+        len(capped),
+        doc_page_count,
+        filename,
+    )
+
+    new_pages = [
+        PageContent(page_number=pn, text=page_text[pn])
+        for pn in sorted(page_text)
+        if page_text[pn]
+    ]
+    full_text = "\n\n".join(p.text for p in new_pages)
+    return ParseResult(
+        text=full_text,
+        pages=new_pages,
+        word_count=len(full_text.split()),
+        page_count=doc_page_count or result.page_count,
+    )
+
+
+async def _none() -> None:
+    """Awaitable that yields None — placeholder for skipped render slots."""
+    return None
 
 
 def _parse_pdf_pymupdf(file_data: bytes, filename: str) -> ParseResult:
@@ -206,7 +338,7 @@ def _parse_pdf_docling(file_data: bytes, filename: str) -> ParseResult:
     picture_opts = PictureDescriptionApiOptions(
         url=api_url,
         headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
-        params={"model": settings.vlm_model, "max_tokens": 250},
+        params={"model": settings.vlm_model, "max_tokens": 600},
         prompt=_FIGURE_PROMPT,
         timeout=float(settings.vlm_timeout_seconds),
         concurrency=_VLM_CONCURRENCY,
