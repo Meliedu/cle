@@ -258,10 +258,11 @@ export function useLiveReview(sessionId: string, enabled: boolean) {
     },
     enabled: isSignedIn === true && !!sessionId && enabled,
     // The review payload is a snapshot of a finished session — never refetch
-    // on focus/mount/reconnect, and never go stale.
+    // on focus/reconnect, and never go stale. Allow refetchOnMount so a
+    // student who navigates back to the URL still gets a fresh fetch (cache
+    // may be empty if React Query GC'd it between mounts).
     staleTime: Infinity,
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
     refetchOnReconnect: false,
     retry: (count, error) => {
       if (isAuthError(error)) return false;

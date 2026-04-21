@@ -69,10 +69,11 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
    * a stale review snapshot), and students are 403'd by the backend until
    * status="finished" anyway. Single fetch path keeps the staleTime:Infinity
    * cache valid for the whole session lifetime. */
-  const { data: reviewData } = useLiveReview(
-    sessionId,
-    status === "finished"
-  );
+  const {
+    data: reviewData,
+    isLoading: reviewLoading,
+    error: reviewError,
+  } = useLiveReview(sessionId, status === "finished");
 
   const joinUrl =
     typeof window !== "undefined"
@@ -140,12 +141,20 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
       {status === "finished" ? (
         <div className="space-y-6">
           <Podium leaderboard={leaderboard} />
-          {reviewData && (
+          {reviewData ? (
             <LiveReview
               questions={reviewData.questions}
               isHost={reviewData.is_host}
             />
-          )}
+          ) : reviewLoading ? (
+            <div className="flex items-center justify-center py-8 text-sm text-[var(--color-text-muted)]">
+              Loading question review…
+            </div>
+          ) : reviewError ? (
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-error)] bg-[var(--color-error-light)] px-4 py-3 text-sm text-[var(--color-error)]">
+              Failed to load question review: {reviewError.message}
+            </div>
+          ) : null}
         </div>
       ) : status === "connecting" || status === "connected" ? (
         <Lobby
