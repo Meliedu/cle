@@ -222,3 +222,33 @@ async def test_rescue_low_text_pages_respects_cap(monkeypatch):
     result = await parser_mod._rescue_low_text_pdf_pages(initial, b"fake", "test.pdf")
     assert rendered_counts == [5]
     assert len(result.pages) == 5
+
+
+def test_docling_converter_cached_across_calls(monkeypatch):
+    """_get_docling_converter must build the DocumentConverter once per
+    worker lifetime. Rebuilding costs ~5s of wall clock on CPU; caching is
+    the reason _parse_pdf is fast after the first PDF."""
+    from app.services import parser as parser_mod
+
+    monkeypatch.setattr(parser_mod, "_DOCLING_CONVERTER", None)
+
+    build_count = 0
+
+    class FakeConverter:
+        pass
+
+    def fake_builder(*_args, **_kwargs):
+        nonlocal build_count
+        build_count += 1
+        return FakeConverter()
+
+    # Patch the lazy-imported DocumentConverter at the location it's used.
+    import docling.document_converter as dc
+    monkeypatch.setattr(dc, "DocumentConverter", fake_builder)
+
+    first = parser_mod._get_docling_converter()
+    second = parser_mod._get_docling_converter()
+    third = parser_mod._get_docling_converter()
+
+    assert first is second is third
+    assert build_count == 1

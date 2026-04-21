@@ -321,24 +321,30 @@ def _parse_pdf_pymupdf(file_data: bytes, filename: str) -> ParseResult:
         doc.close()
 
 
-def _parse_pdf_docling(file_data: bytes, filename: str) -> ParseResult:
-    """Use Docling for layout-aware text + VLM figure captions.
+_DOCLING_CONVERTER = None
 
-    Captions are inlined as ``[Figure: ...]`` inside the page's text so the
-    chunker keeps them adjacent to the paragraph that introduces them. This
-    is intentionally a sync function — it's dispatched via ``to_thread`` so
-    Docling's blocking work (torch inference, HTTP to OpenRouter) doesn't
-    stall the event loop. Runs only inside the async worker, not the request
-    path, so 2–10 s/page latency is acceptable.
+
+def _get_docling_converter():
+    """Lazily build + cache a shared Docling ``DocumentConverter``.
+
+    Building a converter loads plugin registries, OCR/layout/tablestructure
+    engines, and pipeline options — roughly 3-5 s of wall clock on CPU.
+    Worker processes tasks one-at-a-time (see ``app.services.worker``), so
+    a single long-lived instance per worker is safe without extra locking
+    and saves that init cost on every PDF after the first.
     """
-    # Lazy import: avoids loading torch + transformers at module import time.
+    global _DOCLING_CONVERTER  # noqa: PLW0603
+    if _DOCLING_CONVERTER is not None:
+        return _DOCLING_CONVERTER
+
+    # Lazy imports: keeps torch / transformers / docling off the import path
+    # of services (API, tests) that never parse PDFs.
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import (
         PdfPipelineOptions,
         PictureDescriptionApiOptions,
     )
     from docling.document_converter import DocumentConverter, PdfFormatOption
-    from docling_core.types.io import DocumentStream
 
     api_url = f"{settings.openrouter_base_url.rstrip('/')}/chat/completions"
     picture_opts = PictureDescriptionApiOptions(
@@ -366,11 +372,27 @@ def _parse_pdf_docling(file_data: bytes, filename: str) -> ParseResult:
         enable_remote_services=True,
     )
 
-    converter = DocumentConverter(
+    _DOCLING_CONVERTER = DocumentConverter(
         format_options={
             InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
         }
     )
+    return _DOCLING_CONVERTER
+
+
+def _parse_pdf_docling(file_data: bytes, filename: str) -> ParseResult:
+    """Use Docling for layout-aware text + VLM figure captions.
+
+    Captions are inlined as ``[Figure: ...]`` inside the page's text so the
+    chunker keeps them adjacent to the paragraph that introduces them. This
+    is intentionally a sync function — it's dispatched via ``to_thread`` so
+    Docling's blocking work (torch inference, HTTP to OpenRouter) doesn't
+    stall the event loop. Runs only inside the async worker, not the request
+    path, so 2–10 s/page latency is acceptable.
+    """
+    from docling_core.types.io import DocumentStream
+
+    converter = _get_docling_converter()
 
     stream = DocumentStream(name=filename, stream=io.BytesIO(file_data))
     result = converter.convert(stream)
