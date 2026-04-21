@@ -29,12 +29,23 @@ const wsOrigin = apiOrigin.replace(/^https?:/, (match) =>
  *
  * In development, Turbopack and React DevTools rely on `eval`, so we allow
  * `'unsafe-eval'` and inline styles. Production stays strict.
+ *
+ * Note on style-src: we rely on `'unsafe-inline'` rather than a nonce
+ * because Clerk, Tailwind's JIT runtime, and some Next.js framework code
+ * inject `<style>` tags at runtime without the opportunity to carry our
+ * per-request nonce. Per the CSP L3 spec, `'unsafe-inline'` is IGNORED
+ * whenever a nonce or hash is also present on the same directive, so
+ * combining them (as an earlier version of this file did) left the
+ * policy nonce-only and broke Clerk's UI. Style-based XSS is
+ * substantially harder to exploit than script-based XSS; accepting
+ * `'unsafe-inline'` for styles is the standard trade-off in CSP
+ * deployments that want the strict nonce approach for scripts.
  */
 function buildCsp(nonce: string): string {
   const directives = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""} https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com`,
-    `style-src 'self' ${isDev ? "'unsafe-inline'" : `'nonce-${nonce}' 'unsafe-inline'`} https://fonts.googleapis.com`,
+    `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     "img-src 'self' data: blob: https:",
     "font-src 'self' https://fonts.gstatic.com data:",
     `connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://api.clerk.com${apiOrigin ? ` ${apiOrigin}` : ""}${wsOrigin ? ` ${wsOrigin}` : ""}`,
