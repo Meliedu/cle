@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import os
 import re
 import uuid
@@ -6,6 +8,8 @@ import boto3
 from botocore.config import Config
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 _s3_client = None
 
@@ -71,6 +75,22 @@ def download_file(r2_key: str) -> bytes:
 def delete_file(r2_key: str) -> None:
     client = get_s3_client()
     client.delete_object(Bucket=settings.r2_bucket_name, Key=r2_key)
+
+
+async def delete_file_safe(r2_key: str | None) -> None:
+    """Best-effort R2 delete used by terminal document cleanup paths.
+
+    Runs boto3 off the event loop and swallows any error — a missing key or
+    a transient R2 blip must not fail the HTTP request / worker transaction
+    that's tombstoning the document. Logs failures at WARNING so orphans
+    are still discoverable.
+    """
+    if not r2_key:
+        return
+    try:
+        await asyncio.to_thread(delete_file, r2_key)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("R2 delete failed for %s: %s", r2_key, exc)
 
 
 def generate_presigned_url(r2_key: str, expiration: int = 3600) -> str:

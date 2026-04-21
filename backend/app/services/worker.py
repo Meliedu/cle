@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import async_session_factory
 from app.models.api_usage import ApiUsage
 from app.models.task import Task
+from app.services.storage import delete_file_safe
 
 logger = logging.getLogger(__name__)
 
@@ -132,15 +133,21 @@ async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
                       AND (t.payload->>'document_id')::uuid = documents.id
                       AND t.status IN ('pending', 'running')
                )
+         RETURNING r2_key
             """
         ),
         {"grace_seconds": grace_seconds},
     )
+    orphan_keys = [row[0] for row in result.fetchall() if row[0]]
     await session.commit()
-    if result.rowcount:
+    # Reclaim R2 storage for the orphans. Best-effort: delete_file_safe
+    # swallows errors so a missing key can't undo the DB tombstone.
+    for r2_key in orphan_keys:
+        await delete_file_safe(r2_key)
+    if orphan_keys:
         logger.info(
             "Tombstoned orphaned processing documents: count=%d (grace=%ds)",
-            result.rowcount,
+            len(orphan_keys),
             grace_seconds,
         )
 
@@ -226,6 +233,7 @@ async def fail_task(session: AsyncSession, task_id, error: str) -> None:
     task.status = "failed" if permanently_failed else "pending"
     task.error_message = error
 
+    orphan_r2_key: str | None = None
     if permanently_failed and task.task_type == "process_document":
         document_id = task.payload.get("document_id")
         if document_id:
@@ -246,12 +254,18 @@ async def fail_task(session: AsyncSession, task_id, error: str) -> None:
                 doc = doc_result.scalar_one_or_none()
                 if doc:
                     doc.status = "failed"
+                    # Capture r2_key before commit so we can reclaim storage
+                    # once the tombstone is durable. A permanently-failed doc
+                    # can't be retried, so the uploaded bytes are dead weight.
+                    orphan_r2_key = doc.r2_key
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "Could not tombstone document %s on failed task", document_id
                 )
 
     await session.commit()
+    if orphan_r2_key:
+        await delete_file_safe(orphan_r2_key)
 
 
 async def process_task(session: AsyncSession, task: Task) -> dict | None:

@@ -180,3 +180,42 @@ def test_page_transcription_injection_drops_content():
         fallback="",
     )
     assert out == ""
+
+
+# ---- storage.delete_file_safe ---------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delete_file_safe_no_op_on_missing_key():
+    from app.services import storage
+
+    # Empty key → no boto call, no exception
+    await storage.delete_file_safe(None)
+    await storage.delete_file_safe("")
+
+
+@pytest.mark.asyncio
+async def test_delete_file_safe_swallows_errors(monkeypatch):
+    from app.services import storage
+
+    def raise_boom(_key):
+        raise RuntimeError("r2 transient error")
+
+    monkeypatch.setattr(storage, "delete_file", raise_boom)
+    # Must not raise — permanent-fail/soft-delete paths can't be blocked
+    # by a transient R2 error.
+    await storage.delete_file_safe("some/key.pdf")
+
+
+@pytest.mark.asyncio
+async def test_delete_file_safe_calls_delete_on_success(monkeypatch):
+    from app.services import storage
+
+    called: list[str] = []
+
+    def fake(key):
+        called.append(key)
+
+    monkeypatch.setattr(storage, "delete_file", fake)
+    await storage.delete_file_safe("my/key.pdf")
+    assert called == ["my/key.pdf"]

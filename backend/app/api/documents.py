@@ -16,7 +16,12 @@ from app.models.task import Task
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.schemas.document import DocumentResponse
-from app.services.storage import build_r2_key, sanitize_filename, upload_file
+from app.services.storage import (
+    build_r2_key,
+    delete_file_safe,
+    sanitize_filename,
+    upload_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -193,5 +198,9 @@ async def delete_document(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     doc.deleted_at = datetime.now(timezone.utc)
+    r2_key = doc.r2_key  # capture before commit in case the row is evicted
     await db.commit()
+    # Reclaim the R2 object so soft-deleted docs don't accumulate storage.
+    # Best-effort: a missing/already-gone key must not fail this request.
+    await delete_file_safe(r2_key)
     return APIResponse(success=True, data=None)
