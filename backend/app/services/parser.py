@@ -248,9 +248,18 @@ async def _rescue_low_text_pdf_pages(
         logger.exception("Page rescue: render failed for %s", filename)
         return result
 
-    transcriptions = await asyncio.gather(
-        *(transcribe_page(img) if img else _none() for img in rendered)
-    )
+    # Bound concurrent VLM calls so a 40-page scanned PDF doesn't fire 40
+    # simultaneous requests at OpenRouter. Matches _VLM_CONCURRENCY used by
+    # docling's figure-caption path.
+    sem = asyncio.Semaphore(_VLM_CONCURRENCY)
+
+    async def _bounded(img: bytes) -> str | None:
+        if not img:
+            return None
+        async with sem:
+            return await transcribe_page(img)
+
+    transcriptions = await asyncio.gather(*(_bounded(img) for img in rendered))
 
     rescued = 0
     for pn, transcribed in zip(capped, transcriptions):
@@ -280,9 +289,6 @@ async def _rescue_low_text_pdf_pages(
     )
 
 
-async def _none() -> None:
-    """Awaitable that yields None — placeholder for skipped render slots."""
-    return None
 
 
 def _parse_pdf_pymupdf(file_data: bytes, filename: str) -> ParseResult:
