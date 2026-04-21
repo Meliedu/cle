@@ -20,15 +20,21 @@ import {
   useDocumentSelection,
 } from "@/components/documents/document-selector";
 import { useGenerationJobs } from "@/hooks/use-generation-jobs";
+import {
+  DifficultySelector,
+  type Difficulty,
+} from "@/components/ui/difficulty-selector";
+import {
+  McqOptionCountInput,
+  QuestionTypeToggle,
+  type QuestionType,
+} from "@/components/quiz/quiz-generation-controls";
 
 interface GenerateLiveQuizDialogProps {
   readonly courseId: string;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
 }
-
-type QuestionType = "multiple_choice" | "true_false";
-type Difficulty = "easy" | "medium" | "hard" | "mixed";
 
 interface FormState {
   readonly title: string;
@@ -68,16 +74,6 @@ export function GenerateLiveQuizDialog({
   const [titleError, setTitleError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-
-  const toggleType = (t: QuestionType) => {
-    setForm((prev) => {
-      const has = prev.types.includes(t);
-      const next = has
-        ? prev.types.filter((x) => x !== t)
-        : [...prev.types, t];
-      return { ...prev, types: next.length > 0 ? next : prev.types };
-    });
-  };
 
   const handleSubmit = useCallback(
     async (e: { preventDefault: () => void }) => {
@@ -189,77 +185,22 @@ export function GenerateLiveQuizDialog({
                 }
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>MCQ options</Label>
-              <Input
-                type="number"
-                min={2}
-                max={6}
-                value={form.optionCount}
-                disabled={!includesMCQ}
-                onChange={(e) =>
-                  setForm((p) => ({
-                    ...p,
-                    optionCount: Math.max(
-                      2,
-                      Math.min(6, Number(e.target.value) || 4)
-                    ),
-                  }))
-                }
-              />
-            </div>
+            <McqOptionCountInput
+              value={form.optionCount}
+              disabled={!includesMCQ}
+              onChange={(n) => setForm((p) => ({ ...p, optionCount: n }))}
+            />
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Question types</Label>
-            <div className="flex gap-2">
-              {(
-                [
-                  { v: "multiple_choice", label: "Multiple choice" },
-                  { v: "true_false", label: "True / False" },
-                ] as const
-              ).map((opt) => {
-                const active = form.types.includes(opt.v);
-                return (
-                  <button
-                    key={opt.v}
-                    type="button"
-                    onClick={() => toggleType(opt.v)}
-                    className={`flex-1 rounded-[var(--radius-md)] border px-3 py-2 text-sm transition-colors ${
-                      active
-                        ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] font-medium"
-                        : "border-[var(--color-border)] hover:border-[var(--color-border-hover)]"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-xs text-[var(--color-text-muted)]">
-              Pick one or both. If you pick both, the generator mixes them.
-            </p>
-          </div>
+          <QuestionTypeToggle
+            value={form.types}
+            onChange={(next) => setForm((p) => ({ ...p, types: next }))}
+          />
 
-          <div className="space-y-1.5">
-            <Label>Difficulty</Label>
-            <div className="grid grid-cols-4 gap-2">
-              {(["easy", "medium", "hard", "mixed"] as const).map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => setForm((p) => ({ ...p, difficulty: d }))}
-                  className={`rounded-[var(--radius-md)] border px-3 py-2 text-sm capitalize transition-colors ${
-                    form.difficulty === d
-                      ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] font-medium"
-                      : "border-[var(--color-border)] hover:border-[var(--color-border-hover)]"
-                  }`}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
-          </div>
+          <DifficultySelector
+            value={form.difficulty}
+            onChange={(d) => setForm((p) => ({ ...p, difficulty: d }))}
+          />
 
           <DocumentSelector
             courseId={courseId}
