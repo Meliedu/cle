@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from app.services.live_quiz import (
@@ -205,6 +207,48 @@ class TestSessionState:
     def test_get_leaderboard_empty(self):
         state = SessionState(session_id="test", total_questions=5, time_limit=30)
         assert state.get_leaderboard() == []
+
+    def test_is_question_time_up_false_before_start(self):
+        state = SessionState(session_id="t", total_questions=5, time_limit=30)
+        assert state.is_question_time_up() is False
+
+    def test_is_question_time_up_false_when_active_within_time(self):
+        state = SessionState(session_id="t", total_questions=5, time_limit=30)
+        state.start()
+        assert state.is_question_time_up() is False
+
+    def test_is_question_time_up_true_after_time_limit(self):
+        state = SessionState(session_id="t", total_questions=5, time_limit=30)
+        state.start()
+        # Backdate the question start so the elapsed window has passed.
+        state.question_started_at = datetime.now(timezone.utc) - timedelta(
+            seconds=31
+        )
+        assert state.is_question_time_up() is True
+
+    def test_is_question_time_up_false_when_finished(self):
+        state = SessionState(session_id="t", total_questions=5, time_limit=30)
+        state.start()
+        state.question_started_at = datetime.now(timezone.utc) - timedelta(
+            seconds=31
+        )
+        state.status = "finished"
+        # Status check guards against revealing answers after the session ends —
+        # /review is the only post-session reveal path.
+        assert state.is_question_time_up() is False
+
+    def test_is_question_time_up_false_for_rehydrated_active_state(self):
+        """After a backend restart, ``_get_or_rehydrate_state`` reconstructs
+        ``status="active"`` from the DB but leaves ``question_started_at=None``
+        because we don't persist per-question start times. The reveal MUST
+        stay silent in this state — failing closed beats leaking the answer
+        with a guessed elapsed time."""
+        state = SessionState(session_id="t", total_questions=5, time_limit=30)
+        state.status = "active"
+        # Simulate the rehydration path: question_started_at intentionally
+        # left as None.
+        assert state.question_started_at is None
+        assert state.is_question_time_up() is False
 
 
 class TestConnectionManager:

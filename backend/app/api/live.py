@@ -147,7 +147,15 @@ async def _get_or_rehydrate_state(
 ) -> SessionState:
     """Fetch in-memory session state; rehydrate from DB if lost (e.g. after
     a backend restart). Scores accrued before the restart are not recovered —
-    the session resumes from the DB-persisted status/question index."""
+    the session resumes from the DB-persisted status/question index.
+
+    NOTE: ``question_started_at`` is intentionally NOT restored. We don't
+    persist per-question start times to the DB, and the safe failure mode is
+    "no per-question reveal until the host advances" rather than
+    "guess the elapsed time and risk leaking the answer too early". After a
+    rehydration ``is_question_time_up()`` returns False until the next
+    ``next_question`` call resets the timer.
+    """
     session_id = str(session.id)
     state = manager.get_session(session_id)
     if state is not None:
@@ -344,6 +352,21 @@ async def get_live_state(
         else {}
     )
 
+    # Per-question reveal: only emitted in per_question mode AND only after
+    # the server-side timer has elapsed. Hosts already get the answer key via
+    # the quiz endpoint, so this gate is purely about not leaking the answer
+    # to students before time is up.
+    current_reveal: dict | None = None
+    if state.review_mode == "per_question" and state.is_question_time_up():
+        question = await _load_question(
+            db, session.quiz_id, state.current_question_index
+        )
+        if question is not None:
+            current_reveal = {
+                "correct_answer": question.correct_answer,
+                "explanation": question.explanation,
+            }
+
     return APIResponse(
         success=True,
         data={
@@ -356,6 +379,7 @@ async def get_live_state(
             "answer_distribution": distribution,
             "review_mode": state.review_mode,
             "is_anonymous": str(user.id) in state.anonymous_users,
+            "current_reveal": current_reveal,
         },
     )
 
@@ -473,6 +497,105 @@ async def live_end_session(
                 )
             },
         )
+
+
+@router.get("/live-sessions/{session_id}/review")
+async def live_review(
+    session_id: str,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return per-question review data for the requester.
+
+    Available to the host at any time (they own the answer key). Available to
+    students only after the session has finished — this endpoint is the
+    end-of-session reveal channel for both ``per_question`` and ``final``
+    review modes. The current-question reveal mid-session goes through
+    ``/live-sessions/{id}/state`` instead.
+    """
+    session = await _get_session_or_404(db, session_id)
+    await verify_enrollment(db, session.course_id, user.id)
+
+    is_host = session.host_id == user.id
+    if not is_host and session.status != "finished":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="session_not_finished",
+        )
+
+    q_result = await db.execute(
+        select(Question)
+        .where(Question.quiz_id == session.quiz_id)
+        .order_by(Question.question_index)
+    )
+    questions = q_result.scalars().all()
+
+    state = manager.get_session(session_id)
+    user_id_str = str(user.id)
+    user_answers: dict[int, str] = (
+        state.player_answers.get(user_id_str, {}) if state else {}
+    )
+
+    # If the in-memory state was lost (backend restart between session-end
+    # and the student opening the review tab), fall back to the persisted
+    # QuizAttempt.answers so students can still see their submissions.
+    if not is_host and not user_answers and session.status == "finished":
+        attempt_result = await db.execute(
+            select(QuizAttempt).where(
+                QuizAttempt.live_session_id == session.id,
+                QuizAttempt.user_id == user.id,
+            )
+        )
+        attempt = attempt_result.scalar_one_or_none()
+        if attempt and attempt.answers:
+            for k, v in attempt.answers.items():
+                try:
+                    # Treat blank submissions as "no answer" so the UI shows
+                    # the proper "did not answer" state instead of "wrong".
+                    if v is None or (isinstance(v, str) and v.strip() == ""):
+                        continue
+                    user_answers[int(k)] = v
+                except (TypeError, ValueError):
+                    continue
+
+    review_items: list[dict] = []
+    for q in questions:
+        your_answer = user_answers.get(q.question_index)
+        # TODO: ``is_correct`` is recomputed against the CURRENT
+        # ``q.correct_answer``. If an instructor edits a question between
+        # session-end and the student opening review, the displayed verdict
+        # may diverge from the QuizAttempt.score (which is frozen at
+        # session-end). Score is authoritative; this only affects the
+        # per-question chip. Acceptable for now — to fully fix, persist a
+        # snapshot of (correct_answer, options) inside the QuizAttempt JSON.
+        is_correct = (
+            _answer_is_correct(your_answer, q.correct_answer)
+            if your_answer is not None
+            else None
+        )
+        item: dict = {
+            "question_id": str(q.id),
+            "question_index": q.question_index,
+            "question_text": q.question_text,
+            "options": q.options,
+            "correct_answer": q.correct_answer,
+            "explanation": q.explanation,
+            "your_answer": your_answer,
+            "is_correct": is_correct,
+        }
+        if is_host and state is not None:
+            item["answer_distribution"] = state.get_answer_distribution(
+                q.question_index
+            )
+        review_items.append(item)
+
+    return APIResponse(
+        success=True,
+        data={
+            "is_host": is_host,
+            "questions": review_items,
+        },
+    )
 
 
 @router.post("/live-sessions/{session_id}/anonymity")

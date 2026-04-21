@@ -72,6 +72,14 @@ class SessionState:
             return 0.0
         return (datetime.now(timezone.utc) - self.question_started_at).total_seconds()
 
+    def is_question_time_up(self) -> bool:
+        """True only when the session is active AND the per-question timer
+        has elapsed. Used to gate per-question answer reveals to students —
+        the server is the authority on "time is up", not the client clock."""
+        if self.status != "active" or self.question_started_at is None:
+            return False
+        return self.elapsed_seconds() >= self.time_limit
+
     def add_participant(self, user_id: str) -> bool:
         """Mark a user as present in the session. Returns True if newly added."""
         if user_id in self.participants:
