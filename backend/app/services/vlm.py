@@ -22,15 +22,16 @@ logger = logging.getLogger(__name__)
 
 _client: AsyncOpenAI | None = None
 
-_CAPTION_MAX_CHARS = 600
+_CAPTION_MAX_CHARS = 1800
+_PAGE_MAX_CHARS = 8000
 _CAPTION_INJECTION_PATTERNS = _re.compile(
     r"(ignore\s+(all|previous|prior)|system\s+prompt|<\|\w+\|>|\[INST\]|\[/INST\])",
     _re.IGNORECASE,
 )
 
 
-def _sanitize_caption(raw: str) -> str:
-    """Post-process a VLM caption before it enters the chunk pipeline.
+def _sanitize_vlm_text(raw: str, *, max_chars: int, fallback: str) -> str:
+    """Post-process raw VLM output before it enters the chunk pipeline.
 
     Protects against indirect prompt-injection carried in adversarial image
     text: the VLM faithfully transcribes "Ignore all previous instructions"
@@ -40,22 +41,43 @@ def _sanitize_caption(raw: str) -> str:
     cleaned = (raw or "").strip()
     if not cleaned:
         return ""
-    if len(cleaned) > _CAPTION_MAX_CHARS:
-        cleaned = cleaned[:_CAPTION_MAX_CHARS] + "…"
+    if len(cleaned) > max_chars:
+        cleaned = cleaned[:max_chars] + "…"
     if _CAPTION_INJECTION_PATTERNS.search(cleaned):
-        return "[Figure: (caption omitted — flagged pattern)]"
+        return fallback
     return cleaned
 
 
+# Caption prompt: describe visuals AND transcribe any readable text. Slide
+# decks, screenshots, and scanned textbook pages often surface here as
+# "figures"; verbatim text preserves content that would otherwise be reduced
+# to a vague summary.
 _CAPTION_PROMPT = (
-    "You are describing a figure from a university lecture slide or textbook "
-    "page for a student who can't see it. Be concrete and information-dense. "
-    "Prefer labels, axes, data points, relationships, and what the figure is "
-    "*about* over generic descriptions. Keep it under 80 words. Output only "
-    "the description — no preamble, no 'This figure shows...'."
+    "You are extracting content from a university lecture slide, textbook "
+    "page, or figure for a student. If the image contains substantial "
+    "readable text (slide bullets, screenshot, scanned page), transcribe "
+    "ALL visible text VERBATIM first, preserving order and line breaks. "
+    "Then, only if there is additional visual content (diagram, chart, "
+    "photograph), briefly describe it — labels, axes, data points, "
+    "relationships. Omit the description when the image is pure text. "
+    "Keep total output under 300 words. Output only the content — no "
+    "preamble, no 'This figure shows…'."
 )
 
-_MAX_CAPTION_TOKENS = 250
+# Page-transcription prompt: full-page OCR rescue for scanned/image-only
+# PDF pages. Longer output budget than figure captions.
+_PAGE_PROMPT = (
+    "This is a page from a university lecture, textbook, or slide deck. "
+    "Transcribe ALL readable text VERBATIM, preserving reading order and "
+    "line breaks. Keep headings, bullets, numbered lists, and equations "
+    "intact. If there are diagrams, charts, or photos, add a short "
+    "bracketed description like [Figure: bar chart comparing X and Y] "
+    "placed where it appears in the reading flow. Output only the page "
+    "content — no preamble."
+)
+
+_MAX_CAPTION_TOKENS = 600
+_MAX_PAGE_TOKENS = 2500
 _MAX_ATTEMPTS = 3
 
 
@@ -89,28 +111,24 @@ def _get_client() -> AsyncOpenAI:
     return _client
 
 
-async def caption_image(image_bytes: bytes, context: str = "") -> str | None:
-    """Return a short caption for the image, or None on any failure.
-
-    context is optional surrounding text (slide text, nearby paragraph) that
-    helps the VLM disambiguate figures. Trimmed to keep the prompt tight.
-    """
+async def _vlm_call(
+    prompt: str,
+    image_bytes: bytes,
+    *,
+    max_tokens: int,
+    log_label: str,
+) -> str | None:
+    """Send a single prompt+image to the VLM with retries. Never raises."""
     if not image_bytes:
         return None
     if not settings.enable_figure_captions:
         return None
     if not settings.openrouter_api_key:
-        logger.warning("caption_image skipped: OPENROUTER_API_KEY not set")
+        logger.warning("%s skipped: OPENROUTER_API_KEY not set", log_label)
         return None
 
     mime = _detect_mime(image_bytes)
     data_uri = f"data:{mime};base64,{base64.b64encode(image_bytes).decode('ascii')}"
-
-    prompt = _CAPTION_PROMPT
-    if context:
-        trimmed = context.strip().replace("\n", " ")[:800]
-        if trimmed:
-            prompt = f"{_CAPTION_PROMPT}\n\nSurrounding text for context:\n{trimmed}"
 
     messages = [
         {
@@ -129,11 +147,9 @@ async def caption_image(image_bytes: bytes, context: str = "") -> str | None:
             response = await client.chat.completions.create(
                 model=settings.vlm_model,
                 messages=messages,
-                max_tokens=_MAX_CAPTION_TOKENS,
+                max_tokens=max_tokens,
             )
-            caption = (response.choices[0].message.content or "").strip()
-            sanitized = _sanitize_caption(caption)
-            return sanitized or None
+            return (response.choices[0].message.content or "").strip() or None
         except (
             openai.RateLimitError,
             openai.APITimeoutError,
@@ -141,16 +157,66 @@ async def caption_image(image_bytes: bytes, context: str = "") -> str | None:
             openai.InternalServerError,
         ) as exc:
             if attempt == _MAX_ATTEMPTS:
-                logger.warning("VLM caption failed after retries: %s", exc)
+                logger.warning("%s failed after retries: %s", log_label, exc)
                 return None
             await asyncio.sleep(delay)
             delay *= 2
         except Exception as exc:  # noqa: BLE001 — never escape
             logger.warning(
-                "VLM caption failed (non-retryable): %s (mime=%s, bytes=%d)",
+                "%s failed (non-retryable): %s (mime=%s, bytes=%d)",
+                log_label,
                 exc,
                 mime,
                 len(image_bytes),
             )
             return None
     return None
+
+
+async def caption_image(image_bytes: bytes, context: str = "") -> str | None:
+    """Return a caption for the image, or None on any failure.
+
+    context is optional surrounding text (slide text, nearby paragraph) that
+    helps the VLM disambiguate figures. Trimmed to keep the prompt tight.
+    """
+    prompt = _CAPTION_PROMPT
+    if context:
+        trimmed = context.strip().replace("\n", " ")[:800]
+        if trimmed:
+            prompt = f"{_CAPTION_PROMPT}\n\nSurrounding text for context:\n{trimmed}"
+
+    raw = await _vlm_call(
+        prompt,
+        image_bytes,
+        max_tokens=_MAX_CAPTION_TOKENS,
+        log_label="VLM caption",
+    )
+    if raw is None:
+        return None
+    return _sanitize_vlm_text(
+        raw,
+        max_chars=_CAPTION_MAX_CHARS,
+        fallback="[Figure: (caption omitted — flagged pattern)]",
+    ) or None
+
+
+async def transcribe_page(image_bytes: bytes) -> str | None:
+    """Verbatim-transcribe a full PDF page rendered to an image.
+
+    Used as a rescue pass when the primary text extractor (docling/pymupdf)
+    returns very little for a page — typically a scanned page or a slide
+    exported to PDF as raster. Never raises.
+    """
+    raw = await _vlm_call(
+        _PAGE_PROMPT,
+        image_bytes,
+        max_tokens=_MAX_PAGE_TOKENS,
+        log_label="VLM page transcription",
+    )
+    if raw is None:
+        return None
+    return _sanitize_vlm_text(
+        raw,
+        max_chars=_PAGE_MAX_CHARS,
+        fallback="",  # drop the page entirely if injection detected
+    ) or None
