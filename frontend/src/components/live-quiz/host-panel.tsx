@@ -82,6 +82,14 @@ export function HostPanel({
 
   const [showDistribution, setShowDistribution] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  /* The host's screen is often projected to the class — keep the answer key
+   * hidden by default so students can't see it during the active question.
+   * Toggle for the host to peek when needed; auto-reveals once the timer is
+   * up regardless. Resets on every new question. */
+  const [showAnswerOverride, setShowAnswerOverride] = useState(false);
+  useEffect(() => {
+    setShowAnswerOverride(false);
+  }, [currentQuestion?.index]);
 
   const optionKeys = questionData?.options
     ? Object.keys(questionData.options)
@@ -93,7 +101,12 @@ export function HostPanel({
 
   /* Per-question review: once time is up, reveal correct answer on the card. */
   const isRevealing = reviewMode === "per_question" && isTimeUp;
-  const revealCorrect = isRevealing ? questionData?.correct_answer : undefined;
+  /* The answer may be visible to the host because:
+   * 1. timer expired in per_question mode (auto-reveal), OR
+   * 2. host explicitly clicked "Show answer" to peek.
+   * In all other states it stays hidden so a projected screen doesn't leak. */
+  const answerVisible = isRevealing || showAnswerOverride;
+  const revealCorrect = answerVisible ? questionData?.correct_answer : undefined;
 
   return (
     <div className="space-y-4">
@@ -149,10 +162,32 @@ export function HostPanel({
 
       {questionData && (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">
               Question {questionIndex + 1}
             </CardTitle>
+            {/* Lets the host peek at the answer without auto-projecting it
+             * to the class. Hidden once the timer expires because the
+             * answer is shown to everyone anyway. */}
+            {!isRevealing && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAnswerOverride((v) => !v)}
+              >
+                {showAnswerOverride ? (
+                  <>
+                    <EyeOff className="size-4" />
+                    Hide answer
+                  </>
+                ) : (
+                  <>
+                    <Eye className="size-4" />
+                    Show answer
+                  </>
+                )}
+              </Button>
+            )}
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-[var(--color-text)]">
@@ -164,7 +199,7 @@ export function HostPanel({
                   <div
                     key={key}
                     className={`rounded-[var(--radius-md)] border px-3 py-2 text-sm ${
-                      questionData.correct_answer === key
+                      answerVisible && questionData.correct_answer === key
                         ? "border-[var(--color-success)] bg-[var(--color-success-light)] font-medium text-[var(--color-success)]"
                         : "border-[var(--color-border)] text-[var(--color-text-secondary)]"
                     }`}
@@ -206,7 +241,9 @@ export function HostPanel({
             <AnswerDistribution
               distribution={answerDistribution}
               optionKeys={optionKeys}
-              correctAnswer={revealCorrect ?? questionData?.correct_answer}
+              // Same gate as the question card — never highlight the correct
+              // bar before the timer expires unless the host is peeking.
+              correctAnswer={revealCorrect}
               totalAnswers={totalAnswers}
             />
           )}
