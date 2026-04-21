@@ -13,7 +13,7 @@ from fastapi import (
     status,
 )
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -539,6 +539,7 @@ async def _persist_session_activity(
             )
             .on_conflict_do_nothing(
                 index_elements=["user_id", "live_session_id"],
+                index_where=text("live_session_id IS NOT NULL"),
             )
             .returning(QuizAttempt.id)
         )
