@@ -15,6 +15,7 @@ class ApiUsage(UUIDPrimaryKeyMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     endpoint: Mapped[str] = mapped_column(String(100), nullable=False)
+    method: Mapped[str] = mapped_column(String(8), nullable=False)
     tokens_used: Mapped[int] = mapped_column(Integer, default=0)
     model: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(

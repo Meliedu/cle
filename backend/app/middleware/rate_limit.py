@@ -150,10 +150,20 @@ class RateLimitMiddleware:
                 effective_limit = 60 if is_get_poll else _get_rate_limit(user.role)
                 window_start = datetime.now(timezone.utc) - window
 
+                # Each traffic class (GET polling vs non-GET generation) has
+                # its own cap and must be counted against only its own rows.
+                # Mixing them caused aggressive poll traffic to eat the
+                # hourly generation quota and produce spurious 429s.
+                method_filter = (
+                    ApiUsage.method == "GET"
+                    if is_get_poll
+                    else ApiUsage.method != "GET"
+                )
                 count_result = await session.execute(
                     select(func.count(ApiUsage.id)).where(
                         ApiUsage.user_id == user.id,
                         ApiUsage.created_at >= window_start,
+                        method_filter,
                     )
                 )
                 request_count = count_result.scalar_one()
@@ -183,7 +193,11 @@ class RateLimitMiddleware:
                 # advisory-lock-protected transaction. If the downstream
                 # request fails (non-2xx) we delete this row below so failed
                 # calls don't burn the quota.
-                usage = ApiUsage(user_id=user.id, endpoint=path[:100])
+                usage = ApiUsage(
+                    user_id=user.id,
+                    endpoint=path[:100],
+                    method=method[:8],
+                )
                 session.add(usage)
                 await session.commit()
                 await session.refresh(usage)
