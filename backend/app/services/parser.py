@@ -215,7 +215,13 @@ def _parse_pdf_docling(file_data: bytes, filename: str) -> ParseResult:
     # generate_picture_images left at default (False): we only consume
     # `picture.annotations[*].text`; keeping the rendered image on every
     # PictureItem inflates RAM on figure-heavy PDFs with no upside.
+    # do_ocr=False: course PDFs are text-native (lectures, papers); we get
+    # figure content via VLM captions, not OCR of embedded text images. Leaving
+    # OCR on makes docling load rapidocr, which tries to download ONNX weights
+    # into site-packages at runtime — the non-root app user can't write there
+    # and the whole pipeline fails.
     pipeline_options = PdfPipelineOptions(
+        do_ocr=False,
         do_picture_description=True,
         picture_description_options=picture_opts,
         images_scale=2.0,
