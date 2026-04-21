@@ -12,11 +12,18 @@ import { PlayerView } from "@/components/live-quiz/player-view";
 import { Podium } from "@/components/live-quiz/podium";
 import { LiveReview } from "@/components/live-quiz/live-review";
 import {
+  useDeleteLiveSession,
   useLiveQuiz,
   useLiveReview,
   useLiveSession,
 } from "@/hooks/use-live-quiz";
 import { useQuiz } from "@/hooks/use-quizzes";
+import { API_URL } from "@/lib/api";
+
+/* React Strict Mode synthetically unmounts/remounts components within the
+ * same microtask on first mount in dev. A real host leaving the page takes
+ * at least this long. Sub-1s real unmounts skip cleanup — acceptable. */
+const STRICT_MODE_DEBOUNCE_MS = 1000;
 
 interface LiveSessionPageProps {
   params: Promise<{ courseId: string; sessionId: string }>;
@@ -87,6 +94,64 @@ export default function LiveSessionPage({ params }: LiveSessionPageProps) {
       questionStartRef.current = Date.now();
     }
   }, [currentQuestion]);
+
+  /* Auto-delete the session when the host leaves a finished session so the
+   * dashboard doesn't accumulate stale "done" sessions. Two cleanup paths:
+   *  1. React unmount (client-side route change, e.g. clicking Back) — fires
+   *     the TanStack mutation which goes through apiFetch.
+   *  2. Tab close / external navigation (visibilitychange=hidden) — fires a
+   *     keepalive fetch so the DELETE survives the document tearing down.
+   *     sendBeacon doesn't support custom headers, so keepalive fetch is the
+   *     only way to attach the Bearer token.
+   * Guards:
+   *  - host only (backend DELETE also enforces this; this avoids a pointless
+   *    403 round-trip for students)
+   *  - STRICT_MODE_DEBOUNCE_MS on the unmount path dodges React Strict Mode's
+   *    synthetic unmount/remount cycle on first mount in dev. */
+  const deleteSessionMut = useDeleteLiveSession(courseId);
+  const deleteMutateRef = useRef(deleteSessionMut.mutate);
+  deleteMutateRef.current = deleteSessionMut.mutate;
+  const shouldDeleteOnLeaveRef = useRef(false);
+  shouldDeleteOnLeaveRef.current = isHost && status === "finished";
+  const tokenRef = useRef<string | null>(null);
+  tokenRef.current = token;
+  const mountTimeRef = useRef<number>(0);
+  useEffect(() => {
+    mountTimeRef.current = Date.now();
+
+    /* Path 2: tab-close / external nav. visibilitychange fires before
+     * pagehide on mobile Safari and is the most reliable "user leaving"
+     * signal. keepalive: true tells the browser to complete the fetch even
+     * as the document unloads. */
+    const onHide = () => {
+      if (document.visibilityState !== "hidden") return;
+      if (!shouldDeleteOnLeaveRef.current) return;
+      const t = tokenRef.current;
+      if (!t) return;
+      fetch(`${API_URL}/live-sessions/${sessionId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${t}` },
+        keepalive: true,
+      }).catch(() => {
+        /* Unload context — the fetch either completed via keepalive or the
+         * browser dropped it. Either way, nothing useful to do with the
+         * error; suppress unhandled-rejection noise. */
+      });
+    };
+    document.addEventListener("visibilitychange", onHide);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      /* Path 1: React unmount. */
+      const mountedMs = Date.now() - mountTimeRef.current;
+      if (
+        shouldDeleteOnLeaveRef.current &&
+        mountedMs > STRICT_MODE_DEBOUNCE_MS
+      ) {
+        deleteMutateRef.current(sessionId);
+      }
+    };
+  }, [sessionId]);
 
   /* Get current question data from the quiz detail */
   const currentQuestionData =
