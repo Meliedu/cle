@@ -178,3 +178,33 @@ class TestDataclasses:
         page = PageContent(page_number=1, text="hello")
         with pytest.raises(AttributeError):
             page.text = "modified"  # type: ignore[misc]
+
+
+class TestOversizedSentence:
+    """Regression tests for the infinite-loop bug when a single 'sentence'
+    (no .?! punctuation, no double newlines) exceeds MAX_TOKENS. VLM-rescued
+    slide pages produce exactly this shape — long bullet lists without
+    terminal punctuation."""
+
+    def test_single_giant_sentence_terminates(self) -> None:
+        from app.services.chunker import MAX_TOKENS, chunk_text
+
+        # Use a long enough string with no sentence-boundary characters.
+        words = ["content"] * (MAX_TOKENS * 3)
+        text = " ".join(words)  # no periods, no "\n\n"
+        chunks = chunk_text(text)
+        assert chunks, "expected at least one chunk, not an infinite loop"
+        # Forward progress is what matters; every sentence should end up
+        # somewhere.
+        reconstructed = " ".join(c.content for c in chunks)
+        assert "content" in reconstructed
+
+    def test_giant_then_normal_sentence_both_emitted(self) -> None:
+        from app.services.chunker import MAX_TOKENS, chunk_text
+
+        giant = " ".join(["slide"] * (MAX_TOKENS * 2))  # one big "sentence"
+        text = giant + ". Afterthought."
+        chunks = chunk_text(text)
+        # Must not loop; must emit chunks covering both fragments.
+        assert len(chunks) >= 1
+        assert any("Afterthought" in c.content for c in chunks)

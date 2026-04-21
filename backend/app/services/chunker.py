@@ -140,6 +140,13 @@ def chunk_text(
         # the sentence that pushes us over the threshold — otherwise any
         # trailing sentence longer than OVERLAP_TOKENS silently produced
         # zero overlap between consecutive chunks.
+        #
+        # Forward-progress guard: we must advance by at least one sentence
+        # per outer iteration, otherwise a single oversized sentence (long
+        # VLM transcription, a paragraph with no .?! punctuation) makes the
+        # rewind put `i` back at `start_i` and the outer loop spins forever.
+        # Cap rewind at (i - start_i - 1) so at least one sentence stays
+        # "consumed" per iteration.
         if i < len(sentences):
             overlap_tokens = 0
             rewind = 0
@@ -149,6 +156,9 @@ def chunk_text(
                 rewind += 1
                 if overlap_tokens >= OVERLAP_TOKENS:
                     break
+            max_rewind = (i - start_i) - 1
+            if rewind > max_rewind:
+                rewind = max_rewind
             if rewind > 0:
                 i -= rewind
 
