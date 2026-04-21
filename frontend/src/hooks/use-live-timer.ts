@@ -46,7 +46,23 @@ export function useLiveTimer(
   }, [questionIndex]);
 
   if (questionIndex == null || questionIndex < 0) return 0;
-  const elapsedLocal = (now - anchorRef.current.anchorMs) / 1000;
+  /* On the first render after a new question arrives, the ref still holds
+   * the previous question's anchor (the sync effect above hasn't run yet —
+   * effects fire post-commit). Using the stale anchor returns 0 for one
+   * frame, which briefly flips the host panel into the "time up / reveal"
+   * state and leaks the correct answer in green. Derive a fresh anchor
+   * locally; the effect persists a nearly-identical value for subsequent
+   * renders (same formula, same elapsedSeconds, Date.now() drifts by <1ms).
+   *
+   * Strict-mode note: Date.now() in render is technically an impurity —
+   * double-invoke gets two different clock reads. Both values collapse to
+   * the same integer through Math.ceil + clamp in practice, and the
+   * committed render's value is what users observe. Accepted. */
+  const anchorMs =
+    anchorRef.current.index === questionIndex
+      ? anchorRef.current.anchorMs
+      : Date.now() - elapsedSeconds * 1000;
+  const elapsedLocal = (now - anchorMs) / 1000;
   const remaining = Math.ceil(timeLimit - elapsedLocal);
   return Math.max(0, Math.min(timeLimit, remaining));
 }
