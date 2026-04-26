@@ -52,3 +52,6 @@ prompt/
 # Claude Code harness runtime state (per-session locks, caches)
 .claude/*.lock
 .claude/.cache/
+
+# Playwright MCP browser-probe cache (console logs + DOM snapshots)
+.playwright-mcp/
