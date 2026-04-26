@@ -10,18 +10,35 @@
   --color-accent-hover: oklch(53% 0.14 230);
   --color-accent-light: oklch(95% 0.03 230);
 
-  /* Surfaces — warm off-white */
-  --color-bg: oklch(98% 0.008 80);
+  /* Warm supporting hues used in illustrations + featured areas */
+  --color-coral: oklch(70% 0.13 35);
+  --color-coral-soft: oklch(88% 0.07 35);
+  --color-cream: oklch(93% 0.04 75);
+  --color-sand: oklch(88% 0.05 65);
+  --color-olive: oklch(55% 0.06 120);
+
+  /* Review/rating gold (harmonises with honey) */
+  --color-gold: oklch(80% 0.15 85);
+
+  /* Surfaces — warm off-white body, pure white cards */
+  --color-bg: oklch(93% 0.015 65);
   --color-surface: oklch(100% 0 0);
-  --color-surface-hover: oklch(97% 0.005 80);
+  --color-surface-hover: oklch(97% 0.008 75);
   --color-surface-raised: oklch(99% 0.004 80);
   --color-border: oklch(92% 0.01 80);
   --color-border-hover: oklch(85% 0.02 80);
 
+  /* Dark navigation rail — deep bronze, still in the honey family */
+  --color-rail: oklch(22% 0.022 65);
+  --color-rail-raised: oklch(26% 0.022 65);
+  --color-rail-text: oklch(88% 0.01 70);
+  --color-rail-text-muted: oklch(72% 0.018 70);
+  --color-rail-border: oklch(30% 0.02 65);
+
   /* Text — warm dark, not harsh black */
   --color-text: oklch(20% 0.01 50);
   --color-text-secondary: oklch(40% 0.01 50);
-  --color-text-muted: oklch(55% 0.01 50);
+  --color-text-muted: oklch(58% 0.01 50);
   --color-text-on-primary: oklch(18% 0.02 60);
 
   /* Semantic */
@@ -41,6 +58,7 @@
   --text-2xl: 1.5rem;
   --text-3xl: 1.875rem;
   --text-4xl: clamp(2rem, 1.5rem + 2vw, 2.5rem);
+  --text-display: clamp(2.25rem, 1.25rem + 3.5vw, 3.5rem);
 
   /* Spacing — 4px grid */
   --space-1: 0.25rem;
@@ -60,12 +78,15 @@
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
   --radius-2xl: 1.25rem;
+  --radius-3xl: 1.75rem;
+  --radius-pill: 9999px;
 
   /* Shadows — warm tinted */
   --shadow-sm: 0 1px 2px oklch(30% 0.02 60 / 0.06);
   --shadow-md: 0 4px 6px -1px oklch(30% 0.02 60 / 0.08), 0 2px 4px -2px oklch(30% 0.02 60 / 0.04);
   --shadow-lg: 0 10px 15px -3px oklch(30% 0.02 60 / 0.1), 0 4px 6px -4px oklch(30% 0.02 60 / 0.05);
   --shadow-xl: 0 20px 25px -5px oklch(30% 0.02 60 / 0.1), 0 8px 10px -6px oklch(30% 0.02 60 / 0.05);
+  --shadow-shell: 0 30px 60px -30px oklch(25% 0.03 60 / 0.2), 0 10px 30px -15px oklch(25% 0.03 60 / 0.1);
 
   /* Motion */
   --duration-fast: 150ms;

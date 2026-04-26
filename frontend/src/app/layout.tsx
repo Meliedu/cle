@@ -8,7 +8,11 @@ import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { QueryProvider } from "@/components/providers/query-provider";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Meli - Language Learning Assistant",
@@ -30,8 +34,8 @@ export default async function RootLayout({
 
   return (
     <ClerkProvider nonce={nonce} dynamic>
-      <html lang={locale}>
-        <body className={inter.className}>
+      <html lang={locale} className={inter.variable}>
+        <body className="font-sans antialiased">
           <NextIntlClientProvider messages={messages}>
             <QueryProvider>{children}</QueryProvider>
           </NextIntlClientProvider>

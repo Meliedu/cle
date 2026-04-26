@@ -2,6 +2,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "react-day-picker/src/style.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -138,6 +139,22 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+
+  /* Slim, warm scrollbar for the editorial course list. */
+  .scrollbar-warm {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-hover) transparent;
+  }
+  .scrollbar-warm::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scrollbar-warm::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-warm::-webkit-scrollbar-thumb {
+    background: var(--color-border-hover);
+    border-radius: var(--radius-pill);
+  }
 }
 
 @layer components {
@@ -225,6 +242,136 @@
     background: var(--color-surface);
     font-weight: 600;
   }
+}
+
+/* ==========================================================================
+   react-day-picker — Meli honey/bronze theme overrides
+   ========================================================================== */
+.meli-day-picker {
+  --rdp-accent-color: var(--color-primary);
+  --rdp-accent-background-color: var(--color-primary-light);
+  --rdp-background-color: transparent;
+  --rdp-range_middle-background-color: var(--color-primary-light);
+  --rdp-today-color: var(--color-primary-hover);
+  --rdp-day-height: 40px;
+  --rdp-day-width: 40px;
+  --rdp-day_button-height: 36px;
+  --rdp-day_button-width: 36px;
+  --rdp-day_button-border-radius: 9999px;
+  --rdp-selected-border: 0;
+  --rdp-outside-opacity: 0.4;
+  --rdp-weekday-opacity: 1;
+  width: 100%;
+  font-size: 13px;
+  color: var(--color-text);
+}
+.meli-day-picker .rdp-month,
+.meli-day-picker .rdp-months {
+  width: 100%;
+}
+.meli-day-picker .rdp-month_grid {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.meli-day-picker .rdp-weekday,
+.meli-day-picker .rdp-day {
+  width: calc(100% / 7);
+  padding: 0;
+  text-align: center;
+}
+.meli-day-picker .rdp-day_button {
+  margin-inline: auto;
+}
+.meli-day-picker .rdp-caption_label {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+}
+.meli-day-picker .rdp-month_caption {
+  padding: 4px 6px 10px;
+}
+.meli-day-picker .rdp-nav {
+  gap: 4px;
+}
+.meli-day-picker .rdp-button_previous,
+.meli-day-picker .rdp-button_next {
+  color: var(--color-text-secondary);
+  border-radius: 999px;
+  width: 28px;
+  height: 28px;
+}
+.meli-day-picker .rdp-button_previous:hover,
+.meli-day-picker .rdp-button_next:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+.meli-day-picker .rdp-weekday {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  padding: 6px 0;
+}
+.meli-day-picker .rdp-day_button {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  transition: background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.meli-day-picker .rdp-day_button:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+.meli-day-picker .rdp-today:not(.rdp-selected) .rdp-day_button {
+  color: var(--color-primary);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px var(--color-primary-muted);
+}
+.meli-day-picker .rdp-selected .rdp-day_button {
+  background: var(--color-primary);
+  color: var(--color-text-on-primary);
+  font-weight: 600;
+}
+.meli-day-picker .rdp-outside .rdp-day_button {
+  color: var(--color-text-muted);
+}
+.meli-day-picker .rdp-disabled .rdp-day_button {
+  color: var(--color-text-muted);
+  opacity: 0.4;
+}
+/* Event dot under day numbers — only when the day has an event and isn't selected */
+.meli-day-picker .rdp-day.meli-has-event:not(.rdp-selected) .rdp-day_button {
+  position: relative;
+}
+.meli-day-picker .rdp-day.meli-has-event:not(.rdp-selected) .rdp-day_button::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--color-primary);
+}
+/* Larger variant for the full /dashboard/calendar page */
+.meli-day-picker--large {
+  --rdp-day-height: 52px;
+  --rdp-day-width: 52px;
+  --rdp-day_button-height: 44px;
+  --rdp-day_button-width: 44px;
+  font-size: 14px;
+}
+.meli-day-picker--large .rdp-weekday {
+  font-size: 11px;
+  padding: 10px 0;
+}
+.meli-day-picker--large .rdp-caption_label {
+  font-size: 16px;
 }
 
 @keyframes generation-dock-progress {
