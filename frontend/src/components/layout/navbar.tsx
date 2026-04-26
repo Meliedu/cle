@@ -77,9 +77,11 @@ function useBreadcrumbs(): readonly Crumb[] {
 
 export function Navbar({ onMenuClick }: NavbarProps) {
   const breadcrumbs = useBreadcrumbs();
+  const pathname = usePathname();
+  const isDashboardRoot = pathname === "/dashboard";
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 md:px-6">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)]/60 bg-[var(--color-surface)] px-4 md:h-16 md:px-8">
       <div className="flex items-center gap-3">
         {/* Mobile hamburger */}
         <button
@@ -90,34 +92,39 @@ export function Navbar({ onMenuClick }: NavbarProps) {
           <Menu className="size-5" />
         </button>
 
-        {/* Breadcrumbs */}
-        <nav
-          aria-label="Breadcrumb"
-          className="flex items-center gap-1 text-sm"
-        >
-          {breadcrumbs.map((crumb, index) => {
-            const isLast = index === breadcrumbs.length - 1;
-            return (
-              <span key={crumb.href} className="flex items-center gap-1">
-                {index > 0 && (
-                  <ChevronRight className="size-3.5 text-[var(--color-text-muted)]" />
-                )}
-                {isLast ? (
-                  <span className="font-medium text-[var(--color-text)]">
-                    {crumb.label}
-                  </span>
-                ) : (
-                  <Link
-                    href={crumb.href}
-                    className="text-[var(--color-text-muted)] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-text)]"
-                  >
-                    {crumb.label}
-                  </Link>
-                )}
-              </span>
-            );
-          })}
-        </nav>
+        {!isDashboardRoot ? (
+          <nav
+            aria-label="Breadcrumb"
+            className="flex items-center gap-1 text-sm"
+          >
+            {breadcrumbs.map((crumb, index) => {
+              const isLast = index === breadcrumbs.length - 1;
+              return (
+                <span key={crumb.href} className="flex items-center gap-1">
+                  {index > 0 && (
+                    <ChevronRight className="size-3.5 text-[var(--color-text-muted)]" />
+                  )}
+                  {isLast ? (
+                    <span className="font-medium text-[var(--color-text)]">
+                      {crumb.label}
+                    </span>
+                  ) : (
+                    <Link
+                      href={crumb.href}
+                      className="text-[var(--color-text-muted)] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-text)]"
+                    >
+                      {crumb.label}
+                    </Link>
+                  )}
+                </span>
+              );
+            })}
+          </nav>
+        ) : (
+          <span className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--color-text-muted)]">
+            Meli · Language studio
+          </span>
+        )}
       </div>
 
       {/* Language toggle + User button */}
