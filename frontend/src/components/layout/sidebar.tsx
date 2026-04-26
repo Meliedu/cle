@@ -1,16 +1,24 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { useClerk } from "@clerk/nextjs";
 import {
+  CalendarDays,
+  ChevronsLeft,
+  ChevronsRight,
   GraduationCap,
-  ChevronLeft,
-  X,
   LayoutDashboard,
+  LogOut,
+  Waypoints,
+  X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRole } from "@/hooks/use-role";
+import { useCourses } from "@/hooks/use-courses";
+import { CANVAS_ENABLED } from "@/lib/features";
 import { SidebarSectionNav } from "@/components/layout/sidebar-section-nav";
 
 interface SidebarProps {
@@ -18,19 +26,27 @@ interface SidebarProps {
   readonly onMobileClose?: () => void;
 }
 
-/** Extract courseId from a pathname like /dashboard/courses/{uuid}/... */
+interface RailItem {
+  readonly id: string;
+  readonly label: string;
+  readonly icon: LucideIcon;
+  readonly href?: string;
+  readonly onClick?: () => void;
+}
+
+const RAIL_WIDTH_COLLAPSED = 72;
+const RAIL_WIDTH_EXPANDED = 248;
+const RAIL_STATE_KEY = "meli:rail-expanded";
+
 function extractCourseId(pathname: string): string | null {
   const match = pathname.match(/\/courses\/([^/]+)/);
   return match ? match[1] : null;
 }
 
-/** Determine the active tab from search params or sub-page path. */
 function resolveActiveTab(pathname: string, tabParam: string | null): string {
-  // Sub-pages like /courses/{id}/revision, /courses/{id}/pronunciation, etc.
   const subPageMatch = pathname.match(/\/courses\/[^/]+\/(\w+)/);
   if (subPageMatch) {
     const segment = subPageMatch[1];
-    // Map known sub-page routes to tab values
     const subPageMap: Record<string, string> = {
       revision: "revision",
       pronunciation: "pronunciation",
@@ -40,146 +56,331 @@ function resolveActiveTab(pathname: string, tabParam: string | null): string {
     };
     if (segment in subPageMap) return subPageMap[segment];
   }
-  return tabParam || "overview";
+  return tabParam ?? "overview";
 }
 
-export function Sidebar({
-  mobileOpen = false,
-  onMobileClose,
-}: SidebarProps) {
+export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [collapsed, setCollapsed] = useState(false);
-
-  const { role, isInstructor } = useRole();
+  const { signOut } = useClerk();
+  const { isInstructor } = useRole();
 
   const courseId = extractCourseId(pathname);
   const activeTab = resolveActiveTab(pathname, searchParams.get("tab"));
 
-  const toggleCollapse = useCallback(() => {
-    setCollapsed((prev) => !prev);
+  const { data: courses } = useCourses();
+  const activeCourse = courseId
+    ? courses?.find((c) => c.id === courseId) ?? null
+    : null;
+
+  // Persist rail expand/collapse between navigations. Initializer runs on the
+  // client (this is a "use client" component that only mounts after the auth
+  // gate, so there's no SSR hydration mismatch for the sidebar itself).
+  const [expanded, setExpanded] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(RAIL_STATE_KEY) === "true";
+  });
+  const toggleExpanded = useCallback(() => {
+    setExpanded((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(RAIL_STATE_KEY, String(next));
+      }
+      return next;
+    });
   }, []);
 
-  const sidebarContent = (
-    <div className="flex h-full flex-col">
-      {/* Brand */}
-      <div
-        className={cn(
-          "flex h-14 shrink-0 items-center border-b border-[var(--color-border)] px-4",
-          collapsed ? "justify-center" : "gap-2"
-        )}
-      >
-        <GraduationCap className="size-6 shrink-0 text-[var(--color-primary)]" />
-        {!collapsed && (
-          <span className="text-lg font-bold tracking-tight text-[var(--color-text)]">
-            Meli
-          </span>
-        )}
-      </div>
+  const handleSignOut = useCallback(() => {
+    void signOut({ redirectUrl: "/sign-in" });
+  }, [signOut]);
 
-      {/* Scrollable nav area */}
-      <div className="flex-1 overflow-y-auto py-3">
-        {/* Dashboard link */}
-        <div className="mb-2 px-2">
+  const primaryItems: readonly RailItem[] = [
+    {
+      id: "home",
+      label: "Dashboard",
+      icon: LayoutDashboard,
+      href: "/dashboard",
+    },
+    {
+      id: "courses",
+      label: "Courses",
+      icon: GraduationCap,
+      href: "/dashboard/courses",
+    },
+    {
+      id: "calendar",
+      label: "Calendar",
+      icon: CalendarDays,
+      href: "/dashboard/calendar",
+    },
+    ...(isInstructor && CANVAS_ENABLED
+      ? [
+          {
+            id: "canvas",
+            label: "Canvas sync",
+            icon: Waypoints,
+            href: "/dashboard/canvas",
+          } satisfies RailItem,
+        ]
+      : []),
+  ];
+
+  const bottomItems: readonly RailItem[] = [
+    {
+      id: "logout",
+      label: "Log out",
+      icon: LogOut,
+      onClick: handleSignOut,
+    },
+  ];
+
+  const isActive = (item: RailItem): boolean => {
+    if (!item.href) return false;
+    if (item.href === "/dashboard") {
+      return pathname === "/dashboard";
+    }
+    return pathname === item.href || pathname.startsWith(`${item.href}/`);
+  };
+
+  const buildRail = (forceExpanded = false) => {
+    const isExpanded = forceExpanded || expanded;
+    const width = isExpanded ? RAIL_WIDTH_EXPANDED : RAIL_WIDTH_COLLAPSED;
+    return (
+      <div
+        className="flex h-full flex-col bg-[var(--color-rail)] text-[var(--color-rail-text)] transition-[width] duration-[var(--duration-normal)] ease-[var(--ease-out)]"
+        style={{ width }}
+      >
+        {/* Brand */}
+        <div
+          className={cn(
+            "flex h-16 shrink-0 items-center",
+            isExpanded ? "gap-3 pl-4 pr-3" : "justify-center"
+          )}
+        >
           <Link
             href="/dashboard"
+            aria-label="Meli home"
             onClick={onMobileClose}
-            className={cn(
-              "flex items-center gap-2.5 rounded-[var(--radius-md)] px-2.5 py-2 text-sm font-medium transition-all duration-[var(--duration-fast)]",
-              collapsed && "justify-center px-2",
-              !courseId && pathname === "/dashboard"
-                ? "bg-[var(--color-primary-light)] text-[var(--color-primary)]"
-                : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
-            )}
+            className="group flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-primary)]/90 transition-transform duration-[var(--duration-normal)] hover:scale-105"
           >
-            <LayoutDashboard className="size-[18px] shrink-0 text-[var(--color-text-muted)]" />
-            {!collapsed && <span>Dashboard</span>}
+            <FloralMark className="size-5 text-[var(--color-text-on-primary)]" />
           </Link>
+          {isExpanded ? (
+            <span className="text-lg font-semibold tracking-tight text-[var(--color-rail-text)]">
+              Meli
+            </span>
+          ) : null}
         </div>
 
-        {/* Course section nav — only when viewing a course */}
-        {courseId && (
-          <SidebarSectionNav
-            courseId={courseId}
-            activeTab={activeTab}
-            isInstructor={isInstructor}
-            collapsed={collapsed}
-            onMobileClose={onMobileClose}
-          />
-        )}
-      </div>
-
-      {/* Role indicator */}
-      <div
-        className={cn(
-          "mx-2 mb-2 rounded-[var(--radius-md)] px-3 py-2",
-          role === "instructor"
-            ? "bg-[var(--color-primary-light)] text-[var(--color-primary)]"
-            : "bg-[var(--color-accent-light)] text-[var(--color-accent)]"
-        )}
-      >
-        {!collapsed && (
-          <p className="text-xs font-semibold uppercase tracking-wider">
-            {role === "instructor" ? "Instructor" : "Student"}
-          </p>
-        )}
-        {collapsed && (
-          <p className="text-center text-xs font-bold">
-            {role === "instructor" ? "I" : "S"}
-          </p>
-        )}
-      </div>
-
-      {/* Collapse toggle (desktop only) */}
-      <div className="hidden border-t border-[var(--color-border)] p-2 md:block">
-        <button
-          onClick={toggleCollapse}
-          className="flex w-full items-center justify-center rounded-[var(--radius-md)] py-2 text-[var(--color-text-muted)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-secondary)]"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          <ChevronLeft
+        {/* Scrollable middle — primary items + (when in a course) section nav */}
+        <div className="scrollbar-warm flex-1 overflow-y-auto pb-3">
+          {/* Primary */}
+          <nav
+            aria-label="Primary"
             className={cn(
-              "size-4 transition-transform duration-[var(--duration-normal)]",
-              collapsed && "rotate-180"
+              "flex flex-col gap-0.5",
+              isExpanded ? "pl-3 pr-1.5" : "items-center px-1.5"
             )}
+          >
+            {primaryItems.map((item) => (
+              <RailButton
+                key={item.id}
+                item={item}
+                active={isActive(item)}
+                expanded={isExpanded}
+                onClose={onMobileClose}
+              />
+            ))}
+          </nav>
+
+          {/* Course section nav — only when we're inside a course */}
+          {courseId ? (
+            <>
+              <div
+                className={cn(
+                  "my-4",
+                  isExpanded ? "mx-4" : "mx-3",
+                  "border-t border-[var(--color-rail-border)]"
+                )}
+              />
+              {isExpanded && activeCourse ? (
+                <div className="mb-3 pl-4 pr-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-rail-text-muted)]">
+                    Course
+                  </p>
+                  <p
+                    className="mt-1 line-clamp-2 text-[15px] font-semibold leading-snug text-[var(--color-rail-text)]"
+                    title={activeCourse.name}
+                  >
+                    {activeCourse.name}
+                  </p>
+                </div>
+              ) : null}
+              <SidebarSectionNav
+                courseId={courseId}
+                activeTab={activeTab}
+                isInstructor={isInstructor}
+                collapsed={!isExpanded}
+                variant="dark"
+                onMobileClose={onMobileClose}
+              />
+            </>
+          ) : null}
+        </div>
+
+        {/* Bottom actions */}
+        <div
+          className={cn(
+            "flex flex-col gap-0.5 border-t border-[var(--color-rail-border)] py-3",
+            isExpanded ? "pl-3 pr-1.5" : "items-center px-1.5"
+          )}
+        >
+          {bottomItems.map((item) => (
+            <RailButton
+              key={item.id}
+              item={item}
+              active={false}
+              expanded={isExpanded}
+              onClose={onMobileClose}
+            />
+          ))}
+
+          <button
+            type="button"
+            onClick={toggleExpanded}
+            aria-label={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
+            aria-pressed={isExpanded}
+            className={cn(
+              "mt-1 flex items-center rounded-[var(--radius-lg)] text-[var(--color-rail-text-muted)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-rail-raised)] hover:text-[var(--color-rail-text)]",
+              isExpanded
+                ? "h-10 w-full justify-start gap-3 pl-3 pr-2 text-[14px]"
+                : "size-10 justify-center"
+            )}
+          >
+            {isExpanded ? (
+              <ChevronsLeft className="size-[18px]" strokeWidth={1.75} />
+            ) : (
+              <ChevronsRight className="size-[18px]" strokeWidth={1.75} />
+            )}
+            {isExpanded ? (
+              <span className="text-[13px] font-medium">Collapse</span>
+            ) : null}
+          </button>
+
+          <span
+            className={cn(
+              "mt-3 size-1.5 shrink-0 rounded-full bg-[var(--color-primary)]",
+              isExpanded && "mx-3"
+            )}
+            aria-hidden="true"
+            title={isInstructor ? "Instructor" : "Student"}
           />
-        </button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <>
-      {/* Desktop sidebar */}
-      <aside
-        className={cn(
-          "hidden md:flex h-screen flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)] transition-[width] duration-[var(--duration-normal)] ease-[var(--ease-out)]",
-          collapsed ? "w-[60px]" : "w-[220px]"
-        )}
-      >
-        {sidebarContent}
-      </aside>
+      {/* Desktop */}
+      <aside className="hidden h-full shrink-0 md:block">{buildRail()}</aside>
 
       {/* Mobile overlay */}
-      {mobileOpen && (
+      {mobileOpen ? (
         <>
           <div
-            className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px] md:hidden"
+            className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm md:hidden"
             onClick={onMobileClose}
             aria-hidden="true"
           />
-          <aside className="fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-[var(--color-surface)] shadow-[var(--shadow-lg)] md:hidden">
+          <aside className="fixed inset-y-0 left-0 z-50 md:hidden">
             <button
               onClick={onMobileClose}
-              className="absolute right-3 top-4 rounded-[var(--radius-sm)] p-1 text-[var(--color-text-muted)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
+              className="absolute right-2 top-3 z-10 rounded-[var(--radius-sm)] p-1 text-[var(--color-rail-text-muted)] hover:bg-[var(--color-rail-raised)] hover:text-[var(--color-rail-text)]"
               aria-label="Close sidebar"
             >
               <X className="size-5" />
             </button>
-            {sidebarContent}
+            {buildRail(true)}
           </aside>
         </>
-      )}
+      ) : null}
     </>
+  );
+}
+
+interface RailButtonProps {
+  readonly item: RailItem;
+  readonly active: boolean;
+  readonly expanded: boolean;
+  readonly onClose?: () => void;
+}
+
+function RailButton({ item, active, expanded, onClose }: RailButtonProps) {
+  const { icon: Icon, label, href, onClick } = item;
+
+  const classes = cn(
+    "flex items-center rounded-[var(--radius-lg)] font-medium transition-all duration-[var(--duration-fast)]",
+    expanded ? "h-11 w-full gap-3 pl-3 pr-2 text-[15px]" : "size-11 justify-center",
+    active
+      ? "bg-[var(--color-rail-raised)] text-[var(--color-primary)]"
+      : "text-[var(--color-rail-text-muted)] hover:bg-[var(--color-rail-raised)] hover:text-[var(--color-rail-text)]"
+  );
+
+  const body = (
+    <>
+      <Icon
+        className="size-[18px] shrink-0"
+        strokeWidth={active ? 2.25 : 1.85}
+      />
+      {expanded ? <span className="truncate">{label}</span> : null}
+      {!expanded ? <span className="sr-only">{label}</span> : null}
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        onClick={onClose}
+        className={classes}
+        aria-label={label}
+        title={!expanded ? label : undefined}
+      >
+        {body}
+      </Link>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={classes}
+      aria-label={label}
+      title={!expanded ? label : undefined}
+    >
+      {body}
+    </button>
+  );
+}
+
+/** Small six-petal flower used as the brand mark on the dark rail. */
+function FloralMark({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="6" r="3" />
+      <circle cx="12" cy="18" r="3" />
+      <circle cx="6" cy="9" r="3" />
+      <circle cx="18" cy="9" r="3" />
+      <circle cx="6" cy="15" r="3" />
+      <circle cx="18" cy="15" r="3" />
+      <circle cx="12" cy="12" r="2" fill="var(--color-rail)" />
+    </svg>
   );
 }
