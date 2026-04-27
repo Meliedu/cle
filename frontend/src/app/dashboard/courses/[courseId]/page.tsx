@@ -11,7 +11,6 @@ import {
   Clock,
   Upload as UploadIcon,
   Sparkles,
-  Mic,
   Trash2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { UploadZone } from "@/components/documents/upload-zone";
 import { QuizList } from "@/components/quiz/quiz-list";
 import { FlashcardList } from "@/components/flashcard/flashcard-list";
+import { PronunciationList } from "@/components/pronunciation/pronunciation-list";
 import { ProgressCard } from "@/components/gamification/progress-card";
 import { Leaderboard } from "@/components/gamification/leaderboard";
 import { BadgeDisplay } from "@/components/gamification/badge-display";
@@ -405,25 +405,7 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
 
       {activeTab === "pronunciation" && (
         <div>
-          <Card>
-            <CardContent className="flex flex-col items-center py-12 text-center">
-              <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-success-light)]">
-                <Mic className="size-6 text-[var(--color-success)]" />
-              </div>
-              <h3 className="font-semibold text-[var(--color-text)]">
-                Pronunciation Practice
-              </h3>
-              <p className="mt-1 max-w-sm text-sm text-[var(--color-text-muted)]">
-                Practice your pronunciation and get AI-powered feedback on accuracy, fluency, and completeness.
-              </p>
-              <Link href={`/dashboard/courses/${courseId}/pronunciation`}>
-                <Button className="mt-4">
-                  <Mic className="size-4" />
-                  Start Practice
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
+          <PronunciationList courseId={courseId} isInstructor={isInstructor} />
         </div>
       )}
 
