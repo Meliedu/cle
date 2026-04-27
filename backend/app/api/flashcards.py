@@ -520,8 +520,6 @@ async def update_flashcard_card(
             raise HTTPException(status_code=400, detail="Back cannot be empty")
         card.back = back[:2000]
     if body.difficulty is not None:
-        if body.difficulty not in {"easy", "medium", "hard"}:
-            raise HTTPException(status_code=400, detail="invalid difficulty")
         card.difficulty = body.difficulty
 
     await db.commit()

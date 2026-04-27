@@ -525,7 +525,9 @@ async def update_question(
     if body.options is not None:
         question.options = body.options
     if body.correct_answer is not None:
-        # Validate against the new options if provided, otherwise existing.
+        # The Pydantic model_validator enforces correct_answer ∈ options when
+        # both are sent together. For partial updates (only correct_answer),
+        # validate against the current row's options.
         target_options = body.options if body.options is not None else question.options
         if target_options and body.correct_answer not in target_options:
             raise HTTPException(
@@ -536,8 +538,6 @@ async def update_question(
     if body.explanation is not None:
         question.explanation = body.explanation
     if body.difficulty is not None:
-        if body.difficulty not in {"easy", "medium", "hard"}:
-            raise HTTPException(status_code=400, detail="invalid difficulty")
         question.difficulty = body.difficulty
 
     await db.commit()

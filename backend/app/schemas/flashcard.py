@@ -1,8 +1,12 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+
+CardDifficulty = Literal["easy", "medium", "hard"]
 
 
 class FlashcardCardResponse(BaseModel):
@@ -69,13 +73,13 @@ class FlashcardSetDetailResponse(BaseModel):
 class FlashcardCardCreate(BaseModel):
     front: str = Field(min_length=1, max_length=500)
     back: str = Field(min_length=1, max_length=2000)
-    difficulty: str = "medium"
+    difficulty: CardDifficulty = "medium"
 
 
 class FlashcardCardUpdate(BaseModel):
     front: str | None = Field(default=None, max_length=500)
     back: str | None = Field(default=None, max_length=2000)
-    difficulty: str | None = None
+    difficulty: CardDifficulty | None = None
 
 
 class FlashcardProgressUpdate(BaseModel):

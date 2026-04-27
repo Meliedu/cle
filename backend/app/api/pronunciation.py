@@ -314,11 +314,11 @@ async def add_pronunciation_item(
     item = PronunciationItem(
         pronunciation_set_id=set_id,
         item_index=next_index,
-        text=body.text.strip()[:1000],
+        text=body.text.strip(),
         item_type=body.item_type,
-        phonetic=(body.phonetic or "").strip()[:500] or None,
-        translation=(body.translation or "").strip()[:1000] or None,
-        tips=(body.tips or "").strip()[:2000] or None,
+        phonetic=(body.phonetic or "").strip() or None,
+        translation=(body.translation or "").strip() or None,
+        tips=(body.tips or "").strip() or None,
         difficulty=body.difficulty,
     )
     db.add(item)
@@ -399,18 +399,16 @@ async def update_pronunciation_item(
         text = body.text.strip()
         if not text:
             raise HTTPException(status_code=400, detail="Text cannot be empty")
-        item.text = text[:1000]
+        item.text = text
     if body.item_type is not None:
         item.item_type = body.item_type
     if body.phonetic is not None:
-        item.phonetic = body.phonetic.strip()[:500] or None
+        item.phonetic = body.phonetic.strip() or None
     if body.translation is not None:
-        item.translation = body.translation.strip()[:1000] or None
+        item.translation = body.translation.strip() or None
     if body.tips is not None:
-        item.tips = body.tips.strip()[:2000] or None
+        item.tips = body.tips.strip() or None
     if body.difficulty is not None:
-        if body.difficulty not in {"easy", "medium", "hard"}:
-            raise HTTPException(status_code=400, detail="invalid difficulty")
         item.difficulty = body.difficulty
 
     await db.commit()

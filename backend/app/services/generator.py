@@ -572,9 +572,11 @@ async def generate_pronunciation(
         if not isinstance(item, dict):
             continue
         text = str(item.get("text") or "").strip()
-        if not text or len(text) > 500:
+        # Hard cap matches the column width and the schema ceiling so an
+        # over-long sentence returned by the model is dropped rather than
+        # silently truncated mid-word.
+        if not text or len(text) > 1000:
             continue
-        text = text[:500]
 
         item_type = _coerce_item_type(item.get("item_type"), text)
         if item_type not in allowed_set:

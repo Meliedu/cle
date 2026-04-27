@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 ItemType = Literal["word", "phrase", "sentence"]
+ItemDifficulty = Literal["easy", "medium", "hard"]
 
 
 class PronunciationItemResponse(BaseModel):
@@ -55,21 +56,21 @@ class PronunciationSetUpdate(BaseModel):
 
 
 class PronunciationItemCreate(BaseModel):
-    text: str = Field(min_length=1, max_length=500)
+    text: str = Field(min_length=1, max_length=1000)
     item_type: ItemType = "word"
     phonetic: str | None = Field(default=None, max_length=500)
     translation: str | None = Field(default=None, max_length=1000)
     tips: str | None = Field(default=None, max_length=2000)
-    difficulty: str = "medium"
+    difficulty: ItemDifficulty = "medium"
 
 
 class PronunciationItemUpdate(BaseModel):
-    text: str | None = Field(default=None, max_length=500)
+    text: str | None = Field(default=None, max_length=1000)
     item_type: ItemType | None = None
     phonetic: str | None = Field(default=None, max_length=500)
     translation: str | None = Field(default=None, max_length=1000)
     tips: str | None = Field(default=None, max_length=2000)
-    difficulty: str | None = None
+    difficulty: ItemDifficulty | None = None
 
 
 class PronunciationSetMove(BaseModel):

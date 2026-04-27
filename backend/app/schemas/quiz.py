@@ -1,8 +1,12 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
+
+
+QuestionDifficulty = Literal["easy", "medium", "hard"]
 
 
 class QuestionResponse(BaseModel):
@@ -100,13 +104,32 @@ class QuestionCreate(BaseModel):
     correct_answer: str
     explanation: str | None = None
 
+    @model_validator(mode="after")
+    def _validate_correct_answer(self) -> "QuestionCreate":
+        if self.correct_answer not in self.options:
+            raise ValueError("correct_answer must be one of the option keys")
+        return self
+
 
 class QuestionUpdate(BaseModel):
     question_text: str | None = None
     options: dict[str, str] | None = None
     correct_answer: str | None = None
     explanation: str | None = None
-    difficulty: str | None = None
+    difficulty: QuestionDifficulty | None = None
+
+    @model_validator(mode="after")
+    def _validate_correct_answer(self) -> "QuestionUpdate":
+        # When both options and correct_answer are provided, the answer must
+        # be a key of the new options. The cross-field check on partial
+        # updates (e.g. only correct_answer) is enforced in the handler since
+        # we need the current options from the DB.
+        if self.options is not None and self.correct_answer is not None:
+            if self.correct_answer not in self.options:
+                raise ValueError(
+                    "correct_answer must be one of the option keys"
+                )
+        return self
 
 
 class QuizUpdate(BaseModel):
