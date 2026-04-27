@@ -382,3 +382,25 @@
     margin-left: 100%;
   }
 }
+
+/* ==========================================================================
+   Auth surface — entrance for AuthCard
+   ========================================================================== */
+@keyframes auth-card-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+.auth-card {
+  animation: auth-card-rise 280ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-card {
+    animation: none;
+  }
+}

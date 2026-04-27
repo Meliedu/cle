@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useClerk } from "@clerk/nextjs";
+import { useAuth } from "@/hooks/use-auth";
 import {
   CalendarDays,
   ChevronsLeft,
@@ -62,7 +62,7 @@ function resolveActiveTab(pathname: string, tabParam: string | null): string {
 export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { signOut } = useClerk();
+  const { signOut } = useAuth();
   const { isInstructor } = useRole();
 
   const courseId = extractCourseId(pathname);

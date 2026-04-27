@@ -2,7 +2,7 @@
 
 import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { UserButton } from "@clerk/nextjs";
+import { UserButton } from "@/components/layout/user-button";
 import { Menu, ChevronRight } from "lucide-react";
 import { LanguageToggle } from "@/components/layout/language-toggle";
 import { useCourses } from "@/hooks/use-courses";
@@ -130,13 +130,7 @@ export function Navbar({ onMenuClick }: NavbarProps) {
       {/* Language toggle + User button */}
       <div className="flex items-center gap-2">
         <LanguageToggle />
-        <UserButton
-          appearance={{
-            elements: {
-              avatarBox: "size-8",
-            },
-          }}
-        />
+        <UserButton />
       </div>
     </header>
   );
