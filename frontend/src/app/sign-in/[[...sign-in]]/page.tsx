@@ -70,23 +70,30 @@ export default function SignInPage() {
 
     setErrors({});
     setBusy(true);
-    const { error } = await authClient.signIn.email({
-      email: trimmedEmail,
-      password,
-      callbackURL: redirectTo,
-    });
-    if (error) {
-      setBusy(false);
-      setErrors({
-        form:
-          error.message === "User not found"
-            ? "No account matches that email."
-            : (error.message ?? "Sign-in failed."),
+    try {
+      const { data, error } = await authClient.signIn.email({
+        email: trimmedEmail,
+        password,
+        callbackURL: redirectTo,
       });
-      passwordRef.current?.focus();
-      return;
+      if (error || !data?.user) {
+        setBusy(false);
+        const message =
+          error?.message === "User not found"
+            ? "No account matches that email."
+            : (error?.message ?? "Invalid email or password.");
+        setErrors({ form: message });
+        passwordRef.current?.focus();
+        return;
+      }
+      router.push(redirectTo);
+    } catch {
+      // Network or runtime failure (CORS, mixed-content, fetch abort, …).
+      // Keep the user on the page with a visible error rather than letting
+      // the spinner hang forever.
+      setBusy(false);
+      setErrors({ form: "Couldn't reach the sign-in service. Try again." });
     }
-    router.push(redirectTo);
   };
 
   return (

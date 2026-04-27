@@ -5,8 +5,12 @@
 import { createAuthClient } from "better-auth/react";
 import { jwtClient } from "better-auth/client/plugins";
 
+// Omitting baseURL lets Better Auth default to window.location.origin in
+// the browser, which is the correct same-origin behavior. The previous
+// "http://localhost:3000" fallback caused a mixed-content fetch from
+// production HTTPS pages that browsers silently dropped — leaving the
+// sign-in spinner stuck forever.
 export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_BETTER_AUTH_URL ?? "http://localhost:3000",
   plugins: [jwtClient()],
 });
 
