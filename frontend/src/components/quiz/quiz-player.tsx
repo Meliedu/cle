@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";

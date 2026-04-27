@@ -80,12 +80,12 @@ backend/app/
 │   ├── vlm.py        # Vision-LLM caption client (OpenRouter) — non-raising
 │   ├── chunker.py    # Text chunking
 │   ├── storage.py    # Cloudflare R2 (S3-compatible via boto3)
-│   └── auth.py       # Clerk JWT verification
+│   └── auth.py       # Better Auth JWT verification (PyJWKClient against /api/auth/jwks)
 ├── middleware/    # ASGI middleware (auth gate + rate limiting on /api/rag/* only)
 └── config.py      # pydantic-settings, reads from .env
 ```
 
-**Auth flow:** Clerk issues JWTs on the frontend. Backend middleware does a cheap Bearer-token check. The `get_current_user` dependency does full JWT verification via JWKS, auto-creates users on first login, and assigns roles by email domain (`ust.hk` = instructor, `connect.ust.hk` = student).
+**Auth flow:** Better Auth (self-hosted) issues JWTs on the Next.js side via its JWT plugin (EdDSA / Ed25519). The frontend `useApiToken` hook calls `authClient.token()` to fetch a fresh JWT for each backend request. Backend middleware does a cheap Bearer-token check; the `get_current_user` dependency verifies the JWT against the JWKS at `BETTER_AUTH_JWKS_URL` (e.g. `http://localhost:3000/api/auth/jwks`), auto-creates `public.users` rows on first login keyed on `better_auth_id`, and assigns roles by email domain (`ust.hk` = instructor, `connect.ust.hk` = student). Better Auth's own tables (`user`, `session`, `account`, `verification`, `jwks`) live in the `auth` schema of the same Postgres. Sign-up flows from the Next.js side fire a `databaseHooks.user.create.after` hook that POSTs to `POST /api/internal/users/link` (guarded by `BETTER_AUTH_INTERNAL_SECRET`) so the local row is created/linked atomically.
 
 **API envelope:** All endpoints return `APIResponse[T]` with `{success, data, error}`. Paginated endpoints use `PaginatedResponse[T]` adding `{meta: {total, page, limit, pages}}`.
 
@@ -97,18 +97,18 @@ backend/app/
 frontend/src/
 ├── app/                  # Next.js 16 App Router pages
 │   ├── dashboard/        # Authenticated area (courses, quizzes, flashcards)
-│   ├── sign-in/, sign-up/  # Clerk auth pages
+│   ├── sign-in/, sign-up/  # Better Auth screens (custom-built, see components/auth/)
 │   └── page.tsx          # Landing page
 ├── components/           # By feature: course/, documents/, flashcard/, quiz/, summary/, layout/, ui/
 ├── hooks/                # Custom hooks (useApiToken, useCourses, useDocuments, etc.)
 ├── lib/
 │   ├── api.ts            # apiFetch<T>() — typed fetch wrapper, adds Bearer token
 │   └── utils.ts, format.ts
-├── proxy.ts              # Next.js 16 proxy (replaces middleware.ts) — Clerk route protection
+├── proxy.ts              # Next.js 16 proxy (replaces middleware.ts) — Better Auth session check
 └── styles/tokens.css     # Design tokens (oklch color space, "Honey & Salt" palette)
 ```
 
-**Data fetching:** TanStack Query wraps `apiFetch()`. Hooks in `hooks/` abstract query keys and mutations. The `useApiToken` hook retrieves Clerk tokens for API calls.
+**Data fetching:** TanStack Query wraps `apiFetch()`. Hooks in `hooks/` abstract query keys and mutations. The `useApiToken` hook calls `authClient.token()` to retrieve a Better Auth JWT for backend calls.
 
 ## Key Conventions
 
@@ -120,7 +120,7 @@ frontend/src/
 - **Figure captions**: PDFs are parsed by Docling with its remote `PictureDescriptionApiOptions` pointed at OpenRouter (`vlm_model`, default `google/gemini-2.5-flash`). PPTX Picture shapes are captioned by `app/services/vlm.py::caption_image`. Captions are inlined into page text as `[Figure: ...]` so the chunker keeps them adjacent to surrounding context; resulting chunks get `metadata.has_figure=True`. Disable via `ENABLE_FIGURE_CAPTIONS=false` in dev to save OpenRouter spend. Docling runs in the async worker (not request path); first run downloads ~400 MB of model weights.
 - **Rate limiting**: Only applies to `/api/rag/*` endpoints. Tracked per-user per-hour in `api_usage` table. Instructors get 50 req/hr, students get 10.
 - **Email domains**: `ust.hk` = instructor, `connect.ust.hk` = student. Configured via `ALLOWED_EMAIL_DOMAINS`.
-- **Deployment**: Backend on Railway (Dockerfile), frontend on Vercel. Operate infra directly — Railway CLI + GraphQL API (`jq -r '.user.accessToken' ~/.railway/config.json`), Vercel CLI, Clerk REST API with `CLERK_SECRET_KEY`. Don't route the user through web dashboards when an API exists.
+- **Deployment**: Backend on Railway (Dockerfile), frontend on Vercel. Operate infra directly — Railway CLI + GraphQL API (`jq -r '.user.accessToken' ~/.railway/config.json`), Vercel CLI. Don't route the user through web dashboards when an API exists.
 - **Design tokens**: Use CSS custom properties from `styles/tokens.css`, not hardcoded colors. oklch color space.
 - **WSL2**: If Next.js OOMs, use `NODE_OPTIONS=--max-old-space-size=4096`.
 - **Canvas OAuth (Phase 1)**: Single HKUST Canvas developer key (`CANVAS_CLIENT_ID` / `CANVAS_CLIENT_SECRET`) drives per-user OAuth — tokens are stored per user in `canvas_user_credentials`, never per course. All Canvas REST calls go through `CanvasClient` (`app/services/canvas_client.py`), which transparently refreshes the access token on a 401. The daily sync scheduler lives in `app/services/canvas_sync.py::run_scheduler` and starts as an asyncio task in the FastAPI lifespan alongside the worker. Roster sync preserves the instructor who linked the course via `preserve_user_ids` so they never get dropped by a Canvas roster diff.

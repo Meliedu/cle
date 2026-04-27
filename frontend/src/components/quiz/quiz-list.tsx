@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth } from "@/hooks/use-auth";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useQuizzes, useUpdateQuiz } from "@/hooks/use-quizzes";
 import {

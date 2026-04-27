@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@/hooks/use-auth";
 
 export interface TodoItem {
   readonly id: string;

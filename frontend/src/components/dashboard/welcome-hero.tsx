@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@/hooks/use-auth";
 import { useCourses } from "@/hooks/use-courses";
 import { useRole } from "@/hooks/use-role";
 

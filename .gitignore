@@ -55,3 +55,4 @@ prompt/
 
 # Playwright MCP browser-probe cache (console logs + DOM snapshots)
 .playwright-mcp/
+.gstack/

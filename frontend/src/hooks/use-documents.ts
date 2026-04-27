@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth } from "@/hooks/use-auth";
 import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 
 export interface DocumentResponse {

@@ -67,9 +67,10 @@ Meli (_honey_ in several languages, _salt_ in Hebrew) is a RAG-powered platform 
 
 ```
                                     +---------------------+
-                                    |   Clerk (Auth)       |
+                                    |  Better Auth (JWT)   |
+                                    |  + Resend (email)    |
                                     +----------+----------+
-                                               | JWT
+                                               | JWT (EdDSA, JWKS-verified)
                     +--------------------------+|+--------------------------+
                     |                          |||                          |
                     |   Next.js 16 (Vercel)    |||   FastAPI (Railway)      |
@@ -357,7 +358,7 @@ Returns normalized scores: overall, accuracy, fluency, completeness, prosody, pl
 | Framework | **FastAPI** 0.128 (async, Python 3.12) |
 | ORM | **SQLAlchemy** 2.0 async + asyncpg |
 | Migrations | **Alembic** with async engine |
-| Auth | **Clerk** JWT verification via PyJWKClient |
+| Auth | **Better Auth** JWT verification via PyJWKClient |
 | Storage | **Cloudflare R2** (S3-compatible, boto3) |
 | Vectors | **pgvector** HNSW cosine similarity |
 | Full-text | **PostgreSQL** tsvector + GIN index |
@@ -376,7 +377,7 @@ Returns normalized scores: overall, accuracy, fluency, completeness, prosody, pl
 | UI | **React** 19 + **TypeScript** strict |
 | Components | **shadcn/ui** + **Tailwind CSS** 4 |
 | Data fetching | **TanStack Query** v5 |
-| Auth | **@clerk/nextjs** 7 |
+| Auth | **better-auth** 1.6 (self-hosted) |
 | Icons | **Lucide React** |
 | E2E testing | **Playwright** |
 
@@ -388,7 +389,8 @@ Returns normalized scores: overall, accuracy, fluency, completeness, prosody, pl
 | Backend | **Railway** (Docker) |
 | Frontend | **Vercel** |
 | File storage | **Cloudflare R2** |
-| Auth | **Clerk** |
+| Auth | **Better Auth** (self-hosted; tables in `auth` schema) |
+| Email | **Resend** (verification + password reset) |
 
 <br/>
 
@@ -403,7 +405,7 @@ Returns normalized scores: overall, accuracy, fluency, completeness, prosody, pl
 - Python 3.12+
 - Node.js 20+
 - Docker (for PostgreSQL)
-- Clerk account
+- Resend account (for transactional email — verification, password reset)
 - OpenAI API key
 - OpenRouter API key (free tier available)
 

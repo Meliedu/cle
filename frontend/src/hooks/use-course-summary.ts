@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth } from "@/hooks/use-auth";
 import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 import { useGenerationJobs } from "@/hooks/use-generation-jobs";
 

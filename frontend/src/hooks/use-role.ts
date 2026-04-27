@@ -1,4 +1,4 @@
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@/hooks/use-auth";
 
 type Role = "instructor" | "student";
 

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth } from "@/hooks/use-auth";
 import { apiFetch } from "@/lib/api";
 
 // --- Types ---

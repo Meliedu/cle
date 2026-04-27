@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth } from "@/hooks/use-auth";
 import { apiFetch, isAuthError } from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
