@@ -22,6 +22,10 @@ _PUBLIC_PATH_PREFIXES = (
     "/redoc",
     # OAuth redirect from Canvas — browser GET, no Bearer token possible.
     "/api/canvas/oauth/callback",
+    # Service-to-service endpoints called by the Next.js Better Auth signup
+    # hook. They authenticate via the X-Internal-Auth shared-secret header
+    # checked inside the route, not via Bearer JWT.
+    "/api/internal/",
 )
 
 

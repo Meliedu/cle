@@ -8,7 +8,7 @@ from app.models.user import User
 async def seed():
     async with async_session_factory() as session:
         instructor = User(
-            clerk_id="dev_instructor_001",
+            better_auth_id="dev_instructor_001",
             email="dev_instructor@ust.hk",
             full_name="Dr. Demo Instructor",
             role="instructor",
@@ -16,7 +16,7 @@ async def seed():
         session.add(instructor)
 
         student = User(
-            clerk_id="dev_student_001",
+            better_auth_id="dev_student_001",
             email="dev_student@connect.ust.hk",
             full_name="Demo Student",
             role="student",

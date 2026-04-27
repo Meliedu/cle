@@ -22,7 +22,7 @@ async def _seed_active_integration(
     db_session, *, canvas_course_id: str = "888"
 ) -> tuple[User, Course, CanvasIntegration]:
     instructor = User(
-        clerk_id="clerk_sync_inst",
+        better_auth_id="dev_sync_inst",
         email="sync-inst@ust.hk",
         full_name="Inst",
         role="instructor",

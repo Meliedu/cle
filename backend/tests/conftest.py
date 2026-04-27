@@ -72,7 +72,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 @pytest_asyncio.fixture
 async def test_instructor(db_session: AsyncSession) -> User:
     user = User(
-        clerk_id="clerk_instructor_001",
+        better_auth_id="dev_instructor_001",
         email="instructor@ust.hk",
         full_name="Test Instructor",
         role="instructor",
@@ -86,7 +86,7 @@ async def test_instructor(db_session: AsyncSession) -> User:
 @pytest_asyncio.fixture
 async def test_student(db_session: AsyncSession) -> User:
     user = User(
-        clerk_id="clerk_student_001",
+        better_auth_id="dev_student_001",
         email="student@connect.ust.hk",
         full_name="Test Student",
         role="student",
@@ -101,7 +101,7 @@ async def test_student(db_session: AsyncSession) -> User:
 async def logged_in_user(db_session: AsyncSession) -> User:
     """Default authenticated user (instructor) for API tests."""
     user = User(
-        clerk_id="clerk_logged_in_001",
+        better_auth_id="dev_logged_in_001",
         email="logged-in@ust.hk",
         full_name="Logged In User",
         role="instructor",

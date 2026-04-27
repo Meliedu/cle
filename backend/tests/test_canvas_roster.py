@@ -47,13 +47,13 @@ async def test_roster_import_matches_and_pre_provisions(
     )
 
     alice = User(
-        clerk_id="clerk_alice",
+        better_auth_id="dev_alice",
         email="alice@connect.ust.hk",
         role="student",
         full_name="Alice",
     )
     ta_user = User(
-        clerk_id="clerk_ta",
+        better_auth_id="dev_ta",
         email="ta@ust.hk",
         role="instructor",
         full_name="TA",
@@ -111,7 +111,7 @@ async def test_roster_import_hard_deletes_drops(
     course = linked_course_fixture["meli_course"]
 
     carol = User(
-        clerk_id="c",
+        better_auth_id="c",
         email="carol@connect.ust.hk",
         role="student",
         full_name="Carol",
@@ -170,7 +170,7 @@ async def test_roster_import_idempotent_on_existing(
     course = linked_course_fixture["meli_course"]
 
     alice = User(
-        clerk_id="clerk_alice2",
+        better_auth_id="dev_alice2",
         email="alice2@connect.ust.hk",
         role="student",
         full_name="Alice",

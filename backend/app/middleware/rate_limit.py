@@ -27,7 +27,7 @@ from app.config import settings
 from app.database import async_session_factory
 from app.models.api_usage import ApiUsage
 from app.models.user import User
-from app.services.auth import verify_clerk_token
+from app.services.auth import verify_jwt
 
 logger = logging.getLogger(__name__)
 
@@ -117,14 +117,14 @@ class RateLimitMiddleware:
         token = auth_value[7:]
 
         try:
-            claims = verify_clerk_token(token)
+            verified = verify_jwt(token)
         except Exception:
             # Invalid token — let the dependency layer return 401
             await self.app(scope, receive, send)
             return
 
-        clerk_id = claims.get("sub")
-        if not clerk_id:
+        auth_user_id = verified.claims.get("sub")
+        if not auth_user_id:
             await self.app(scope, receive, send)
             return
 
@@ -134,7 +134,7 @@ class RateLimitMiddleware:
         try:
             async with async_session_factory() as session:
                 result = await session.execute(
-                    select(User).where(User.clerk_id == clerk_id)
+                    select(User).where(User.better_auth_id == auth_user_id)
                 )
                 user = result.scalar_one_or_none()
 

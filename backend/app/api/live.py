@@ -27,7 +27,7 @@ from app.models.session import LiveSession
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.schemas.live import CreateLiveSessionRequest, LiveSessionResponse
-from app.services.auth import verify_clerk_token
+from app.services.auth import verify_jwt
 from app.services.gamification import award_xp
 from app.services.live_quiz import (
     SessionState,
@@ -732,9 +732,11 @@ def _answer_is_correct(submitted: str, correct: str) -> bool:
 
 
 async def _resolve_ws_user(
-    db: AsyncSession, clerk_sub: str
+    db: AsyncSession, auth_user_id: str
 ) -> User | None:
-    result = await db.execute(select(User).where(User.clerk_id == clerk_sub))
+    result = await db.execute(
+        select(User).where(User.better_auth_id == auth_user_id)
+    )
     return result.scalar_one_or_none()
 
 
@@ -758,24 +760,25 @@ async def websocket_live(
 ):
     """WebSocket handler for live quiz sessions.
 
-    Auth: pass Clerk JWT as ?token= query param. The authenticated user is
+    Auth: pass the bearer JWT as ?token= query param (Clerk during the
+    cutover window, Better Auth post-cutover). The authenticated user is
     resolved server-side — messages can never spoof user_id or is_correct.
     """
     logger.info("WS connect attempt for session %s, token length=%d", session_id, len(token))
     if not token:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
     try:
-        claims = verify_clerk_token(token)
+        verified = verify_jwt(token)
     except Exception as e:
         logger.warning("WS auth failed for session %s: %s", session_id, e)
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
 
-    clerk_sub = claims.get("sub")
-    if not clerk_sub:
+    auth_user_id = verified.claims.get("sub")
+    if not auth_user_id:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
 
     async with async_session_factory() as db:
-        user = await _resolve_ws_user(db, clerk_sub)
+        user = await _resolve_ws_user(db, auth_user_id)
         if user is None:
             raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
 

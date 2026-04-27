@@ -20,7 +20,7 @@ from app.services.crypto import encrypt_secret
 async def _seed_student(db_session) -> User:
     """Replace the default logged-in instructor with a student user."""
     student = User(
-        clerk_id="clerk_join_student",
+        better_auth_id="dev_join_student",
         email="join-student@connect.ust.hk",
         full_name="Joiner",
         role="student",
@@ -63,7 +63,7 @@ async def test_join_creates_enrollment_and_clears_pending(
 
     # Instructor pre-linked Canvas course 555 to a Meli course.
     instructor = User(
-        clerk_id="clerk_join_inst",
+        better_auth_id="dev_join_inst",
         email="join-inst@ust.hk",
         full_name="Inst",
         role="instructor",

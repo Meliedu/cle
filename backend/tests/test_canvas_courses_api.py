@@ -125,7 +125,7 @@ async def test_list_taught_merges_ta_enrollments(
 async def test_list_courses_student_role(async_client, db_session, monkeypatch):
     # Replace logged_in_user with a student-role user
     student = User(
-        clerk_id="clerk_stu_courses",
+        better_auth_id="dev_stu_courses",
         email="stu-courses@connect.ust.hk",
         full_name="Stu",
         role="student",
@@ -165,7 +165,7 @@ async def test_list_courses_student_role_marks_already_linked(
     """Student listing must surface ``already_linked_meli_course_id`` for
     courses an instructor has already linked, and leave it null otherwise."""
     student = User(
-        clerk_id="clerk_stu_linked",
+        better_auth_id="dev_stu_linked",
         email="stu-linked@connect.ust.hk",
         full_name="Stu Linked",
         role="student",
@@ -177,7 +177,7 @@ async def test_list_courses_student_role_marks_already_linked(
 
     # An instructor user already linked Canvas course 777 to a Meli course.
     instructor = User(
-        clerk_id="clerk_inst_linked",
+        better_auth_id="dev_inst_linked",
         email="inst-linked@ust.hk",
         full_name="Inst",
         role="instructor",
@@ -233,7 +233,7 @@ async def test_student_requesting_teacher_role_forbidden(
     async_client, db_session, monkeypatch
 ):
     student = User(
-        clerk_id="clerk_stu_403",
+        better_auth_id="dev_stu_403",
         email="stu403@connect.ust.hk",
         full_name="Stu",
         role="student",

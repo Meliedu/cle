@@ -28,7 +28,7 @@ from app.services.worker import complete_task, process_task
 @pytest_asyncio.fixture
 async def instructor_and_course(db_session):
     instructor = User(
-        clerk_id=f"clerk_{uuid.uuid4().hex[:10]}",
+        better_auth_id=f"dev_{uuid.uuid4().hex[:10]}",
         email="jobs-test@ust.hk",
         full_name="Jobs Tester",
         role="instructor",

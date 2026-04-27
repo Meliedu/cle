@@ -41,7 +41,7 @@ def _count_query(user_id: uuid.UUID, window_start: datetime, *, is_get_poll: boo
 
 async def _make_user(session: AsyncSession) -> User:
     user = User(
-        clerk_id=f"user_{uuid.uuid4().hex[:12]}",
+        better_auth_id=f"user_{uuid.uuid4().hex[:12]}",
         email=f"{uuid.uuid4().hex[:8]}@ust.hk",
         role="instructor",
     )

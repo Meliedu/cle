@@ -240,7 +240,7 @@ def test_derive_file_type_final_fallback_bin():
 
 async def _seed_active_integration(db_session) -> tuple[User, Course, CanvasIntegration]:
     instructor = User(
-        clerk_id="clerk_cov_inst",
+        better_auth_id="dev_cov_inst",
         email="cov-inst@ust.hk",
         full_name="Cov",
         role="instructor",

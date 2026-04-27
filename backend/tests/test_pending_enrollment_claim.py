@@ -5,12 +5,13 @@ from sqlalchemy import select
 
 from app.models import Enrollment, PendingEnrollment, User
 from app.models.course import Course
+from app.services.auth import VerifiedToken
 
 
 @pytest.mark.asyncio
 async def test_login_claims_pending_enrollment(client, db_session, monkeypatch):
     instructor = User(
-        clerk_id="clerk_owner",
+        better_auth_id="dev_owner",
         email="owner@ust.hk",
         role="instructor",
         full_name="Owner",
@@ -38,13 +39,16 @@ async def test_login_claims_pending_enrollment(client, db_session, monkeypatch):
     await db_session.commit()
 
     def fake_verify(token):
-        return {
-            "sub": "clerk_newbie",
-            "email": "newbie@connect.ust.hk",
-            "name": "Newbie",
-        }
+        return VerifiedToken(
+            "better_auth",
+            {
+                "sub": "dev_newbie",
+                "email": "newbie@connect.ust.hk",
+                "name": "Newbie",
+            },
+        )
 
-    monkeypatch.setattr("app.api.deps.verify_clerk_token", fake_verify)
+    monkeypatch.setattr("app.api.deps.verify_jwt", fake_verify)
 
     resp = await client.get(
         "/api/courses", headers={"Authorization": "Bearer fake"}
@@ -53,7 +57,7 @@ async def test_login_claims_pending_enrollment(client, db_session, monkeypatch):
 
     new_user = (
         await db_session.execute(
-            select(User).where(User.clerk_id == "clerk_newbie")
+            select(User).where(User.better_auth_id == "dev_newbie")
         )
     ).scalar_one()
 
@@ -82,7 +86,7 @@ async def test_existing_user_also_claims_on_subsequent_call(
 ):
     """Pending claim must run on every auth, not just first login."""
     instructor = User(
-        clerk_id="clerk_owner2",
+        better_auth_id="dev_owner2",
         email="owner2@ust.hk",
         role="instructor",
         full_name="Owner",
@@ -101,7 +105,7 @@ async def test_existing_user_also_claims_on_subsequent_call(
 
     # Existing student user — already provisioned previously
     student = User(
-        clerk_id="clerk_existing",
+        better_auth_id="dev_existing",
         email="existing@connect.ust.hk",
         role="student",
         full_name="Existing",
@@ -122,13 +126,16 @@ async def test_existing_user_also_claims_on_subsequent_call(
     await db_session.commit()
 
     def fake_verify(token):
-        return {
-            "sub": "clerk_existing",
-            "email": "existing@connect.ust.hk",
-            "name": "Existing",
-        }
+        return VerifiedToken(
+            "better_auth",
+            {
+                "sub": "dev_existing",
+                "email": "existing@connect.ust.hk",
+                "name": "Existing",
+            },
+        )
 
-    monkeypatch.setattr("app.api.deps.verify_clerk_token", fake_verify)
+    monkeypatch.setattr("app.api.deps.verify_jwt", fake_verify)
 
     resp = await client.get(
         "/api/courses", headers={"Authorization": "Bearer fake"}

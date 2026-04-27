@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Enrollment, PendingEnrollment
 from app.models.user import User
-from app.services.auth import detect_role_from_email, verify_clerk_token
+from app.services.auth import detect_role_from_email, verify_jwt
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ async def get_current_user(
     token = auth_header.split(" ", 1)[1]
 
     try:
-        claims = verify_clerk_token(token)
+        verified = verify_jwt(token)
     except Exception as exc:
         kid = None
         try:
@@ -46,16 +46,19 @@ async def get_current_user(
             detail="Invalid token",
         )
 
-    clerk_id = claims.get("sub")
+    claims = verified.claims
+    auth_user_id = claims.get("sub")
     email = (claims.get("email") or "").strip()
 
-    if not clerk_id or not email:
+    if not auth_user_id or not email:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token claims",
         )
 
-    result = await db.execute(select(User).where(User.clerk_id == clerk_id))
+    result = await db.execute(
+        select(User).where(User.better_auth_id == auth_user_id)
+    )
     user = result.scalar_one_or_none()
 
     if user is None:
@@ -74,18 +77,20 @@ async def get_current_user(
         stmt = (
             insert(User)
             .values(
-                clerk_id=clerk_id,
+                better_auth_id=auth_user_id,
                 email=email,
                 full_name=claims.get("name"),
                 role=role,
-                avatar_url=claims.get("image_url"),
+                avatar_url=claims.get("picture") or claims.get("image"),
             )
-            .on_conflict_do_nothing(index_elements=["clerk_id"])
+            .on_conflict_do_nothing(index_elements=["better_auth_id"])
         )
         await db.execute(stmt)
         await db.commit()
 
-        result = await db.execute(select(User).where(User.clerk_id == clerk_id))
+        result = await db.execute(
+            select(User).where(User.better_auth_id == auth_user_id)
+        )
         user = result.scalar_one_or_none()
         if user is None:
             raise HTTPException(
@@ -93,13 +98,9 @@ async def get_current_user(
                 detail="User provisioning failed",
             )
 
-    # Re-sync stored email and re-derive role from the JWT on every request so
-    # that revoked / domain-changed / role-elevated identities cannot keep using
-    # a cached session. Reject if the stored role no longer matches what the
-    # JWT email implies.
-    # Re-sync email + role from the JWT when the claim is present. If the
-    # Clerk JWT template omits "email", skip silently — the user's stored
-    # email/role remain unchanged (set at first-login time).
+    # Re-sync stored email + re-derive role from the JWT on every request so
+    # that revoked / domain-changed / role-elevated identities cannot keep
+    # using a cached session.
     current_jwt_email = (claims.get("email") or "").strip().lower()
     if current_jwt_email:
         try:
@@ -107,15 +108,21 @@ async def get_current_user(
         except ValueError:
             pass  # email domain not in allowlist — keep stored role
         else:
+            mutated = False
             if user.role != derived_role:
                 logger.warning(
-                    "Role mismatch for user_id=%s: stored=%s jwt_derived=%s",
+                    "Role drift detected for user_id=%s: stored=%s "
+                    "jwt_derived=%s — updating stored role",
                     user.id,
                     user.role,
                     derived_role,
                 )
+                user.role = derived_role
+                mutated = True
             if user.email.lower() != current_jwt_email:
                 user.email = current_jwt_email
+                mutated = True
+            if mutated:
                 await db.commit()
                 await db.refresh(user)
 

@@ -15,15 +15,20 @@ class Settings(BaseSettings):
     # Database
     database_url: str = _LOCAL_DB_DEFAULT
 
-    # Clerk
-    clerk_secret_key: str = ""
-    clerk_jwks_url: str = ""
-    # Comma-separated list of authorized parties (azp claim) expected in JWTs.
-    clerk_allowed_azp: str = ""
-    # Optional audience (aud) to enforce when Clerk JWT templates set it.
-    clerk_audience: str = ""
-    # Expected issuer (iss) claim — set to the Clerk Frontend API URL.
-    clerk_issuer: str = ""
+    # Better Auth — JWT plugin exposes JWKS at /api/auth/jwks on the
+    # Next.js app, e.g. https://meli.example/api/auth/jwks.
+    better_auth_jwks_url: str = ""
+    better_auth_issuer: str = ""
+    better_auth_audience: str = ""
+    # Shared secret for internal Better-Auth → backend hooks
+    # (POST /api/internal/users/link, /users/delete) — sent as the
+    # `X-Internal-Auth` header.
+    better_auth_internal_secret: str = ""
+
+    # Resend — transactional email for verification + password reset
+    # (Clerk handled this for free; Better Auth requires we wire it).
+    resend_api_key: str = ""
+    resend_from_email: str = "Meli <noreply@meli.app>"
 
     # Cloudflare R2
     r2_account_id: str = ""
@@ -128,32 +133,27 @@ class Settings(BaseSettings):
             )
 
         if self.environment == "production":
-            # JWKS URL is the only hard requirement — without it, JWT verification
-            # cannot happen at all. audience/issuer/azp are defense-in-depth
-            # checks; each claim is enforced in verify_clerk_token only when the
-            # corresponding setting is populated. Warn loudly on missing values
-            # but don't block boot.
-            if not self.clerk_jwks_url:
+            # JWKS URL is the only hard requirement — without it, JWT
+            # verification cannot happen at all. audience/issuer are
+            # defense-in-depth checks; each is enforced in the verifier only
+            # when the corresponding setting is populated. Warn loudly on
+            # missing values but don't block boot.
+            if not self.better_auth_jwks_url:
                 raise ValueError(
-                    "CLERK_JWKS_URL must be set when ENVIRONMENT=production"
+                    "BETTER_AUTH_JWKS_URL must be set when ENVIRONMENT=production"
                 )
-            if not self.clerk_audience:
-                logger.warning(
-                    "CLERK_AUDIENCE is unset in production — audience claim "
-                    "will not be verified. Set this to your Clerk JWT template "
-                    "audience for defense in depth."
+            if not self.better_auth_audience:
+                raise ValueError(
+                    "BETTER_AUTH_AUDIENCE must be set when ENVIRONMENT=production"
                 )
-            if not self.clerk_issuer:
-                logger.warning(
-                    "CLERK_ISSUER is unset in production — issuer claim will "
-                    "not be verified. Set this to your Clerk frontend-api URL "
-                    "for defense in depth."
+            if not self.better_auth_issuer:
+                raise ValueError(
+                    "BETTER_AUTH_ISSUER must be set when ENVIRONMENT=production"
                 )
-            if not self.clerk_allowed_azp.strip():
-                logger.warning(
-                    "CLERK_ALLOWED_AZP is empty in production — any authorized "
-                    "party will be accepted. Set to a comma-separated list of "
-                    "allowed frontend origins for defense in depth."
+            if not self.better_auth_internal_secret:
+                raise ValueError(
+                    "BETTER_AUTH_INTERNAL_SECRET must be set when "
+                    "ENVIRONMENT=production"
                 )
 
         canvas_enabled = bool(self.canvas_client_id)
