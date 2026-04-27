@@ -25,12 +25,14 @@ import {
   Trash2,
   ArrowLeft,
   HelpCircle,
+  Pencil,
   RefreshCw,
   Plus,
   Loader2,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { DifficultyBadge } from "@/components/ui/difficulty-badge";
+import { QuizQuestionEditor } from "./quiz-question-editor";
 
 interface PreviewQuestion {
   readonly id: string;
@@ -78,6 +80,7 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
     ? `/dashboard/courses/${courseId}/live`
     : `/dashboard/courses/${courseId}?tab=quizzes`;
   const [addOpen, setAddOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<PreviewQuestion | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
 
@@ -176,6 +179,33 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
       });
     },
     onSuccess: invalidate,
+  });
+
+  const updateQuestionMutation = useMutation({
+    mutationFn: async (input: {
+      question_id: string;
+      question_text: string;
+      options: Record<string, string>;
+      correct_answer: string;
+      explanation: string | null;
+      difficulty: string;
+    }) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const { question_id, ...patch } = input;
+      return apiFetch<{ success: boolean }>(
+        `/questions/${question_id}`,
+        {
+          method: "PATCH",
+          token: token!,
+          body: JSON.stringify(patch),
+        }
+      );
+    },
+    onSuccess: () => {
+      invalidate();
+      setEditTarget(null);
+    },
   });
 
   const regenerateMutation = useMutation({
@@ -437,6 +467,21 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={() => setEditTarget(question)}
+                    disabled={
+                      isRegenerating ||
+                      updateQuestionMutation.isPending ||
+                      sessionActive
+                    }
+                    title={lockTooltip}
+                    className="text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                  >
+                    <Pencil className="size-3.5" />
+                    Edit
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => regenerateMutation.mutate(question.id)}
                     disabled={
                       isRegenerating ||
@@ -476,6 +521,28 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
           );
         })}
       </div>
+
+      {/* Edit Question Dialog */}
+      {editTarget && (
+        <QuizQuestionEditor
+          open={editTarget !== null}
+          initial={{
+            question_text: editTarget.question_text,
+            options: editTarget.options,
+            correct_answer: editTarget.correct_answer,
+            explanation: editTarget.explanation,
+            difficulty: editTarget.difficulty,
+          }}
+          isSaving={updateQuestionMutation.isPending}
+          onCancel={() => setEditTarget(null)}
+          onSubmit={(patch) =>
+            updateQuestionMutation.mutate({
+              question_id: editTarget.id,
+              ...patch,
+            })
+          }
+        />
+      )}
 
       {/* Add Question Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
