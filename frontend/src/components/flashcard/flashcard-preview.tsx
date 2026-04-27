@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -13,9 +14,21 @@ import {
   Globe,
   GlobeLock,
   Layers,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { DifficultyBadge } from "@/components/ui/difficulty-badge";
+import {
+  useAddFlashcardCard,
+  useDeleteFlashcardCard,
+  useRegenerateFlashcardCard,
+  useUpdateFlashcardCard,
+} from "@/hooks/use-flashcard-sets";
+import { FlashcardCardEditor } from "./flashcard-card-editor";
 
 interface FlashcardCard {
   readonly id: string;
@@ -40,6 +53,11 @@ interface FlashcardPreviewProps {
   readonly courseId: string;
 }
 
+type EditorState =
+  | { readonly mode: "closed" }
+  | { readonly mode: "create" }
+  | { readonly mode: "edit"; readonly card: FlashcardCard };
+
 export function FlashcardPreview({ setId, courseId }: FlashcardPreviewProps) {
   const { getToken, isSignedIn } = useAuth();
   const queryClient = useQueryClient();
@@ -54,10 +72,10 @@ export function FlashcardPreview({ setId, courseId }: FlashcardPreviewProps) {
     queryFn: async () => {
       const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
-      const res = await apiFetch<{ success: boolean; data: FlashcardSetDetail }>(
-        `/flashcard-sets/${setId}`,
-        { token: token! }
-      );
+      const res = await apiFetch<{
+        success: boolean;
+        data: FlashcardSetDetail;
+      }>(`/flashcard-sets/${setId}`, { token: token! });
       return res.data;
     },
     enabled: isSignedIn === true,
@@ -67,16 +85,25 @@ export function FlashcardPreview({ setId, courseId }: FlashcardPreviewProps) {
     mutationFn: async () => {
       const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
-      return apiFetch<{ success: boolean }>(`/flashcard-sets/${setId}/publish`, {
-        method: "POST",
-        token: token!,
-      });
+      return apiFetch<{ success: boolean }>(
+        `/flashcard-sets/${setId}/publish`,
+        { method: "POST", token: token! }
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["flashcard-set", setId] });
-      queryClient.invalidateQueries({ queryKey: ["flashcard-sets", courseId] });
+      queryClient.invalidateQueries({
+        queryKey: ["flashcard-sets", courseId],
+      });
     },
   });
+
+  const addCard = useAddFlashcardCard(courseId, setId);
+  const updateCard = useUpdateFlashcardCard(courseId, setId);
+  const deleteCard = useDeleteFlashcardCard(courseId, setId);
+  const regenerateCard = useRegenerateFlashcardCard(courseId, setId);
+
+  const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
 
   if (isLoading) {
     return (
@@ -96,12 +123,16 @@ export function FlashcardPreview({ setId, courseId }: FlashcardPreviewProps) {
       <Card className="mx-auto max-w-3xl">
         <CardContent className="flex flex-col items-center py-12 text-center">
           <p className="text-sm text-[var(--color-error)]">
-            {error instanceof Error ? error.message : "Failed to load flashcard set"}
+            {error instanceof Error
+              ? error.message
+              : "Failed to load flashcard set"}
           </p>
         </CardContent>
       </Card>
     );
   }
+
+  const editorBusy = addCard.isPending || updateCard.isPending;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -112,7 +143,11 @@ export function FlashcardPreview({ setId, courseId }: FlashcardPreviewProps) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => router.push(`/dashboard/courses/${courseId}?tab=flashcards`)}
+              onClick={() =>
+                router.push(
+                  `/dashboard/courses/${courseId}?tab=flashcards`
+                )
+              }
             >
               <ArrowLeft className="size-4" />
             </Button>
@@ -137,64 +172,149 @@ export function FlashcardPreview({ setId, courseId }: FlashcardPreviewProps) {
             </Badge>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => publishMutation.mutate()}
-          disabled={publishMutation.isPending}
-        >
-          {fcSet.is_published ? (
-            <>
-              <GlobeLock className="size-4" />
-              Unpublish
-            </>
-          ) : (
-            <>
-              <Globe className="size-4" />
-              Publish
-            </>
-          )}
-        </Button>
+        <div className="flex flex-col items-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => publishMutation.mutate()}
+            disabled={publishMutation.isPending}
+          >
+            {fcSet.is_published ? (
+              <>
+                <GlobeLock className="size-4" />
+                Unpublish
+              </>
+            ) : (
+              <>
+                <Globe className="size-4" />
+                Publish
+              </>
+            )}
+          </Button>
+          <Button size="sm" onClick={() => setEditor({ mode: "create" })}>
+            <Plus className="size-4" />
+            Add card
+          </Button>
+        </div>
       </div>
 
       <Separator />
 
       {/* Cards list */}
       <div className="space-y-3">
-        {fcSet.cards.map((card, idx) => (
-          <Card key={card.id}>
-            <CardContent className="space-y-3">
-              <div className="flex items-start gap-3">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-light)] text-xs font-bold text-[var(--color-primary)]">
-                  {idx + 1}
-                </span>
-                <div className="flex-1 space-y-2">
-                  <div className="-mt-1 flex justify-end">
-                    <DifficultyBadge value={card.difficulty} size="sm" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">
-                      Front
-                    </p>
-                    <p className="text-sm font-medium text-[var(--color-text)]">
-                      {card.front}
-                    </p>
-                  </div>
-                  <Separator />
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">
-                      Back
-                    </p>
-                    <p className="text-sm text-[var(--color-text-secondary)]">
-                      {card.back}
-                    </p>
+        {fcSet.cards.map((card, idx) => {
+          const isRegenerating =
+            regenerateCard.isPending && regenerateCard.variables === card.id;
+          const isDeleting =
+            deleteCard.isPending && deleteCard.variables === card.id;
+          return (
+            <Card key={card.id}>
+              <CardContent className="space-y-3">
+                <div className="flex items-start gap-3">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-light)] text-xs font-bold text-[var(--color-primary)]">
+                    {idx + 1}
+                  </span>
+                  <div className="flex-1 space-y-2">
+                    <div className="-mt-1 flex justify-end">
+                      <DifficultyBadge value={card.difficulty} size="sm" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">
+                        Front
+                      </p>
+                      <p className="text-sm font-medium text-[var(--color-text)]">
+                        {card.front}
+                      </p>
+                    </div>
+                    <Separator />
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">
+                        Back
+                      </p>
+                      <p className="text-sm text-[var(--color-text-secondary)]">
+                        {card.back}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+
+                {/* Per-card actions */}
+                <div className="ml-10 flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditor({ mode: "edit", card })}
+                    disabled={isRegenerating || isDeleting}
+                    className="text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                  >
+                    <Pencil className="size-3.5" />
+                    Edit
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => regenerateCard.mutate(card.id)}
+                    disabled={isRegenerating || isDeleting}
+                    className="text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                  >
+                    {isRegenerating ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="size-3.5" />
+                    )}
+                    {isRegenerating ? "Regenerating..." : "Regenerate"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteCard.mutate(card.id)}
+                    disabled={
+                      isDeleting ||
+                      isRegenerating ||
+                      fcSet.cards.length <= 1
+                    }
+                    className="text-[var(--color-text-muted)] hover:text-[var(--color-error)]"
+                  >
+                    <Trash2 className="size-3.5" />
+                    Remove
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
+
+      <FlashcardCardEditor
+        mode={editor.mode === "edit" ? "edit" : "create"}
+        open={editor.mode !== "closed"}
+        initial={editor.mode === "edit" ? editor.card : null}
+        isSaving={editorBusy}
+        onCancel={() => setEditor({ mode: "closed" })}
+        onSubmit={(draft) => {
+          if (editor.mode === "edit") {
+            updateCard.mutate(
+              {
+                card_id: editor.card.id,
+                front: draft.front,
+                back: draft.back,
+                difficulty: draft.difficulty,
+              },
+              { onSuccess: () => setEditor({ mode: "closed" }) }
+            );
+          } else {
+            addCard.mutate(
+              {
+                front: draft.front,
+                back: draft.back,
+                difficulty: draft.difficulty,
+              },
+              { onSuccess: () => setEditor({ mode: "closed" }) }
+            );
+          }
+        }}
+      />
+
     </div>
   );
 }
