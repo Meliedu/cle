@@ -485,11 +485,17 @@ export function FolderBrowser<TItem extends ItemLike>({
 
 export interface ItemActionsMenuProps {
   readonly onMove: () => void;
+  readonly onRename?: () => void;
   readonly onDelete?: () => void;
   readonly extra?: ReactNode;
 }
 
-export function ItemActionsMenu({ onMove, onDelete, extra }: ItemActionsMenuProps) {
+export function ItemActionsMenu({
+  onMove,
+  onRename,
+  onDelete,
+  extra,
+}: ItemActionsMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -510,6 +516,12 @@ export function ItemActionsMenu({ onMove, onDelete, extra }: ItemActionsMenuProp
         className="w-44"
         onClick={(e) => e.stopPropagation()}
       >
+        {onRename && (
+          <DropdownMenuItem onClick={onRename}>
+            <Pencil className="size-4" />
+            Rename
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onClick={onMove}>
           <ArrowRight className="size-4" />
           Move to…

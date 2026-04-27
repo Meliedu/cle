@@ -19,6 +19,7 @@ export interface QuizBankBrowserProps {
   readonly onMoveQuiz: (quizId: string, folderId: string | null) => void;
   readonly onStartSession: (quizId: string) => void;
   readonly onDeleteQuiz: (quizId: string) => void;
+  readonly onRenameQuiz: (quizId: string, currentTitle: string) => void;
   readonly onOpenQuiz: (quizId: string) => void;
   readonly onGenerate: () => void;
   readonly onImport: () => void;
@@ -34,6 +35,7 @@ export function QuizBankBrowser({
   onMoveQuiz,
   onStartSession,
   onDeleteQuiz,
+  onRenameQuiz,
   onOpenQuiz,
   onGenerate,
   onImport,
@@ -117,6 +119,7 @@ export function QuizBankBrowser({
               </Button>
               <ItemActionsMenu
                 onMove={onMove}
+                onRename={() => onRenameQuiz(quiz.id, quiz.title)}
                 onDelete={() => onDeleteQuiz(quiz.id)}
                 extra={openExtra}
               />
@@ -138,6 +141,7 @@ export function QuizBankBrowser({
               <div className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                 <ItemActionsMenu
                   onMove={onMove}
+                  onRename={() => onRenameQuiz(quiz.id, quiz.title)}
                   onDelete={() => onDeleteQuiz(quiz.id)}
                   extra={openExtra}
                 />
