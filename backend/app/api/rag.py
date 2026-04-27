@@ -15,6 +15,7 @@ from app.schemas.rag import (
     ChunkResult,
     CourseSummaryResponse,
     GenerateFlashcardsRequest,
+    GeneratePronunciationRequest,
     GenerateQuizRequest,
     GenerateSummaryRequest,
     JobAcceptedResponse,
@@ -309,6 +310,47 @@ async def rag_generate_flashcards(
     )
 
 
+@router.post(
+    "/generate-pronunciation",
+    response_model=APIResponse[JobAcceptedResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def rag_generate_pronunciation(
+    body: GeneratePronunciationRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    # Pronunciation sets are instructor-curated and follow a publish lifecycle,
+    # so generation is restricted to instructors (mirrors quiz, not flashcards).
+    await _verify_enrollment(db, body.course_id, user.id)
+    await _get_course_language(db, body.course_id)
+
+    task = await _enqueue_generation_job(
+        db,
+        task_type="generate_pronunciation",
+        course_id=body.course_id,
+        user_id=user.id,
+        title=body.title,
+        extra={
+            "num_items": body.num_items,
+            "document_ids": [str(d) for d in (body.document_ids or [])] or None,
+            "difficulty": body.difficulty,
+            "item_types": list(body.item_types),
+        },
+    )
+    response.status_code = status.HTTP_202_ACCEPTED
+    return APIResponse(
+        success=True,
+        data=JobAcceptedResponse(
+            job_id=task.id,
+            kind="generate_pronunciation",
+            course_id=body.course_id,
+            title=body.title,
+        ),
+    )
+
+
 @router.get(
     "/jobs/{job_id}",
     response_model=APIResponse[JobStatusResponse],
@@ -328,7 +370,12 @@ async def rag_get_job_status(
     if task is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    if task.task_type not in {"generate_quiz", "generate_flashcards", "generate_summary"}:
+    if task.task_type not in {
+        "generate_quiz",
+        "generate_flashcards",
+        "generate_pronunciation",
+        "generate_summary",
+    }:
         raise HTTPException(status_code=404, detail="Job not found")
 
     payload = task.payload or {}

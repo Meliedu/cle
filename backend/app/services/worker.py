@@ -289,7 +289,12 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
             raise ValueError("Missing course_id or content_type in recalibration payload")
         await run_recalibration_job(session, uuid.UUID(course_id), content_type)
         return None
-    elif task.task_type in {"generate_quiz", "generate_flashcards", "generate_summary"}:
+    elif task.task_type in {
+        "generate_quiz",
+        "generate_flashcards",
+        "generate_pronunciation",
+        "generate_summary",
+    }:
         from app.services.jobs import run_generation_job
         result = await run_generation_job(session, task.task_type, task.payload)
         await session.commit()

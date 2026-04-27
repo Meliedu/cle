@@ -51,6 +51,16 @@ class GeneratedFlashcard:
     back: str
 
 
+@dataclass(frozen=True)
+class GeneratedPronunciationItem:
+    text: str
+    phonetic: str | None
+    translation: str | None
+    tips: str | None
+    item_type: str
+    difficulty: str
+
+
 # ---------------------------------------------------------------------------
 # Client (lazy singleton)
 # ---------------------------------------------------------------------------
@@ -461,6 +471,141 @@ async def generate_flashcards(
         logger.warning("flashcard generation produced zero valid cards")
         raise LLMGenerationError(
             "flashcard generation failed; please try again"
+        )
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Pronunciation Set Generation (instructor-curated, publish-driven)
+# ---------------------------------------------------------------------------
+
+_PRONUNCIATION_SYSTEM_PROMPT = _BOUNDARY_PREAMBLE + """\
+You are a pronunciation-practice item generator for language learners.
+Given source material, produce pronunciation targets that students will read aloud.
+Return ONLY a JSON array of item objects. No extra text.
+
+Each object must have:
+- "text": the word, phrase, or sentence to pronounce (in the target language)
+- "item_type": one of "word", "phrase", "sentence"
+- "phonetic": IPA transcription, or null if unsure
+- "translation": brief English gloss, or null if obvious
+- "tips": one-sentence pronunciation hint (stress, tricky sound), or null
+- "difficulty": one of "easy", "medium", "hard"
+"""
+
+_ALLOWED_ITEM_TYPES = {"word", "phrase", "sentence"}
+_ALLOWED_ITEM_DIFFICULTIES = {"easy", "medium", "hard"}
+
+
+def _coerce_item_type(value: object, text: str) -> str:
+    """Coerce a model-provided item_type to one of the allowed literals.
+
+    Falls back to a token-count heuristic when the model omits or invents a
+    value: 1 token → ``word``, ≤5 tokens → ``phrase``, otherwise ``sentence``.
+    """
+    candidate = str(value or "").strip().lower()
+    if candidate in _ALLOWED_ITEM_TYPES:
+        return candidate
+    token_count = len(text.split())
+    if token_count <= 1:
+        return "word"
+    if token_count <= 5:
+        return "phrase"
+    return "sentence"
+
+
+async def generate_pronunciation(
+    chunks: list[RetrievedChunk],
+    num_items: int = 10,
+    item_types: list[str] | None = None,
+    difficulty: str = "medium",
+    language: str = "english",
+) -> list[GeneratedPronunciationItem]:
+    """Generate pronunciation practice items from retrieved chunks.
+
+    Tries the primary model first. On JSON parse failure, falls back to the
+    secondary model. Validates each item, coercing or dropping malformed rows
+    so the caller never sees invalid data; raises ``LLMGenerationError`` if
+    zero valid items survive.
+    """
+    allowed_types = [t for t in (item_types or []) if t in _ALLOWED_ITEM_TYPES]
+    if not allowed_types:
+        allowed_types = ["word", "phrase", "sentence"]
+    allowed_set = set(allowed_types)
+
+    context = _build_context(chunks)
+    difficulty_clause = (
+        "with a mix of easy, medium, and hard items"
+        if difficulty == "mixed"
+        else f"at **{difficulty}** difficulty"
+    )
+    types_clause = ", ".join(allowed_types)
+    user_prompt = (
+        f"Create {num_items} pronunciation practice items in {language} {difficulty_clause}. "
+        f"Allowed item types: {types_clause}. Mix types where appropriate. "
+        f"Items should be drawn from or inspired by the following material. "
+        f"The 'text' field must be in {language} since the student needs to practise speaking it.\n\n"
+        f"{context}"
+    )
+
+    try:
+        raw = await _call_llm(_PRONUNCIATION_SYSTEM_PROMPT, user_prompt)
+        items = _parse_json_response(raw)
+    except (ValueError, json.JSONDecodeError) as exc:
+        logger.warning("Primary model JSON parse failed: %s — trying fallback", exc)
+        try:
+            raw = await _call_llm(
+                _PRONUNCIATION_SYSTEM_PROMPT,
+                user_prompt,
+                model=settings.openrouter_fallback_model,
+            )
+            items = _parse_json_response(raw)
+        except Exception as fallback_exc:  # noqa: BLE001 — surface as domain error
+            logger.exception("Fallback pronunciation generation failed")
+            raise LLMGenerationError(
+                "pronunciation generation failed; please try again"
+            ) from fallback_exc
+
+    set_difficulty = difficulty if difficulty != "mixed" else "medium"
+    results: list[GeneratedPronunciationItem] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        if not text or len(text) > 500:
+            continue
+        text = text[:500]
+
+        item_type = _coerce_item_type(item.get("item_type"), text)
+        if item_type not in allowed_set:
+            continue
+
+        phonetic_raw = str(item.get("phonetic") or "").strip()
+        translation_raw = str(item.get("translation") or "").strip()
+        tips_raw = str(item.get("tips") or "").strip()
+        phonetic = phonetic_raw[:500] or None
+        translation = translation_raw[:1000] or None
+        tips = tips_raw[:2000] or None
+
+        item_difficulty = str(item.get("difficulty") or "").strip().lower()
+        if item_difficulty not in _ALLOWED_ITEM_DIFFICULTIES:
+            item_difficulty = set_difficulty
+
+        results.append(
+            GeneratedPronunciationItem(
+                text=text,
+                phonetic=phonetic,
+                translation=translation,
+                tips=tips,
+                item_type=item_type,
+                difficulty=item_difficulty,
+            )
+        )
+
+    if not results:
+        logger.warning("pronunciation generation produced zero valid items")
+        raise LLMGenerationError(
+            "pronunciation generation failed; please try again"
         )
     return results
 

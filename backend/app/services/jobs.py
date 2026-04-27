@@ -18,16 +18,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.course import Course
 from app.models.flashcard import FlashcardCard, FlashcardSet, FlashcardSetDocument
+from app.models.pronunciation import (
+    PronunciationItem,
+    PronunciationSet,
+    PronunciationSetDocument,
+)
 from app.models.quiz import Question, Quiz, QuizDocument
 from app.models.summary import CourseSummary
 from app.schemas.rag import (
     GenerateFlashcardsRequest,
+    GeneratePronunciationRequest,
     GenerateQuizRequest,
     GenerateSummaryRequest,
 )
 from app.services.embedder import embed_query
 from app.services.generator import (
     generate_flashcards,
+    generate_pronunciation,
     generate_quiz,
     generate_summary,
 )
@@ -213,6 +220,91 @@ async def run_generate_flashcards(
     return {"flashcard_set_id": str(fc_set.id), "card_count": len(generated)}
 
 
+async def run_generate_pronunciation(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    validated = GeneratePronunciationRequest.model_validate(
+        {
+            "course_id": payload["course_id"],
+            "title": payload["title"],
+            "document_ids": payload.get("document_ids"),
+            "num_items": payload.get("num_items", 10),
+            "difficulty": payload.get("difficulty", "medium"),
+            "item_types": payload.get("item_types", ["word", "phrase"]),
+        }
+    )
+    course_id = validated.course_id
+    user_id = uuid.UUID(payload["user_id"])
+    title = validated.title
+    num_items = validated.num_items
+    document_uuids = list(validated.document_ids) if validated.document_ids else None
+    difficulty = validated.difficulty
+    item_types = list(validated.item_types)
+
+    language = await _course_language(session, course_id)
+    safe_title = _sanitize(title)
+
+    query_embedding = await embed_query(safe_title)
+    chunks = await retrieve_chunks(
+        session,
+        course_id=course_id,
+        query_embedding=query_embedding,
+        top_k=20,
+        document_ids=document_uuids,
+    )
+    generated = await generate_pronunciation(
+        chunks,
+        num_items=num_items,
+        item_types=item_types,
+        difficulty=difficulty,
+        language=language,
+    )
+
+    pron_set = PronunciationSet(
+        course_id=course_id,
+        created_by=user_id,
+        title=title,
+        is_published=False,
+        difficulty=difficulty if difficulty != "mixed" else "medium",
+        language=language,
+    )
+    session.add(pron_set)
+    await session.flush()
+
+    for idx, gp in enumerate(generated):
+        session.add(
+            PronunciationItem(
+                pronunciation_set_id=pron_set.id,
+                item_index=idx,
+                text=gp.text,
+                phonetic=gp.phonetic,
+                translation=gp.translation,
+                tips=gp.tips,
+                item_type=gp.item_type,
+                difficulty=gp.difficulty,
+            )
+        )
+
+    if document_uuids:
+        for doc_id in document_uuids:
+            session.add(
+                PronunciationSetDocument(
+                    pronunciation_set_id=pron_set.id, document_id=doc_id
+                )
+            )
+
+    await session.flush()
+    logger.info(
+        "generate_pronunciation job finished set_id=%s items=%d",
+        pron_set.id,
+        len(generated),
+    )
+    return {
+        "pronunciation_set_id": str(pron_set.id),
+        "item_count": len(generated),
+    }
+
+
 async def run_generate_summary(
     session: AsyncSession, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -264,6 +356,7 @@ async def run_generate_summary(
 _HANDLERS = {
     "generate_quiz": run_generate_quiz,
     "generate_flashcards": run_generate_flashcards,
+    "generate_pronunciation": run_generate_pronunciation,
     "generate_summary": run_generate_summary,
 }
 

@@ -32,6 +32,7 @@ class RAGQueryResponse(BaseModel):
 QuestionType = Literal["multiple_choice", "true_false"]
 QuizPurpose = Literal["after_class", "live"]
 Difficulty = Literal["easy", "medium", "hard", "mixed"]
+PronunciationItemType = Literal["word", "phrase", "sentence"]
 
 
 class GenerateQuizRequest(BaseModel):
@@ -73,11 +74,28 @@ class GenerateFlashcardsRequest(BaseModel):
     difficulty: Difficulty = "medium"
 
 
+class GeneratePronunciationRequest(BaseModel):
+    course_id: uuid.UUID
+    title: str
+    document_ids: list[uuid.UUID] | None = None
+    num_items: int = Field(default=10, ge=1, le=50)
+    difficulty: Difficulty = "medium"
+    item_types: list[PronunciationItemType] = Field(
+        default_factory=lambda: ["word", "phrase"],
+        min_length=1,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Async generation jobs
 # ---------------------------------------------------------------------------
 
-JobKind = Literal["generate_quiz", "generate_flashcards", "generate_summary"]
+JobKind = Literal[
+    "generate_quiz",
+    "generate_flashcards",
+    "generate_summary",
+    "generate_pronunciation",
+]
 JobStatus = Literal["pending", "running", "completed", "failed"]
 
 
