@@ -31,7 +31,11 @@ import {
   useDeleteLiveSession,
   useFindLiveSessionByCode,
 } from "@/hooks/use-live-quiz";
-import { useQuizzes, useDeleteQuiz } from "@/hooks/use-quizzes";
+import {
+  useQuizzes,
+  useDeleteQuiz,
+  useUpdateQuiz,
+} from "@/hooks/use-quizzes";
 import {
   useQuizFolders,
   useCreateQuizFolder,
@@ -62,6 +66,7 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
   const createSession = useCreateLiveSession(courseId);
   const deleteSession = useDeleteLiveSession(courseId);
   const deleteQuiz = useDeleteQuiz(courseId);
+  const updateQuiz = useUpdateQuiz(courseId);
   const findByCode = useFindLiveSessionByCode();
   const { data: folders } = useQuizFolders(courseId, "live");
   const createFolder = useCreateQuizFolder(courseId);
@@ -84,6 +89,11 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
   const [deleteQuizConfirmId, setDeleteQuizConfirmId] = useState<string | null>(
     null
   );
+  const [renameQuizTarget, setRenameQuizTarget] = useState<{
+    id: string;
+    originalTitle: string;
+  } | null>(null);
+  const [renameQuizValue, setRenameQuizValue] = useState("");
 
   const handleCreate = () => {
     if (!selectedQuizId) return;
@@ -281,6 +291,10 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
             setCreateOpen(true);
           }}
           onDeleteQuiz={(quizId) => setDeleteQuizConfirmId(quizId)}
+          onRenameQuiz={(quizId, currentTitle) => {
+            setRenameQuizTarget({ id: quizId, originalTitle: currentTitle });
+            setRenameQuizValue(currentTitle);
+          }}
           onOpenQuiz={(quizId) =>
             router.push(
               `/dashboard/courses/${courseId}/quizzes/${quizId}?from=live`
@@ -470,6 +484,64 @@ export function LiveSessionsPanel({ courseId }: LiveSessionsPanelProps) {
               }}
             >
               {deleteQuiz.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={renameQuizTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !updateQuiz.isPending) setRenameQuizTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename quiz</DialogTitle>
+            <DialogDescription>
+              Pick a new name for this question set.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={renameQuizValue}
+            onChange={(e) => setRenameQuizValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" || !renameQuizTarget) return;
+              const next = renameQuizValue.trim();
+              if (!next || next === renameQuizTarget.originalTitle) return;
+              updateQuiz.mutate(
+                { quiz_id: renameQuizTarget.id, title: next },
+                { onSuccess: () => setRenameQuizTarget(null) }
+              );
+            }}
+            placeholder="Quiz name"
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRenameQuizTarget(null)}
+              disabled={updateQuiz.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                updateQuiz.isPending ||
+                !renameQuizValue.trim() ||
+                renameQuizValue.trim() === renameQuizTarget?.originalTitle
+              }
+              onClick={() => {
+                if (!renameQuizTarget) return;
+                const next = renameQuizValue.trim();
+                if (!next || next === renameQuizTarget.originalTitle) return;
+                updateQuiz.mutate(
+                  { quiz_id: renameQuizTarget.id, title: next },
+                  { onSuccess: () => setRenameQuizTarget(null) }
+                );
+              }}
+            >
+              {updateQuiz.isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

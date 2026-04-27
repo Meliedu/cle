@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
-import { useQuizzes } from "@/hooks/use-quizzes";
+import { useQuizzes, useUpdateQuiz } from "@/hooks/use-quizzes";
 import {
   useQuizFolders,
   useCreateQuizFolder,
@@ -26,6 +26,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import {
   Sparkles,
   Globe,
@@ -87,6 +88,8 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
   const queryClient = useQueryClient();
   const [generateOpen, setGenerateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Quiz | null>(null);
+  const [renameTarget, setRenameTarget] = useState<Quiz | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   const { data: quizzes, isLoading, error } = useQuizzes(
     courseId,
@@ -101,6 +104,7 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
   const deleteFolder = useDeleteQuizFolder(courseId);
   const moveFolder = useMoveQuizFolder(courseId);
   const moveQuiz = useMoveQuizToFolder(courseId);
+  const updateQuiz = useUpdateQuiz(courseId);
 
   const publishMutation = useMutation({
     mutationFn: async (quizId: string) => {
@@ -136,6 +140,24 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
       deleteMutation.mutate(deleteTarget.id);
     }
   }, [deleteTarget, deleteMutation]);
+
+  const openRename = useCallback((quiz: Quiz) => {
+    setRenameTarget(quiz);
+    setRenameValue(quiz.title);
+  }, []);
+
+  const handleRename = useCallback(() => {
+    if (!renameTarget) return;
+    const next = renameValue.trim();
+    if (!next || next === renameTarget.title) {
+      setRenameTarget(null);
+      return;
+    }
+    updateQuiz.mutate(
+      { quiz_id: renameTarget.id, title: next },
+      { onSuccess: () => setRenameTarget(null) }
+    );
+  }, [renameTarget, renameValue, updateQuiz]);
 
   const visibleQuizzes = isInstructor
     ? quizzes
@@ -269,6 +291,7 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
             }
             onDelete={() => setDeleteTarget(quiz)}
             onMove={onMove}
+            onRename={() => openRename(quiz)}
           />
         )}
       />
@@ -278,6 +301,50 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
         open={generateOpen}
         onOpenChange={setGenerateOpen}
       />
+
+      <Dialog
+        open={renameTarget !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !updateQuiz.isPending) setRenameTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename quiz</DialogTitle>
+            <DialogDescription>
+              Pick a new name for this question set.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleRename();
+            }}
+            placeholder="Quiz name"
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRenameTarget(null)}
+              disabled={updateQuiz.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRename}
+              disabled={
+                updateQuiz.isPending ||
+                !renameValue.trim() ||
+                renameValue.trim() === renameTarget?.title
+              }
+            >
+              {updateQuiz.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={deleteTarget !== null}
@@ -384,6 +451,7 @@ interface InstructorQuizCardProps {
   readonly isPublishing: boolean;
   readonly onDelete: () => void;
   readonly onMove: () => void;
+  readonly onRename: () => void;
 }
 
 function InstructorQuizCard({
@@ -393,6 +461,7 @@ function InstructorQuizCard({
   isPublishing,
   onDelete,
   onMove,
+  onRename,
 }: InstructorQuizCardProps) {
   const isPublished = quiz.is_published;
   return (
@@ -400,6 +469,7 @@ function InstructorQuizCard({
       <div className="absolute top-3 right-3 z-10 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
         <ItemActionsMenu
           onMove={onMove}
+          onRename={onRename}
           onDelete={onDelete}
           extra={
             <DropdownMenuItem onClick={onPublish} disabled={isPublishing}>

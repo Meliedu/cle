@@ -67,6 +67,42 @@ export interface ImportToLiveInput {
   readonly title: string;
 }
 
+export interface UpdateQuizInput {
+  readonly quiz_id: string;
+  readonly title?: string;
+  readonly description?: string;
+}
+
+export function useUpdateQuiz(courseId: string) {
+  const { getToken } = useAuth();
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: UpdateQuizInput) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const { quiz_id, ...body } = input;
+      const response = await apiFetch<ApiEnvelope<QuizResponse>>(
+        `/quizzes/${quiz_id}`,
+        {
+          token,
+          method: "PUT",
+          body: JSON.stringify(body),
+        }
+      );
+      return response.data;
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["quizzes", courseId, "live"] });
+      qc.invalidateQueries({ queryKey: ["quizzes", courseId, "after_class"] });
+      qc.invalidateQueries({ queryKey: ["quizzes", courseId, "all"] });
+      qc.invalidateQueries({
+        queryKey: ["quizzes", "detail", variables.quiz_id],
+      });
+    },
+  });
+}
+
 export function useDeleteQuiz(courseId: string) {
   const { getToken } = useAuth();
   const qc = useQueryClient();
