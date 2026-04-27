@@ -55,6 +55,9 @@ export default function SignUpPage() {
   const onMicrosoft = async () => {
     setErrors({});
     setMicrosoftBusy(true);
+    // Microsoft SSO emails are pre-verified by the IdP so we skip the
+    // /verify-email step that the email/password flow goes through. Land
+    // straight on the dashboard.
     const { error } = await authClient.signIn.social({
       provider: "microsoft",
       callbackURL: "/dashboard",

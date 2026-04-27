@@ -106,25 +106,37 @@ async def get_current_user(
         try:
             derived_role = detect_role_from_email(current_jwt_email)
         except ValueError:
-            pass  # email domain not in allowlist — keep stored role
-        else:
-            mutated = False
-            if user.role != derived_role:
-                logger.warning(
-                    "Role drift detected for user_id=%s: stored=%s "
-                    "jwt_derived=%s — updating stored role",
-                    user.id,
-                    user.role,
-                    derived_role,
-                )
-                user.role = derived_role
-                mutated = True
-            if user.email.lower() != current_jwt_email:
-                user.email = current_jwt_email
-                mutated = True
-            if mutated:
-                await db.commit()
-                await db.refresh(user)
+            # JWT email is no longer on the allowlist — refuse the request
+            # rather than letting the user coast on whatever role the local
+            # row was last persisted with. The allowlist is static config
+            # so this only fires if config changed or claims were tampered.
+            logger.warning(
+                "Rejecting authenticated request: user_id=%s jwt_email=%s "
+                "domain not in allowlist",
+                user.id,
+                current_jwt_email,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Email domain not allowed",
+            )
+        mutated = False
+        if user.role != derived_role:
+            logger.warning(
+                "Role drift detected for user_id=%s: stored=%s "
+                "jwt_derived=%s — updating stored role",
+                user.id,
+                user.role,
+                derived_role,
+            )
+            user.role = derived_role
+            mutated = True
+        if user.email.lower() != current_jwt_email:
+            user.email = current_jwt_email
+            mutated = True
+        if mutated:
+            await db.commit()
+            await db.refresh(user)
 
     # Claim any PendingEnrollment rows pre-provisioned for this email by a
     # Canvas roster sync. Runs on every authenticated request — cheap (indexed

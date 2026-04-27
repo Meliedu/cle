@@ -23,8 +23,12 @@ async function send({ to, subject, text, html }: SendArgs): Promise<void> {
     if (process.env.NODE_ENV === "production") {
       throw new Error("RESEND_API_KEY is not configured");
     }
+    // Body intentionally omitted — it contains the verification / reset
+    // token URL, which is single-use auth material that must not land in
+    // shared dev/CI logs. To actually receive these in dev, set
+    // RESEND_API_KEY.
     console.warn(
-      `[auth-email] RESEND_API_KEY unset; would send to=${to} subject="${subject}"\n${text}`,
+      `[auth-email] RESEND_API_KEY unset; would send to=${to} subject="${subject}" (body redacted)`,
     );
     return;
   }

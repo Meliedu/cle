@@ -41,9 +41,10 @@ def _get_jwks_client() -> PyJWKClient:
 def verify_jwt(token: str) -> VerifiedToken:
     """Verify a Better Auth JWT and return its claims.
 
-    Better Auth's JWT plugin signs with EdDSA (Ed25519) by default. We
-    accept the common asymmetric algorithms so a key rotation onto RS256
-    or ES256 wouldn't require a code change.
+    Better Auth's JWT plugin signs with EdDSA (Ed25519). The algorithm list
+    is pinned to EdDSA only — accepting RS256/ES256 here would let any
+    JWKS key with one of those algorithms produce accepted tokens, which
+    is a real risk if the JWKS URL ever points at a different IdP.
     """
     jwks_client = _get_jwks_client()
     signing_key = jwks_client.get_signing_key_from_jwt(token)
@@ -64,7 +65,7 @@ def verify_jwt(token: str) -> VerifiedToken:
     claims = jwt.decode(
         token,
         signing_key.key,
-        algorithms=["EdDSA", "RS256", "ES256"],
+        algorithms=["EdDSA"],
         audience=audience,
         issuer=issuer,
         options=decode_options,

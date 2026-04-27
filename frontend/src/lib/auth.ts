@@ -61,6 +61,18 @@ if (
   );
 }
 
+// `dash()` mounts /api/auth/dash/* and authenticates with BETTER_AUTH_API_KEY.
+// Without a key, those endpoints could expose internal telemetry to anyone
+// who discovers the path. Require a key in production; warn loudly in dev.
+if (
+  process.env.NODE_ENV === "production" &&
+  !process.env.BETTER_AUTH_API_KEY
+) {
+  throw new Error(
+    "BETTER_AUTH_API_KEY is required in production (used by the @better-auth/infra dash() plugin to authenticate /api/auth/dash/* endpoints).",
+  );
+}
+
 async function linkUserOnBackend(input: {
   betterAuthId: string;
   email: string;
@@ -108,6 +120,10 @@ export const auth = betterAuth({
     enabled: true,
     requireEmailVerification: true,
     minPasswordLength: 8,
+    // bcrypt silently truncates after 72 bytes — cap inputs at 72 so a
+    // user who sets a longer password isn't surprised when a shorter
+    // prefix later authenticates with the same hash.
+    maxPasswordLength: 72,
     autoSignIn: true,
     sendResetPassword: async ({ user, url }) => {
       await sendResetPasswordEmail(user.email, url);

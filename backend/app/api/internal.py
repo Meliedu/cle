@@ -198,6 +198,11 @@ async def delete_better_auth_user(
     )
 
     if course_count or document_count:
+        # Counts are logged server-side only. The response intentionally
+        # omits them so a caller with the internal secret can't probe how
+        # many courses/documents an arbitrary better_auth_id owns. The
+        # frontend keys off `code` to render a generic "transfer first"
+        # message without ever needing the numbers.
         logger.info(
             "users/delete blocked for user_id=%s courses=%s documents=%s",
             user.id,
@@ -209,13 +214,10 @@ async def delete_better_auth_user(
             detail={
                 "code": "HAS_INSTRUCTOR_CONTENT",
                 "message": (
-                    "This account still owns "
-                    f"{course_count or 0} course(s) and {document_count or 0} "
-                    "document(s). Transfer or delete them first, or contact "
-                    "support to retire the account."
+                    "This account still owns instructor content. Transfer "
+                    "or delete it first, or contact support to retire the "
+                    "account."
                 ),
-                "courses": int(course_count or 0),
-                "documents": int(document_count or 0),
             },
         )
 

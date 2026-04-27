@@ -78,11 +78,9 @@ export default function SignInPage() {
       });
       if (error || !data?.user) {
         setBusy(false);
-        const message =
-          error?.message === "User not found"
-            ? "No account matches that email."
-            : (error?.message ?? "Invalid email or password.");
-        setErrors({ form: message });
+        // Always return a generic message — distinguishing "no such user" from
+        // "wrong password" leaks whether an email is registered.
+        setErrors({ form: "Invalid email or password." });
         passwordRef.current?.focus();
         return;
       }

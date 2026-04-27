@@ -73,8 +73,9 @@ function attachCsp(request: NextRequest, response: NextResponse): NextResponse {
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
-  // The Better Auth catch-all and our /api/internal routes must remain
-  // accessible without a session cookie (they have their own auth).
+  // The Better Auth catch-all has its own auth; let it through without a
+  // session cookie. (FastAPI's /api/internal/* lives on a different host
+  // and never reaches this proxy.)
   if (pathname.startsWith("/api/auth/")) return true;
   return false;
 }
