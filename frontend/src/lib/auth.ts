@@ -18,6 +18,7 @@
 import { betterAuth } from "better-auth";
 import { jwt } from "better-auth/plugins";
 import { createAuthMiddleware, APIError } from "better-auth/api";
+import { dash } from "@better-auth/infra";
 import { Pool } from "pg";
 import bcrypt from "bcrypt";
 
@@ -183,6 +184,10 @@ export const auth = betterAuth({
     // Issues signed JWTs and exposes a JWKS endpoint at /api/auth/jwks
     // that the FastAPI backend consumes via PyJWKClient.
     jwt(),
+    // Better Auth Infra dashboard — observability/telemetry plugin.
+    // Reads BETTER_AUTH_API_KEY from env and exposes /api/auth/dash/*
+    // for the hosted dashboard at https://dashboard.better-auth.com.
+    dash(),
   ],
 
   hooks: {

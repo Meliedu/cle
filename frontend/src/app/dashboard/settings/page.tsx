@@ -18,7 +18,7 @@ const DELETE_PHRASE = "delete my account";
 
 export default function SettingsPage() {
   return (
-    <div className="space-y-8 px-4 pb-16 pt-6 md:px-8 md:pt-8">
+    <div className="mx-auto w-full max-w-4xl space-y-10 px-6 pb-24 pt-10 sm:px-8 md:px-12 md:pt-14">
       <header className="space-y-1.5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-primary-hover)]">
           Account
@@ -55,7 +55,7 @@ function SectionShell({
   return (
     <section
       className={cn(
-        "grid grid-cols-1 gap-6 rounded-[var(--radius-2xl)] border bg-[var(--color-surface)] p-6 shadow-[var(--shadow-sm)] md:grid-cols-[minmax(0,18rem),minmax(0,1fr)] md:gap-10 md:p-8",
+        "grid grid-cols-1 gap-7 rounded-[var(--radius-2xl)] border bg-[var(--color-surface)] p-7 shadow-[var(--shadow-sm)] sm:p-8 md:grid-cols-[minmax(0,18rem),minmax(0,1fr)] md:gap-12 md:p-10 lg:p-12",
         tone === "danger"
           ? "border-[var(--color-error)]/35"
           : "border-[var(--color-border)]",
