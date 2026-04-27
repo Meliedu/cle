@@ -1,7 +1,9 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse, type NextRequest } from "next/server";
+import { headers } from "next/headers";
 
-const isPublicRoute = createRouteMatcher(["/", "/sign-in(.*)", "/sign-up(.*)"]);
+import { auth } from "@/lib/auth";
+
+const PUBLIC_PATHS = ["/", "/sign-in", "/sign-up", "/forgot-password", "/reset-password", "/verify-email"];
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -24,84 +26,77 @@ const wsOrigin = apiOrigin.replace(/^https?:/, (match) =>
  *
  * Nonces replace `'unsafe-inline'` on script-src so injected inline scripts
  * cannot execute. `'strict-dynamic'` lets nonced scripts load additional
- * scripts without separately allow-listing every CDN; the Clerk SDK loads
- * its own chunks this way.
+ * scripts without separately allow-listing every CDN.
  *
  * In development, Turbopack and React DevTools rely on `eval`, so we allow
  * `'unsafe-eval'` and inline styles. Production stays strict.
  *
- * Note on style-src: we rely on `'unsafe-inline'` rather than a nonce
- * because Clerk, Tailwind's JIT runtime, and some Next.js framework code
- * inject `<style>` tags at runtime without the opportunity to carry our
- * per-request nonce. Per the CSP L3 spec, `'unsafe-inline'` is IGNORED
- * whenever a nonce or hash is also present on the same directive, so
- * combining them (as an earlier version of this file did) left the
- * policy nonce-only and broke Clerk's UI. Style-based XSS is
- * substantially harder to exploit than script-based XSS; accepting
- * `'unsafe-inline'` for styles is the standard trade-off in CSP
- * deployments that want the strict nonce approach for scripts.
+ * Connect-src includes login.microsoftonline.com because the Microsoft OAuth
+ * sign-in flow round-trips through there. Frame-src allows it for the
+ * embedded login screen.
  */
 function buildCsp(nonce: string): string {
   const directives = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""} https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com`,
-    `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob: https:",
     "font-src 'self' https://fonts.gstatic.com data:",
-    `connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://api.clerk.com${apiOrigin ? ` ${apiOrigin}` : ""}${wsOrigin ? ` ${wsOrigin}` : ""}`,
-    "frame-src 'self' https://challenges.cloudflare.com https://*.clerk.accounts.dev",
+    `connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com${apiOrigin ? ` ${apiOrigin}` : ""}${wsOrigin ? ` ${wsOrigin}` : ""}`,
+    "frame-src 'self' https://login.microsoftonline.com",
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",
-    "form-action 'self'",
+    "form-action 'self' https://login.microsoftonline.com",
     "frame-ancestors 'none'",
     "upgrade-insecure-requests",
   ];
   return directives.join("; ");
 }
 
-/**
- * Generate a base64 nonce per request. Must be unpredictable so an attacker
- * cannot guess a value that would be accepted for a subsequent inline
- * script injection.
- */
 function generateNonce(): string {
-  // crypto.randomUUID is available in the edge runtime Next.js uses.
   const uuid = crypto.randomUUID();
-  // Strip hyphens and base64-encode for CSP-compatibility.
   const bytes = new TextEncoder().encode(uuid.replace(/-/g, ""));
   return btoa(String.fromCharCode(...bytes));
 }
 
-/**
- * Apply the per-request CSP and propagate the nonce downstream via the
- * `x-nonce` request header so that:
- *   - Next.js reads the CSP header and auto-attaches the nonce to its own
- *     framework/page scripts during SSR.
- *   - Clerk's `DynamicClerkScripts` reads the `X-Nonce` header and attaches
- *     the nonce to clerk-js script tags.
- */
-function withCspHeaders(request: NextRequest): NextResponse {
+function attachCsp(request: NextRequest, response: NextResponse): NextResponse {
   const nonce = generateNonce();
   const csp = buildCsp(nonce);
-
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-nonce", nonce);
-  requestHeaders.set("Content-Security-Policy", csp);
-
-  const response = NextResponse.next({
-    request: { headers: requestHeaders },
-  });
+  // The layout reads x-nonce off the incoming request to stamp the nonce on
+  // SSR-emitted scripts. Set it on the *request* headers Next.js will see.
+  request.headers.set("x-nonce", nonce);
+  request.headers.set("Content-Security-Policy", csp);
   response.headers.set("Content-Security-Policy", csp);
   return response;
 }
 
-export default clerkMiddleware(async (auth, request) => {
-  if (!isPublicRoute(request)) {
-    await auth.protect();
+function isPublicPath(pathname: string): boolean {
+  if (PUBLIC_PATHS.includes(pathname)) return true;
+  // The Better Auth catch-all and our /api/internal routes must remain
+  // accessible without a session cookie (they have their own auth).
+  if (pathname.startsWith("/api/auth/")) return true;
+  return false;
+}
+
+export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Skip auth check on public routes — still apply CSP.
+  if (isPublicPath(pathname)) {
+    return attachCsp(request, NextResponse.next({ request }));
   }
-  return withCspHeaders(request);
-});
+
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/sign-in";
+    url.searchParams.set("redirect", pathname);
+    return attachCsp(request, NextResponse.redirect(url));
+  }
+
+  return attachCsp(request, NextResponse.next({ request }));
+}
 
 export const config = {
   matcher: [

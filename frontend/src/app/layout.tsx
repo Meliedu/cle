@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { ClerkProvider } from "@clerk/nextjs";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { headers } from "next/headers";
 import { Inter } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { Toaster } from "sonner";
 import "./globals.css";
 import { QueryProvider } from "@/components/providers/query-provider";
 
@@ -26,22 +26,30 @@ export default async function RootLayout({
 }) {
   const locale = await getLocale();
   const messages = await getMessages();
-  // The proxy sets `x-nonce` on every request. Reading it here forces this
-  // layout into dynamic rendering (which is required when the CSP contains
-  // a per-request nonce) and lets us stamp the value onto Clerk's injected
-  // script tags so they pass the strict script-src policy.
-  const nonce = (await headers()).get("x-nonce") ?? undefined;
+  // Reading the per-request nonce forces this layout into dynamic rendering
+  // (required when the CSP carries a per-request nonce) so Next.js can stamp
+  // the value on framework-emitted script tags.
+  await headers();
 
   return (
-    <ClerkProvider nonce={nonce} dynamic>
-      <html lang={locale} className={inter.variable}>
-        <body className="font-sans antialiased">
-          <NextIntlClientProvider messages={messages}>
-            <QueryProvider>{children}</QueryProvider>
-          </NextIntlClientProvider>
-          <Analytics />
-        </body>
-      </html>
-    </ClerkProvider>
+    <html lang={locale} className={inter.variable}>
+      <body className="font-sans antialiased">
+        <NextIntlClientProvider messages={messages}>
+          <QueryProvider>{children}</QueryProvider>
+        </NextIntlClientProvider>
+        <Toaster
+          position="top-center"
+          richColors
+          closeButton
+          toastOptions={{
+            style: {
+              fontFamily: "var(--font-sans)",
+              borderRadius: "var(--radius-lg)",
+            },
+          }}
+        />
+        <Analytics />
+      </body>
+    </html>
   );
 }
