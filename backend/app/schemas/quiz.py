@@ -101,6 +101,14 @@ class QuestionCreate(BaseModel):
     explanation: str | None = None
 
 
+class QuestionUpdate(BaseModel):
+    question_text: str | None = None
+    options: dict[str, str] | None = None
+    correct_answer: str | None = None
+    explanation: str | None = None
+    difficulty: str | None = None
+
+
 class QuizUpdate(BaseModel):
     title: str | None = None
     description: str | None = None

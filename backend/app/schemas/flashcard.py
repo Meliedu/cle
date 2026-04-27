@@ -66,6 +66,18 @@ class FlashcardSetDetailResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class FlashcardCardCreate(BaseModel):
+    front: str = Field(min_length=1, max_length=500)
+    back: str = Field(min_length=1, max_length=2000)
+    difficulty: str = "medium"
+
+
+class FlashcardCardUpdate(BaseModel):
+    front: str | None = Field(default=None, max_length=500)
+    back: str | None = Field(default=None, max_length=2000)
+    difficulty: str | None = None
+
+
 class FlashcardProgressUpdate(BaseModel):
     card_id: uuid.UUID
     quality: int = Field(ge=0, le=5)

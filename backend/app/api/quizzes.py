@@ -27,6 +27,7 @@ from app.services.gamification import award_xp
 from app.schemas.quiz import (
     QuestionCreate,
     QuestionResponse,
+    QuestionUpdate,
     QuestionWithAnswerResponse,
     QuizAttemptCreate,
     QuizAttemptResponse,
@@ -475,6 +476,72 @@ async def add_question(
     await db.commit()
     await db.refresh(question)
 
+    return APIResponse(
+        success=True,
+        data=QuestionWithAnswerResponse(
+            id=question.id,
+            question_index=question.question_index,
+            type=question.type,
+            question_text=question.question_text,
+            options=question.options,
+            explanation=question.explanation,
+            difficulty=question.difficulty,
+            correct_answer=question.correct_answer,
+        ),
+    )
+
+
+@router.patch(
+    "/questions/{question_id}",
+    response_model=APIResponse[QuestionWithAnswerResponse],
+)
+async def update_question(
+    question_id: uuid.UUID,
+    body: QuestionUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    result = await db.execute(
+        select(Question)
+        .join(Quiz, Quiz.id == Question.quiz_id)
+        .where(
+            Question.id == question_id,
+            Quiz.created_by == user.id,
+            Quiz.deleted_at.is_(None),
+        )
+    )
+    question = result.scalar_one_or_none()
+    if not question:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question not found",
+        )
+
+    if body.question_text is not None:
+        text = body.question_text.strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="Question text cannot be empty")
+        question.question_text = text
+    if body.options is not None:
+        question.options = body.options
+    if body.correct_answer is not None:
+        # Validate against the new options if provided, otherwise existing.
+        target_options = body.options if body.options is not None else question.options
+        if target_options and body.correct_answer not in target_options:
+            raise HTTPException(
+                status_code=400,
+                detail="correct_answer must be one of the option keys",
+            )
+        question.correct_answer = body.correct_answer
+    if body.explanation is not None:
+        question.explanation = body.explanation
+    if body.difficulty is not None:
+        if body.difficulty not in {"easy", "medium", "hard"}:
+            raise HTTPException(status_code=400, detail="invalid difficulty")
+        question.difficulty = body.difficulty
+
+    await db.commit()
+    await db.refresh(question)
     return APIResponse(
         success=True,
         data=QuestionWithAnswerResponse(

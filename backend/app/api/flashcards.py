@@ -35,7 +35,9 @@ from app.services.scheduler import (
     update_parameters,
 )
 from app.schemas.flashcard import (
+    FlashcardCardCreate,
     FlashcardCardResponse,
+    FlashcardCardUpdate,
     FlashcardFolderCreate,
     FlashcardFolderMove,
     FlashcardFolderRename,
@@ -395,6 +397,207 @@ async def update_progress(
             next_review=progress.next_review,
             last_reviewed=progress.last_reviewed,
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-card review actions (instructor-only)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/flashcard-sets/{set_id}/cards",
+    response_model=APIResponse[FlashcardCardResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_flashcard_card(
+    set_id: uuid.UUID,
+    body: FlashcardCardCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    result = await db.execute(
+        select(FlashcardSet).where(
+            FlashcardSet.id == set_id,
+            FlashcardSet.created_by == user.id,
+            FlashcardSet.deleted_at.is_(None),
+        )
+    )
+    fc_set = result.scalar_one_or_none()
+    if not fc_set:
+        raise HTTPException(status_code=404, detail="Flashcard set not found")
+
+    count_result = await db.execute(
+        select(func.count(FlashcardCard.id)).where(
+            FlashcardCard.flashcard_set_id == set_id
+        )
+    )
+    next_index = count_result.scalar_one()
+
+    card = FlashcardCard(
+        flashcard_set_id=set_id,
+        card_index=next_index,
+        front=body.front.strip()[:500],
+        back=body.back.strip()[:2000],
+        difficulty=body.difficulty,
+    )
+    db.add(card)
+    await db.commit()
+    await db.refresh(card)
+    return APIResponse(
+        success=True, data=FlashcardCardResponse.model_validate(card)
+    )
+
+
+@router.delete(
+    "/flashcard-cards/{card_id}",
+    response_model=APIResponse[None],
+)
+async def delete_flashcard_card(
+    card_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    result = await db.execute(
+        select(FlashcardCard)
+        .join(FlashcardSet, FlashcardSet.id == FlashcardCard.flashcard_set_id)
+        .where(
+            FlashcardCard.id == card_id,
+            FlashcardSet.created_by == user.id,
+            FlashcardSet.deleted_at.is_(None),
+        )
+    )
+    card = result.scalar_one_or_none()
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+
+    set_id = card.flashcard_set_id
+    await db.delete(card)
+
+    remaining = await db.execute(
+        select(FlashcardCard)
+        .where(FlashcardCard.flashcard_set_id == set_id)
+        .order_by(FlashcardCard.card_index)
+    )
+    for idx, c in enumerate(remaining.scalars().all()):
+        c.card_index = idx
+
+    await db.commit()
+    return APIResponse(success=True, data=None)
+
+
+@router.patch(
+    "/flashcard-cards/{card_id}",
+    response_model=APIResponse[FlashcardCardResponse],
+)
+async def update_flashcard_card(
+    card_id: uuid.UUID,
+    body: FlashcardCardUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    result = await db.execute(
+        select(FlashcardCard)
+        .join(FlashcardSet, FlashcardSet.id == FlashcardCard.flashcard_set_id)
+        .where(
+            FlashcardCard.id == card_id,
+            FlashcardSet.created_by == user.id,
+            FlashcardSet.deleted_at.is_(None),
+        )
+    )
+    card = result.scalar_one_or_none()
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+
+    if body.front is not None:
+        front = body.front.strip()
+        if not front:
+            raise HTTPException(status_code=400, detail="Front cannot be empty")
+        card.front = front[:500]
+    if body.back is not None:
+        back = body.back.strip()
+        if not back:
+            raise HTTPException(status_code=400, detail="Back cannot be empty")
+        card.back = back[:2000]
+    if body.difficulty is not None:
+        if body.difficulty not in {"easy", "medium", "hard"}:
+            raise HTTPException(status_code=400, detail="invalid difficulty")
+        card.difficulty = body.difficulty
+
+    await db.commit()
+    await db.refresh(card)
+    return APIResponse(
+        success=True, data=FlashcardCardResponse.model_validate(card)
+    )
+
+
+@router.post(
+    "/flashcard-cards/{card_id}/regenerate",
+    response_model=APIResponse[FlashcardCardResponse],
+)
+async def regenerate_flashcard_card(
+    card_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    from app.models.course import Course
+    from app.services.embedder import embed_query
+    from app.services.generator import generate_flashcards
+    from app.services.retriever import retrieve_chunks
+
+    result = await db.execute(
+        select(FlashcardCard)
+        .join(FlashcardSet, FlashcardSet.id == FlashcardCard.flashcard_set_id)
+        .where(
+            FlashcardCard.id == card_id,
+            FlashcardSet.created_by == user.id,
+            FlashcardSet.deleted_at.is_(None),
+        )
+    )
+    card = result.scalar_one_or_none()
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+
+    fc_set_result = await db.execute(
+        select(FlashcardSet)
+        .options(selectinload(FlashcardSet.source_documents))
+        .where(FlashcardSet.id == card.flashcard_set_id)
+    )
+    fc_set = fc_set_result.scalar_one()
+
+    course_result = await db.execute(
+        select(Course).where(Course.id == fc_set.course_id)
+    )
+    course = course_result.scalar_one()
+
+    doc_ids = [sd.document_id for sd in fc_set.source_documents] or None
+
+    query_embedding = await embed_query(card.front)
+    chunks = await retrieve_chunks(
+        db,
+        course_id=fc_set.course_id,
+        query_embedding=query_embedding,
+        top_k=10,
+        document_ids=doc_ids,
+    )
+
+    generated = await generate_flashcards(
+        chunks,
+        num_cards=1,
+        language=course.language,
+        difficulty=card.difficulty or "medium",
+    )
+    if not generated:
+        raise HTTPException(status_code=500, detail="Failed to regenerate card")
+
+    new_card = generated[0]
+    card.front = new_card.front
+    card.back = new_card.back
+
+    await db.commit()
+    await db.refresh(card)
+    return APIResponse(
+        success=True, data=FlashcardCardResponse.model_validate(card)
     )
 
 
