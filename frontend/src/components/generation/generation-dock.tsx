@@ -8,6 +8,7 @@ import {
   FileText,
   Layers,
   Loader2,
+  Mic,
   X,
 } from "lucide-react";
 import {
@@ -19,12 +20,14 @@ import {
 const KIND_ICON: Record<GenerationJobKind, typeof BookOpen> = {
   generate_quiz: BookOpen,
   generate_flashcards: Layers,
+  generate_pronunciation: Mic,
   generate_summary: FileText,
 };
 
 const KIND_LABEL: Record<GenerationJobKind, string> = {
   generate_quiz: "Quiz",
   generate_flashcards: "Flashcards",
+  generate_pronunciation: "Pronunciation",
   generate_summary: "Summary",
 };
 

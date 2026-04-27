@@ -18,6 +18,7 @@ import { apiFetch } from "@/lib/api";
 export type GenerationJobKind =
   | "generate_quiz"
   | "generate_flashcards"
+  | "generate_pronunciation"
   | "generate_summary";
 
 export type GenerationJobStatus =
@@ -29,9 +30,11 @@ export type GenerationJobStatus =
 export interface GenerationJobResult {
   readonly quiz_id?: string;
   readonly flashcard_set_id?: string;
+  readonly pronunciation_set_id?: string;
   readonly summary_id?: string;
   readonly question_count?: number;
   readonly card_count?: number;
+  readonly item_count?: number;
 }
 
 export interface GenerationJob {
@@ -63,6 +66,7 @@ const MAX_POLL_MS = 5 * 60 * 1000; // 5 minutes — hard ceiling
 const KIND_LABEL: Record<GenerationJobKind, string> = {
   generate_quiz: "Quiz",
   generate_flashcards: "Flashcards",
+  generate_pronunciation: "Pronunciation",
   generate_summary: "Summary",
 };
 
@@ -261,6 +265,10 @@ export function GenerationJobsProvider({ children }: { children: ReactNode }) {
           queryClient.invalidateQueries({
             queryKey: ["flashcards", job.courseId],
           });
+        } else if (job.kind === "generate_pronunciation") {
+          queryClient.invalidateQueries({
+            queryKey: ["pronunciation-sets", job.courseId],
+          });
         } else if (job.kind === "generate_summary") {
           queryClient.invalidateQueries({
             queryKey: ["course-summary", job.courseId],
@@ -301,6 +309,14 @@ function handleOpen(job: GenerationJob) {
   if (job.kind === "generate_flashcards" && job.result.flashcard_set_id) {
     const setId = encodeURIComponent(job.result.flashcard_set_id);
     window.location.href = `/dashboard/courses/${courseId}/flashcards/${setId}`;
+    return;
+  }
+  if (
+    job.kind === "generate_pronunciation" &&
+    job.result.pronunciation_set_id
+  ) {
+    const setId = encodeURIComponent(job.result.pronunciation_set_id);
+    window.location.href = `/dashboard/courses/${courseId}/pronunciation/${setId}`;
     return;
   }
   if (job.kind === "generate_summary") {
