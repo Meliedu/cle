@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCourses, type CourseResponse } from "@/hooks/use-courses";
-import { useCalendarEvents } from "@/hooks/use-calendar-events";
+// TODO(task-12): replace with useCalendarEvents after calendar page is rebuilt
+import { useLegacyCalendarEvents } from "@/hooks/use-calendar-events";
 import { WelcomeHero } from "@/components/dashboard/welcome-hero";
 import { TodoList } from "@/components/dashboard/todo-list";
 import { MiniCalendar } from "@/components/dashboard/mini-calendar";
@@ -12,7 +13,8 @@ import { RecentCourses } from "@/components/dashboard/recent-courses";
 
 export default function DashboardPage() {
   const { data: courses, isLoading } = useCourses();
-  const events = useCalendarEvents();
+  // TODO(task-12): replace with useCalendarEvents after calendar page is rebuilt
+  const events = useLegacyCalendarEvents();
   const [selected, setSelected] = useState<Date | undefined>(new Date());
 
   const courseList: readonly CourseResponse[] = useMemo(

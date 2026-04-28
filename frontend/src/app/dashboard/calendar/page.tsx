@@ -1,10 +1,12 @@
 "use client";
 
-import { useCalendarEvents } from "@/hooks/use-calendar-events";
+// TODO(task-12): replace with useCalendarEvents after calendar page is rebuilt
+import { useLegacyCalendarEvents } from "@/hooks/use-calendar-events";
 import { FullCalendar } from "@/components/dashboard/full-calendar";
 
 export default function CalendarPage() {
-  const events = useCalendarEvents();
+  // TODO(task-12): replace with useCalendarEvents after calendar page is rebuilt
+  const events = useLegacyCalendarEvents();
 
   return (
     <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-6 px-6 py-6 md:gap-8 md:px-10 md:py-10">

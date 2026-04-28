@@ -1,14 +1,59 @@
 "use client";
 
-import { useMemo } from "react";
-import { useTodos } from "@/hooks/use-todos";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
+import { apiFetch, type ApiEnvelope } from "@/lib/api";
+import type { CalendarEvent } from "@/lib/curriculum-types";
+
+export type { CalendarEvent };
+
+// ---------------------------------------------------------------------------
+// New API — used by Task 12 calendar page rewire
+// ---------------------------------------------------------------------------
+
+export function useCalendarEvents(
+  courseId: string,
+  fromDate: Date,
+  toDate: Date
+) {
+  const { getToken } = useAuth();
+  return useQuery({
+    queryKey: [
+      "calendar",
+      courseId,
+      fromDate.toISOString(),
+      toDate.toISOString(),
+    ],
+    queryFn: async () => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const params = new URLSearchParams({
+        from_date: fromDate.toISOString(),
+        to_date: toDate.toISOString(),
+      });
+      const res = await apiFetch<ApiEnvelope<CalendarEvent[]>>(
+        `/courses/${courseId}/calendar?${params}`,
+        { token }
+      );
+      return res.data;
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// TODO(task-12): remove everything below after calendar page is rebuilt.
+// The legacy types and hook are kept only so that the existing dashboard page
+// and calendar page continue to compile while Task 12 is pending.
+// ---------------------------------------------------------------------------
 
 export type CalendarEventKind = "todo" | "swarm" | "session";
 export type CalendarEventColor = "honey" | "coral" | "salt";
 
-export interface CalendarEvent {
+/** @deprecated Use CalendarEvent from @/lib/curriculum-types instead. */
+export interface LegacyCalendarEvent {
   readonly id: string;
-  readonly date: string; // ISO yyyy-mm-dd
+  /** ISO yyyy-mm-dd */
+  readonly date: string;
   readonly title: string;
   readonly kind: CalendarEventKind;
   readonly subtitle?: string;
@@ -18,10 +63,10 @@ export interface CalendarEvent {
 }
 
 /**
- * Placeholder upcoming events. Clearly labelled "Preview" in every consuming
- * surface — replace with backend feed when live-session scheduling lands.
+ * @deprecated Placeholder upcoming swarms. Replace with real backend data in
+ * Task 12.
  */
-export const UPCOMING_SWARMS: readonly CalendarEvent[] = [
+export const UPCOMING_SWARMS: readonly LegacyCalendarEvent[] = [
   {
     id: "swarm-1",
     date: computeUpcoming(2),
@@ -61,11 +106,21 @@ function toIsoDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-export function useCalendarEvents(): readonly CalendarEvent[] {
+// ---------------------------------------------------------------------------
+// TODO(task-12): remove useLegacyCalendarEvents after calendar page is rebuilt
+// ---------------------------------------------------------------------------
+import { useMemo } from "react";
+import { useTodos } from "@/hooks/use-todos";
+
+/**
+ * @deprecated Returns the old todo+placeholder-swarm shape. Task 12 will
+ * replace callers with `useCalendarEvents`.
+ */
+export function useLegacyCalendarEvents(): readonly LegacyCalendarEvent[] {
   const { items } = useTodos();
 
   return useMemo(() => {
-    const todoEvents: CalendarEvent[] = items
+    const todoEvents: LegacyCalendarEvent[] = items
       .filter((it) => !!it.dueDate)
       .map((it) => ({
         id: `todo-${it.id}`,
