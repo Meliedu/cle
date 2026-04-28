@@ -3,11 +3,10 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { DayPicker } from "react-day-picker";
-// TODO(task-12): replace LegacyCalendarEvent with CalendarEvent after rewire
-import type { LegacyCalendarEvent } from "@/hooks/use-calendar-events";
+import type { DashboardPreviewEvent } from "@/components/dashboard/dashboard-preview-events";
 
 interface MiniCalendarProps {
-  readonly events: readonly LegacyCalendarEvent[];
+  readonly events: readonly DashboardPreviewEvent[];
   readonly selected?: Date;
   readonly onSelectDate?: (date: Date | undefined) => void;
 }

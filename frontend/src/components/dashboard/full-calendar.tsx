@@ -5,11 +5,10 @@ import { format, isSameDay, parseISO } from "date-fns";
 import { ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { DayPicker } from "react-day-picker";
 import { cn } from "@/lib/utils";
-// TODO(task-12): replace LegacyCalendarEvent with CalendarEvent after rewire
-import type { LegacyCalendarEvent } from "@/hooks/use-calendar-events";
+import type { DashboardPreviewEvent } from "@/components/dashboard/dashboard-preview-events";
 
 interface FullCalendarProps {
-  readonly events: readonly LegacyCalendarEvent[];
+  readonly events: readonly DashboardPreviewEvent[];
 }
 
 function isoForDate(d: Date): string {
@@ -19,13 +18,13 @@ function isoForDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-const KIND_LABEL: Record<LegacyCalendarEvent["kind"], string> = {
+const KIND_LABEL: Record<DashboardPreviewEvent["kind"], string> = {
   todo: "Task",
   swarm: "Swarm",
   session: "Live session",
 };
 
-const TONE_CLASSES: Record<LegacyCalendarEvent["color"], string> = {
+const TONE_CLASSES: Record<DashboardPreviewEvent["color"], string> = {
   honey: "bg-[var(--color-primary)]",
   coral: "bg-[oklch(70%_0.13_35)]",
   salt: "bg-[var(--color-accent)]",
