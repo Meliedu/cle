@@ -9,6 +9,7 @@ from app.api.documents import router as documents_router
 from app.api.flashcards import router as flashcards_router
 from app.api.internal import router as internal_router
 from app.api.live import router as live_router
+from app.api.modules import router as modules_router
 from app.api.progress import router as progress_router
 from app.api.pronunciation import router as pronunciation_router
 from app.api.quizzes import router as quizzes_router
@@ -32,5 +33,6 @@ api_router.include_router(progress_router)
 api_router.include_router(revision_router)
 api_router.include_router(speech_router)
 api_router.include_router(live_router)
+api_router.include_router(modules_router)
 api_router.include_router(recalibration_router)
 api_router.include_router(internal_router)
