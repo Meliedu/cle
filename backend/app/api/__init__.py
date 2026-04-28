@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.analytics import router as analytics_router
+from app.api.assignments import router as assignments_router
 from app.api.auth import router as auth_router
 from app.api.canvas import router as canvas_router
 from app.api.canvas_oauth import router as canvas_oauth_router
@@ -22,6 +23,7 @@ from app.api.speech import router as speech_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(analytics_router)
+api_router.include_router(assignments_router)
 api_router.include_router(auth_router)
 api_router.include_router(courses_router)
 api_router.include_router(documents_router)
