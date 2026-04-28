@@ -208,6 +208,34 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
         </div>
       </section>
 
+      {/* Curriculum editor links — TODO(task-15): integrate into proper sidebar nav */}
+      {isInstructor && (
+        <nav
+          aria-label="Curriculum"
+          className="flex flex-wrap gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2"
+        >
+          <span className="self-center text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide mr-2">
+            Curriculum:
+          </span>
+          {(
+            [
+              { label: "Modules", slug: "modules" },
+              { label: "Meetings", slug: "meetings" },
+              { label: "Objectives", slug: "objectives" },
+              { label: "Assignments", slug: "assignments" },
+            ] as const
+          ).map(({ label, slug }) => (
+            <Link
+              key={slug}
+              href={`/dashboard/courses/${courseId}/${slug}`}
+              className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+      )}
+
       {/* Tab content — navigation is in the sidebar */}
       {activeTab === "overview" && (
         <div className="space-y-6">
