@@ -152,6 +152,33 @@ async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
         )
 
 
+async def mark_overdue_submissions(session: AsyncSession) -> int:
+    """Daily-cron job: flip 'not_started'/'in_progress' rows past their
+    assignment's due_at to 'late'. Idempotent."""
+    from app.models import Assignment, AssignmentSubmission
+
+    now = _utcnow()
+    rows = (
+        await session.execute(
+            select(AssignmentSubmission, Assignment)
+            .join(Assignment, AssignmentSubmission.assignment_id == Assignment.id)
+            .where(
+                Assignment.due_at < now,
+                Assignment.deleted_at.is_(None),
+                AssignmentSubmission.status.in_(("not_started", "in_progress")),
+            )
+        )
+    ).all()
+    n = 0
+    for sub, _asn in rows:
+        sub.status = "late"
+        n += 1
+    if n:
+        await session.commit()
+        logger.info("Marked %d submissions as late", n)
+    return n
+
+
 async def prune_api_usage() -> int:
     """Delete ``api_usage`` rows older than the rate-limit window (2 h).
 
@@ -314,6 +341,8 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
     # rather than immediately — keeps boot quiet while still guaranteeing
     # hourly cadence.
     last_prune_run = _utcnow()
+    # Seed so the first overdue check runs ~24 h after startup, not immediately.
+    last_overdue_run = _utcnow()
 
     while not shutdown_event.is_set():
         try:
@@ -332,6 +361,15 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
             if _utcnow() - last_prune_run > timedelta(hours=1):
                 await prune_nonces_and_usage()
                 last_prune_run = _utcnow()
+
+            # Daily sweep: flip overdue not_started/in_progress submissions to late.
+            if _utcnow() - last_overdue_run > timedelta(hours=24):
+                try:
+                    async with async_session_factory() as overdue_session:
+                        await mark_overdue_submissions(overdue_session)
+                except Exception:  # noqa: BLE001
+                    logger.exception("mark_overdue_submissions job failed")
+                last_overdue_run = _utcnow()
 
             # Short-lived claim session so we don't hold a DB connection open
             # during the full processing pipeline.
