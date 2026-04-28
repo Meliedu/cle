@@ -31,9 +31,8 @@ export function StudentAssignmentList({ courseId }: Props) {
     );
   }
 
-  const visible = assignments.filter((a) => a.is_published);
-
-  if (visible.length === 0) {
+  // Backend already filters is_published for students
+  if (assignments.length === 0) {
     return (
       <p className="text-sm text-[var(--color-text-muted)]">
         No assignments yet.
@@ -41,7 +40,7 @@ export function StudentAssignmentList({ courseId }: Props) {
     );
   }
 
-  const sorted = [...visible].sort(
+  const sorted = [...assignments].sort(
     (a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime()
   );
 
@@ -51,6 +50,7 @@ export function StudentAssignmentList({ courseId }: Props) {
         <ul className="divide-y divide-[var(--color-border)]">
           {sorted.map((a) => (
             <li key={a.id} className="py-3 first:pt-0 last:pb-0">
+              {/* TODO(phase-2): show user's own submission status badge once backend exposes per-user submission lookup */}
               <Link
                 href={`/dashboard/courses/${courseId}/assignments/${a.id}/submit`}
                 className="block group"

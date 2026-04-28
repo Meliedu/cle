@@ -7,7 +7,7 @@ import type { AssignmentSubmission } from "@/lib/curriculum-types";
 export function useSubmissions(courseId: string, assignmentId: string) {
   const { getToken } = useAuth();
   return useQuery({
-    queryKey: ["submissions", assignmentId],
+    queryKey: ["submissions", courseId, assignmentId],
     queryFn: async () => {
       const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
@@ -37,7 +37,7 @@ export function useUpsertMySubmission(courseId: string, assignmentId: string) {
       return res.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["submissions", assignmentId] });
+      qc.invalidateQueries({ queryKey: ["submissions", courseId, assignmentId] });
       qc.invalidateQueries({ queryKey: ["assignments", courseId] });
     },
   });
@@ -63,6 +63,6 @@ export function useGradeSubmission(courseId: string, assignmentId: string) {
       return res.data;
     },
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["submissions", assignmentId] }),
+      qc.invalidateQueries({ queryKey: ["submissions", courseId, assignmentId] }),
   });
 }

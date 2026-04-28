@@ -9,6 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Pencil, X, Loader2 } from "lucide-react";
@@ -96,17 +103,20 @@ function GradeSubmissionForm({
         </div>
         <div className="space-y-1">
           <Label htmlFor={`status-${submission.id}`}>Status</Label>
-          <select
-            id={`status-${submission.id}`}
+          <Select
             value={form.status}
-            onChange={(e) =>
-              updateField("status", e.target.value as "graded" | "excused")
+            onValueChange={(val) =>
+              updateField("status", val as "graded" | "excused")
             }
-            className="h-9 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-background px-3 text-sm"
           >
-            <option value="graded">graded</option>
-            <option value="excused">excused</option>
-          </select>
+            <SelectTrigger id={`status-${submission.id}`} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="graded">graded</SelectItem>
+              <SelectItem value="excused">excused</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
       <div className="space-y-1">
@@ -160,8 +170,9 @@ function SubmissionRow({
     <li className="py-3 first:pt-0 last:pb-0">
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-[var(--color-text)] truncate">
-            {submission.user_id}
+          {/* TODO(phase-2): join with user table to render real name */}
+          <p className="text-sm font-medium text-[var(--color-text)] truncate" title={submission.user_id}>
+            Student #{submission.user_id.slice(0, 8)}
           </p>
           {submission.score && (
             <p className="text-xs text-[var(--color-text-muted)]">
@@ -287,8 +298,8 @@ export function AssignmentDetail({ courseId, assignmentId }: Props) {
                   <span
                     className={`inline-block rounded px-2 py-0.5 text-xs ${
                       assignment.is_published
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-stone-100 text-stone-600"
+                        ? "bg-[var(--color-success-light)] text-[var(--color-success)]"
+                        : "bg-[var(--color-surface)] text-[var(--color-text-muted)] border border-[var(--color-border)]"
                     }`}
                   >
                     {assignment.is_published ? "Published" : "Draft"}

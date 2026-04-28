@@ -269,12 +269,13 @@ export function AssignmentForm({ courseId, assignment, onClose }: Props) {
       </div>
 
       <div className="flex items-center gap-2">
+        {/* No Checkbox primitive in ui/ — using native input with design-system styling */}
         <input
           id="asgn-published"
           type="checkbox"
           checked={form.is_published}
           onChange={(e) => updateField("is_published", e.target.checked)}
-          className="size-4 rounded border-[var(--color-border)]"
+          className="size-4 cursor-pointer rounded border border-[var(--color-border)] accent-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2"
         />
         <Label htmlFor="asgn-published" className="cursor-pointer">
           Published (visible to students)

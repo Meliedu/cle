@@ -93,8 +93,8 @@ export function AssignmentList({ courseId }: Props) {
                       <span
                         className={`inline-block rounded px-2 py-0.5 text-xs ${
                           asgn.is_published
-                            ? "bg-emerald-100 text-emerald-800"
-                            : "bg-stone-100 text-stone-600"
+                            ? "bg-[var(--color-success-light)] text-[var(--color-success)]"
+                            : "bg-[var(--color-surface)] text-[var(--color-text-muted)] border border-[var(--color-border)]"
                         }`}
                       >
                         {asgn.is_published ? "Published" : "Draft"}

@@ -20,23 +20,23 @@ function statusBadge(status: SyllabusImportStatus) {
   switch (status) {
     case "pending":
       return (
-        <span className={`${base} bg-stone-100 text-stone-600`}>Pending</span>
+        <span className={`${base} bg-[var(--color-surface)] text-[var(--color-text-muted)] border border-[var(--color-border)] animate-pulse`}>Pending</span>
       );
     case "parsed":
       return (
-        <span className={`${base} bg-blue-100 text-blue-700`}>Parsed</span>
+        <span className={`${base} bg-[var(--color-accent-light)] text-[var(--color-accent)] border border-[var(--color-accent)]`}>Parsed</span>
       );
     case "applied":
       return (
-        <span className={`${base} bg-emerald-100 text-emerald-700`}>Applied</span>
+        <span className={`${base} bg-[var(--color-success-light)] text-[var(--color-success)] border border-[var(--color-success)]`}>Applied</span>
       );
     case "failed":
       return (
-        <span className={`${base} bg-rose-100 text-rose-700`}>Failed</span>
+        <span className={`${base} bg-[var(--color-error-light)] text-[var(--color-error)] border border-[var(--color-error)]`}>Failed</span>
       );
     case "superseded":
       return (
-        <span className={`${base} bg-stone-100 text-stone-400`}>Superseded</span>
+        <span className={`${base} bg-[var(--color-surface)] text-[var(--color-text-muted)] border border-[var(--color-border)] line-through`}>Superseded</span>
       );
   }
 }
@@ -61,7 +61,7 @@ function ImportRow({
         </div>
 
         {imp.status === "failed" && imp.error_message && (
-          <p className="mt-1 text-xs text-rose-600 break-words">
+          <p className="mt-1 text-xs text-[var(--color-error)] break-words">
             {imp.error_message}
           </p>
         )}

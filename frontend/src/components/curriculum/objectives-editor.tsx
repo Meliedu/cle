@@ -146,7 +146,7 @@ export function ObjectivesEditor({ courseId }: Props) {
                         setShowAdd(false);
                         setEditingObjective(obj);
                       }}
-                      aria-label="Edit objective"
+                      aria-label={`Edit objective: ${obj.statement.slice(0, 40)}`}
                     >
                       <Pencil className="size-4" />
                     </Button>
@@ -156,7 +156,7 @@ export function ObjectivesEditor({ courseId }: Props) {
                       onClick={() => handleDelete(obj)}
                       disabled={deleteObjective.isPending}
                       className="text-[var(--color-text-muted)] hover:text-[var(--color-error)]"
-                      aria-label="Delete objective"
+                      aria-label={`Delete objective: ${obj.statement.slice(0, 40)}`}
                     >
                       <Trash2 className="size-4" />
                     </Button>

@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useCourses } from "@/hooks/use-courses";
 import { apiFetch, type ApiEnvelope } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import type { CalendarEvent } from "@/lib/curriculum-types";
 
 function startOfWeek(d: Date): Date {
@@ -14,26 +15,48 @@ function startOfWeek(d: Date): Date {
   return x;
 }
 
+function addWeeks(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n * 7);
+  return x;
+}
+
+function formatWeekRange(from: Date): string {
+  const to = new Date(from);
+  to.setDate(from.getDate() + 6);
+  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+  const fromStr = from.toLocaleDateString(undefined, opts);
+  const toStr = to.toLocaleDateString(undefined, {
+    ...opts,
+    year: "numeric",
+  });
+  return `${fromStr} – ${toStr}`;
+}
+
 interface DecoratedEvent extends CalendarEvent {
   readonly courseName: string;
   readonly courseId: string;
 }
 
+// Fix J: replace hardcoded oklch with design token
 const KIND_DOT: Record<DecoratedEvent["kind"], string> = {
   meeting: "bg-[var(--color-primary)]",
-  assignment: "bg-[oklch(70%_0.13_35)]",
+  assignment: "bg-[var(--color-coral)]",
 };
 
 export default function CalendarPage() {
   const { getToken } = useAuth();
   const { data: courses = [] } = useCourses();
 
+  const [weekOffset, setWeekOffset] = useState(0);
+
   const range = useMemo(() => {
-    const from = startOfWeek(new Date());
+    const base = startOfWeek(new Date());
+    const from = addWeeks(base, weekOffset);
     const to = new Date(from);
     to.setDate(from.getDate() + 7);
     return { from, to };
-  }, []);
+  }, [weekOffset]);
 
   const queries = useQueries({
     queries: courses.map((c) => ({
@@ -68,11 +91,7 @@ export default function CalendarPage() {
     .flatMap((q) => q.data ?? [])
     .sort((a, b) => a.at.localeCompare(b.at));
 
-  const weekLabel = range.from.toLocaleDateString(undefined, {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+  const weekLabel = formatWeekRange(range.from);
 
   return (
     <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-6 px-6 py-6 md:gap-8 md:px-10 md:py-10">
@@ -83,9 +102,38 @@ export default function CalendarPage() {
         <h1 className="text-[clamp(1.75rem,1.3rem+1vw,2.25rem)] font-semibold leading-[1.1] tracking-tight text-[var(--color-text)]">
           Calendar
         </h1>
-        <p className="max-w-[52ch] text-[14px] leading-relaxed text-[var(--color-text-secondary)]">
-          Week of {weekLabel} — meetings and assignments across all your courses.
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-[14px] leading-relaxed text-[var(--color-text-secondary)]">
+            {weekLabel} — meetings and assignments across all your courses.
+          </p>
+          <div className="flex items-center gap-2 ml-auto">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setWeekOffset((n) => n - 1)}
+              aria-label="Previous week"
+            >
+              ← Prev week
+            </Button>
+            {weekOffset !== 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setWeekOffset(0)}
+              >
+                Today
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setWeekOffset((n) => n + 1)}
+              aria-label="Next week"
+            >
+              Next week →
+            </Button>
+          </div>
+        </div>
       </header>
 
       {isLoading ? (

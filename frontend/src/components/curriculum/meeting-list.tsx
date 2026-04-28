@@ -17,25 +17,25 @@ function meetingStatusBadge(status: MeetingStatus) {
   switch (status) {
     case "planned":
       return (
-        <span className="inline-block rounded px-2 py-0.5 text-xs bg-stone-100 text-stone-600">
+        <span className="inline-block rounded px-2 py-0.5 text-xs bg-[var(--color-surface)] text-[var(--color-text-muted)] border border-[var(--color-border)]">
           planned
         </span>
       );
     case "in_progress":
       return (
-        <span className="inline-block rounded px-2 py-0.5 text-xs bg-amber-100 text-amber-800">
+        <span className="inline-block rounded px-2 py-0.5 text-xs bg-[var(--color-warning-light)] text-[var(--color-warning)] border border-[var(--color-warning)]">
           in progress
         </span>
       );
     case "taught":
       return (
-        <span className="inline-block rounded px-2 py-0.5 text-xs bg-emerald-100 text-emerald-800">
+        <span className="inline-block rounded px-2 py-0.5 text-xs bg-[var(--color-accent-light)] text-[var(--color-accent)] border border-[var(--color-accent)]">
           taught
         </span>
       );
     case "cancelled":
       return (
-        <span className="inline-block rounded px-2 py-0.5 text-xs bg-stone-100 text-stone-500 line-through">
+        <span className="inline-block rounded px-2 py-0.5 text-xs bg-[var(--color-surface)] text-[var(--color-text-muted)] border border-[var(--color-border)] line-through">
           cancelled
         </span>
       );

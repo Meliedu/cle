@@ -5,12 +5,12 @@ interface Props {
 }
 
 const STYLES: Record<SubmissionStatus, string> = {
-  not_started: "bg-stone-200 text-stone-700",
-  in_progress: "bg-amber-100 text-amber-800",
-  submitted: "bg-blue-100 text-blue-800",
-  late: "bg-rose-100 text-rose-800",
-  graded: "bg-emerald-100 text-emerald-800",
-  excused: "bg-stone-100 text-stone-600",
+  not_started: "bg-[var(--color-surface)] text-[var(--color-text-muted)] border border-[var(--color-border)]",
+  in_progress: "bg-[var(--color-warning-light)] text-[var(--color-warning)] border border-[var(--color-warning)]",
+  submitted:   "bg-[var(--color-accent-light)] text-[var(--color-accent)] border border-[var(--color-accent)]",
+  late:        "bg-[var(--color-error-light)] text-[var(--color-error)] border border-[var(--color-error)]",
+  graded:      "bg-[var(--color-success-light)] text-[var(--color-success)] border border-[var(--color-success)]",
+  excused:     "bg-[var(--color-surface)] text-[var(--color-text-muted)] border border-[var(--color-border)]",
 };
 
 export function SubmissionStatusBadge({ status }: Props) {

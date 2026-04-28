@@ -282,7 +282,7 @@ export function SyllabusPayloadReview({ courseId, importId }: Props) {
               spellCheck={false}
             />
             {!parseResult.ok && (
-              <p className="mt-2 text-xs text-rose-600">
+              <p className="mt-2 text-xs text-[var(--color-error)]">
                 JSON error: {parseResult.error}
               </p>
             )}

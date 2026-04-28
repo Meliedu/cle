@@ -24,7 +24,12 @@ interface AddFormState {
   readonly order_index: string;
 }
 
-const INITIAL_ADD_FORM: AddFormState = { name: "", order_index: "0" };
+function buildInitialAddForm(modules: readonly { order_index: number }[]): AddFormState {
+  const max = modules.length === 0
+    ? -1
+    : Math.max(...modules.map((m) => m.order_index));
+  return { name: "", order_index: String(max + 1) };
+}
 
 interface EditState {
   readonly moduleId: string;
@@ -38,7 +43,9 @@ export function ModuleTreeEditor({ courseId }: Props) {
   const updateModule = useUpdateModule(courseId);
   const deleteModule = useDeleteModule(courseId);
 
-  const [addForm, setAddForm] = useState<AddFormState>(INITIAL_ADD_FORM);
+  const [addForm, setAddForm] = useState<AddFormState>(() =>
+    buildInitialAddForm(modules ?? [])
+  );
   const [addError, setAddError] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
 
@@ -55,7 +62,7 @@ export function ModuleTreeEditor({ courseId }: Props) {
           name: addForm.name.trim(),
           order_index: Number(addForm.order_index) || 0,
         });
-        setAddForm(INITIAL_ADD_FORM);
+        setAddForm(buildInitialAddForm(modules ?? []));
       } catch (err) {
         setAddError(err instanceof Error ? err.message : "Failed to create module");
       }
@@ -84,8 +91,8 @@ export function ModuleTreeEditor({ courseId }: Props) {
         },
       });
       setEditState(null);
-    } catch (err) {
-      // Error visible via mutation state; keep edit open
+    } catch {
+      // Keep edit open; error rendered below via updateModule.isError
     }
   }, [editState, updateModule]);
 
@@ -176,8 +183,9 @@ export function ModuleTreeEditor({ courseId }: Props) {
                 return (
                   <li
                     key={mod.id}
-                    className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
+                    className="py-3 first:pt-0 last:pb-0"
                   >
+                    <div className="flex items-center gap-3">
                     <span className="w-8 shrink-0 text-right text-xs text-[var(--color-text-muted)]">
                       {mod.order_index}
                     </span>
@@ -253,6 +261,21 @@ export function ModuleTreeEditor({ courseId }: Props) {
                           <Trash2 className="size-4" />
                         </Button>
                       </>
+                    )}
+                    </div>
+                    {isEditing && updateModule.isError && (
+                      <p className="mt-1 text-sm text-[var(--color-error)]">
+                        {updateModule.error instanceof Error
+                          ? updateModule.error.message
+                          : "Save failed"}
+                      </p>
+                    )}
+                    {isEditing && deleteModule.isError && (
+                      <p className="mt-1 text-sm text-[var(--color-error)]">
+                        {deleteModule.error instanceof Error
+                          ? deleteModule.error.message
+                          : "Delete failed"}
+                      </p>
                     )}
                   </li>
                 );

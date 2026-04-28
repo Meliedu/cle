@@ -33,7 +33,7 @@ export function StudentSubmissionForm({ courseId, assignmentId }: Props) {
         <Button
           variant="outline"
           onClick={onSaveDraft}
-          disabled={upsert.isPending}
+          disabled={upsert.isPending || text.trim().length === 0}
         >
           Save draft
         </Button>
@@ -45,10 +45,10 @@ export function StudentSubmissionForm({ courseId, assignmentId }: Props) {
         </Button>
       </div>
       {upsert.isSuccess && (
-        <p className="text-sm text-emerald-700">Saved.</p>
+        <p className="text-sm text-[var(--color-success)]">Saved.</p>
       )}
       {upsert.isError && (
-        <p className="text-sm text-rose-700">
+        <p className="text-sm text-[var(--color-error)]">
           {upsert.error instanceof Error
             ? upsert.error.message
             : "Save failed."}
