@@ -38,8 +38,8 @@ References at end of doc.
 | Tagging tables | **One polymorphic `concept_tags(target_kind, target_id, concept_id, weight)`** | One migration + one write path instead of 8; partial indexes per kind keep it fast |
 | Calendar entity name | `course_meetings`, NOT `class_sessions` | Avoids collision with existing `LiveSession` model |
 | Phase 1 ship | Curriculum spine + calendar standalone (no concepts yet) | Real product win on day one; validates calendar UX before harder layer |
-| Syllabus parser | Deferred entirely | Underspecified; calendar UI is the actual product |
-| `assignment_submissions` | Deferred | Canvas already has them; revisit when grading sync becomes a need |
+| Syllabus materials | **Separate syllabus upload section + scoped parser in Phase 1**; syllabus content used as grounding context in generation from Phase 2 | Parsing arbitrary lecture notes is messy; parsing instructor-curated syllabus-only docs is tractable and high-leverage. Syllabus-as-context grounds quiz/summary generation in stated objectives, not just retrieved chunks |
+| `assignment_submissions` | **Built in Phase 1 alongside `assignments`** | Canvas integration is not confirmed; instructor publish flow needs real due-date / submission tracking; can't defer this to Canvas |
 | Cross-course concept ontology | Deferred | Curation cost > benefit at current scale |
 | Per-concept bandit | Not built | Concept-grain bandits never escape cold start |
 | Mastery via DB triggers | Not used | Application service is debuggable; trigger logic isn't |
@@ -59,11 +59,14 @@ References at end of doc.
 │ (Phase 1)│ │(existing)│    │(existing)│    │  (Phase 2)   │
 │          │ │          │    │          │    │              │
 │ courses  │ │documents │    │ quiz_    │    │  concept_    │
-│ modules  │ │ chunks   │    │  attempts│    │   mastery    │
-│ meetings │ │ quizzes  │    │ flashcard│    │ (Beta-Binom) │
-│objectives│ │flashcards│    │  progress│    │  + nightly   │
-│assignments│ │ pronunc. │    │ revision_│    │  HLR decay   │
-│          │ │pool_items│    │ attempts │    │              │
+│ modules  │ │ (kind:   │    │  attempts│    │   mastery    │
+│ meetings │ │ lecture/ │    │ flashcard│    │ (Beta-Binom) │
+│objectives│ │ syllabus)│    │  progress│    │  + nightly   │
+│assignments│ │ chunks   │    │ revision_│    │  HLR decay   │
+│submissions│ │ quizzes  │    │ attempts │    │              │
+│ syllabus_│ │flashcards│    │ pronunc_ │    │              │
+│ imports  │ │ pronunc. │    │  scores  │    │              │
+│          │ │pool_items│    │          │    │              │
 └──────────┘ └────┬─────┘    │ pronunc_ │    │ ─────────── │
                   │          │  scores  │    │  bandit_    │
                   ▼          └────┬─────┘    │   models    │
@@ -229,7 +232,126 @@ CREATE INDEX idx_assignments_upcoming
     ON public.assignments (due_at) WHERE deleted_at IS NULL AND is_published = true;
 ```
 
-`assignment_submissions` is **deferred** — Canvas owns submission state for now. Revisit when we need grading sync.
+### `assignment_submissions` — student × assignment status
+
+Ships alongside `assignments` so instructors can run real assignment workflows independent of Canvas.
+
+```sql
+CREATE TABLE public.assignment_submissions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    assignment_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    status varchar(20) NOT NULL,
+    submitted_at timestamptz NULL,
+    score numeric(6,2) NULL,
+    feedback varchar NULL,
+    submission_payload jsonb NULL,         -- file refs, text, links — kind-specific
+    canvas_submission_id varchar(100) NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
+    CONSTRAINT assignment_submissions_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_assignment_submissions_user
+        UNIQUE (assignment_id, user_id),
+    CONSTRAINT ck_assignment_submissions_status_valid
+        CHECK (status IN ('not_started','in_progress','submitted','late','graded','excused')),
+    CONSTRAINT assignment_submissions_assignment_id_fkey
+        FOREIGN KEY (assignment_id) REFERENCES public.assignments(id) ON DELETE CASCADE,
+    CONSTRAINT assignment_submissions_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_assignment_submissions_user_status
+    ON public.assignment_submissions (user_id, status);
+CREATE INDEX idx_assignment_submissions_assignment_status
+    ON public.assignment_submissions (assignment_id, status);
+```
+
+`status` transitions are application-managed: `not_started → in_progress → submitted → graded` is the normal path; `late` is set by a daily cron when `due_at` passes without a submission; `excused` is instructor-set. `canvas_submission_id` stays nullable so this works with or without Canvas.
+
+### Syllabus materials — separate upload section, scoped parser
+
+A dedicated "syllabus" upload section lets instructors curate a small set of authoritative documents (syllabus PDF, weekly schedule, intended learning outcomes) distinct from general lecture materials. The parser only runs against this scoped set, which keeps parsing tractable. Once parsed, the structured payload pre-fills modules / meetings / objectives / assignments for instructor review, and the syllabus content becomes a grounding reference for downstream generation in Phase 2.
+
+**Add `kind` to `documents`:**
+
+```sql
+ALTER TABLE public.documents
+    ADD COLUMN kind varchar(20) DEFAULT 'lecture' NOT NULL;
+ALTER TABLE public.documents
+    ADD CONSTRAINT ck_documents_kind_valid
+        CHECK (kind IN ('lecture','syllabus','reading','reference','other'));
+CREATE INDEX idx_documents_course_kind
+    ON public.documents (course_id, kind) WHERE deleted_at IS NULL;
+```
+
+`kind = 'syllabus'` is what the syllabus uploader assigns. Existing rows backfill to `'lecture'` (the default). The instructor UI surfaces a separate "Syllabus" tab from "Course Materials".
+
+**`syllabus_imports` — parser runs on syllabus-kind docs:**
+
+```sql
+CREATE TABLE public.syllabus_imports (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    course_id uuid NOT NULL,
+    document_id uuid NULL,
+    raw_text varchar NOT NULL,
+    parsed_payload jsonb NOT NULL,
+    status varchar(20) NOT NULL,
+    error_message varchar NULL,
+    applied_at timestamptz NULL,
+    applied_by uuid NULL,
+    created_by uuid NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
+    CONSTRAINT syllabus_imports_pkey PRIMARY KEY (id),
+    CONSTRAINT ck_syllabus_imports_status_valid
+        CHECK (status IN ('pending','parsed','applied','failed','superseded')),
+    CONSTRAINT syllabus_imports_course_id_fkey
+        FOREIGN KEY (course_id) REFERENCES public.courses(id) ON DELETE CASCADE,
+    CONSTRAINT syllabus_imports_document_id_fkey
+        FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE SET NULL,
+    CONSTRAINT syllabus_imports_created_by_fkey
+        FOREIGN KEY (created_by) REFERENCES public.users(id),
+    CONSTRAINT syllabus_imports_applied_by_fkey
+        FOREIGN KEY (applied_by) REFERENCES public.users(id)
+);
+CREATE INDEX idx_syllabus_imports_course
+    ON public.syllabus_imports (course_id, created_at DESC);
+```
+
+`parsed_payload` shape:
+
+```json
+{
+  "course": {"name": "...", "semester": "...", "language": "..."},
+  "modules": [
+    {"name": "Week 1: Introduction", "order_index": 1}
+  ],
+  "meetings": [
+    {
+      "module_index": 1, "meeting_index": 1,
+      "scheduled_at": "2026-09-01T10:00:00Z",
+      "title": "...",
+      "objective_statements": ["..."]
+    }
+  ],
+  "objectives": [
+    {"scope": "course", "statement": "...", "bloom_level": "apply"}
+  ],
+  "assignments": [
+    {"title": "...", "kind": "essay", "due_at": "...", "weight": 15.0}
+  ],
+  "schema_version": "v1"
+}
+```
+
+**Two-step flow:**
+1. `parse_syllabus` job runs on `syllabus`-kind doc upload → writes `syllabus_imports.parsed_payload` with `status='parsed'`.
+2. Instructor reviews + edits the parsed payload in UI → clicks Apply → `apply_syllabus_import` job creates modules/meetings/objectives/assignments transactionally → marks `status='applied'`.
+
+Re-uploading or re-running parsing creates a new row; previous one is `'superseded'`. Apply is idempotent on `(course_id, schema_version)` plus dedup against existing entities by name/index.
+
+**Phase 2 hook — syllabus as generation grounding:**
+
+Once Phase 2 ships, the generator service (quiz/flashcard/summary creation) loads the most recent `applied` `syllabus_imports.parsed_payload` for the course and includes the relevant slice — course objectives, current meeting's objectives, intended learning outcomes — as **grounding context** in every generation prompt. This is in addition to the retrieved chunks. Effect: questions and summaries are aligned to stated learning outcomes, not just whatever the chunks happen to say. Concept tagging in Phase 2 also uses syllabus objectives as the seed for canonical concept names — instructor curation starts from the syllabus's vocabulary, not from raw extraction.
 
 ### Modifications to existing tables (Phase 1)
 
@@ -710,16 +832,15 @@ CREATE INDEX idx_revision_attempts_concept
 
 | Phase | Alembic revisions | Ships independently | New tables |
 |---|---|---|---|
-| **1: Curriculum + calendar** | 1 revision | ✅ — instructor calendar UI is the product win | `course_modules`, `course_meetings`, `learning_objectives`, `assignments` + ALTERs to `documents`/`quizzes`/`flashcard_sets`/`pronunciation_sets` |
+| **1: Curriculum + calendar + syllabus** | 1 revision | ✅ — instructor calendar UI + syllabus uploader is the product win | `course_modules`, `course_meetings`, `learning_objectives`, `assignments`, `assignment_submissions`, `syllabus_imports` + ALTERs to `documents` (kind), `quizzes`/`flashcard_sets`/`pronunciation_sets` (meeting/module FKs) |
 | **2: Concepts + mastery** | 2 revisions (concepts → mastery) | Pause point: validate concept curation UX before Phase 3 | `concepts`, `concept_prerequisites`, `concept_tags`, `concept_mastery` + ALTER `revision_attempts`, ALTER `courses` |
 | **3: Decision + telemetry** | 1 revision | ✅ — produces real `next_actions` and outcome data | `next_actions`, `instructor_alerts`, `action_outcomes`, `engine_overrides` |
 
 Defer to future:
-- Syllabus parser (Phase 5 in original spec)
 - Daily briefing cache (`student_daily_briefings`)
-- `assignment_submissions`
 - Cross-course concept linking
 - Per-user-per-concept learnable τ (decay half-life)
+- DAS3H replacement for Beta-Binomial
 
 ## Backfill (Phase 2 only)
 
@@ -744,6 +865,9 @@ Pre-Phase-2 courses keep working — they just don't have concept-aware features
 | `evaluate_instructor_alerts` | Hourly cron | Alert conditions over cohort |
 | `tune_action_coefficients` | Quarterly cron | Re-tune scoring coefficients from `action_outcomes` log |
 | `generate_meeting_briefing` | 24h before meeting | LLM call: meeting concepts + cohort mastery → `pre_meeting_briefing` |
+| `parse_syllabus` | Syllabus-kind document upload | LLM extraction → `syllabus_imports.parsed_payload` |
+| `apply_syllabus_import` | Instructor clicks Apply | Transactional create of modules / meetings / objectives / assignments from parsed payload |
+| `mark_overdue_submissions` | Daily cron | Set `assignment_submissions.status = 'late'` for past-due rows with no submission |
 
 Existing `tasks` table polling worker (`worker.py:196`, uses `FOR UPDATE SKIP LOCKED`) handles all of these.
 
@@ -822,9 +946,9 @@ GROUP BY engine_variant;
 - **Group / collaboration entities** — out of scope; needs `groups`/`group_memberships` cluster.
 - **Vector index on tagging tables** — concept embeddings exist for dedup; tagging uses LLM at write time, not vector search at read time.
 - **Per-objective polymorphic scope_type** — replaced with three explicit nullable FKs + CHECK constraint.
-- **Syllabus parser** — calendar UI is the actual product; parser was always the weakest link.
+- **Syllabus parser over arbitrary lecture notes** — but a *scoped* parser over instructor-curated syllabus-kind documents IS built (Phase 1). The deferred thing is "point the parser at the whole document corpus and hope it figures out which is the syllabus."
 - **Daily briefing cache** — TTL cache only worth it once Phase 3 dashboards prove load-heavy.
-- **`assignment_submissions`** — Canvas owns submission state.
+- **Canvas-as-source-of-truth for submissions** — we own `assignment_submissions`. Canvas IDs stay nullable on the row so we can sync if/when Canvas integration solidifies.
 
 ---
 
@@ -866,12 +990,14 @@ Existing Meli specs this builds on:
 
 ## Implementation checklist
 
-- [ ] Phase 1 Alembic revision: curriculum + calendar tables, ALTER existing content tables
-- [ ] Phase 1 backend: CRUD APIs for modules / meetings / objectives / assignments
-- [ ] Phase 1 frontend: instructor calendar editor, student calendar view
+- [ ] Phase 1 Alembic revision: curriculum + calendar + assignments + submissions + syllabus_imports + documents.kind, ALTER existing content tables
+- [ ] Phase 1 backend: CRUD APIs for modules / meetings / objectives / assignments / assignment_submissions
+- [ ] Phase 1 backend: syllabus uploader endpoint (kind='syllabus'), `parse_syllabus` job, `apply_syllabus_import` job, `mark_overdue_submissions` cron
+- [ ] Phase 1 frontend: instructor calendar editor, student calendar view, instructor syllabus upload section + parsed-payload review/apply UI, student assignment submission flow
 - [ ] Phase 1 ship + soak (≥ 2 weeks of real instructor use before Phase 2)
 - [ ] Phase 2.1 Alembic revision: `concepts`, `concept_prerequisites`, `concept_tags`
-- [ ] Phase 2.1 backend: extraction job, clustering, instructor curation API
+- [ ] Phase 2.1 backend: extraction job (seeded by latest applied `syllabus_imports.parsed_payload` objectives), clustering, instructor curation API
+- [ ] Phase 2.1 backend: extend generator service to inject syllabus parsed_payload as grounding context in quiz/flashcard/summary prompts
 - [ ] Phase 2.1 frontend: concept curation UI (cluster review)
 - [ ] Phase 2.1 backfill: cascade-tag artifacts per course on instructor approval
 - [ ] Phase 2.2 Alembic revision: `concept_mastery`, ALTER `revision_attempts`, ALTER `courses`
