@@ -11,6 +11,7 @@ from app.api.internal import router as internal_router
 from app.api.live import router as live_router
 from app.api.meetings import router as meetings_router
 from app.api.modules import router as modules_router
+from app.api.objectives import router as objectives_router
 from app.api.progress import router as progress_router
 from app.api.pronunciation import router as pronunciation_router
 from app.api.quizzes import router as quizzes_router
@@ -36,5 +37,6 @@ api_router.include_router(speech_router)
 api_router.include_router(live_router)
 api_router.include_router(meetings_router)
 api_router.include_router(modules_router)
+api_router.include_router(objectives_router)
 api_router.include_router(recalibration_router)
 api_router.include_router(internal_router)
