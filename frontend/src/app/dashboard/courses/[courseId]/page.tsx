@@ -223,6 +223,7 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
               { label: "Meetings", slug: "meetings" },
               { label: "Objectives", slug: "objectives" },
               { label: "Assignments", slug: "assignments" },
+              { label: "Syllabus", slug: "syllabus" },
             ] as const
           ).map(({ label, slug }) => (
             <Link

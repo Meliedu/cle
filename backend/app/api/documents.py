@@ -3,7 +3,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,8 @@ from app.services.storage import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/courses/{course_id}/documents", tags=["documents"])
+
+ALLOWED_DOCUMENT_KINDS = {"lecture", "syllabus", "reading", "reference", "other"}
 
 ALLOWED_TYPES = {
     "application/pdf": "pdf",
@@ -72,9 +74,16 @@ async def _require_course_instructor(
 async def upload_document(
     course_id: uuid.UUID,
     file: UploadFile,
+    kind: str = Form("lecture"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
+    if kind not in ALLOWED_DOCUMENT_KINDS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid document kind '{kind}'. Allowed: {', '.join(sorted(ALLOWED_DOCUMENT_KINDS))}",
+        )
+
     await _require_course_instructor(db, course_id, user)
 
     content_type = file.content_type or ""
@@ -129,6 +138,7 @@ async def upload_document(
         file_size=file_size,
         r2_key=r2_key,
         status="pending",
+        kind=kind,
     )
     db.add(document)
     await db.commit()
