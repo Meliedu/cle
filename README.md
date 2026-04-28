@@ -39,6 +39,9 @@ Meli (_honey_ in several languages, _salt_ in Hebrew) is a RAG-powered platform 
 ### For Instructors
 
 - **Upload anything** - PDF, DOCX, PPTX, MP3, MP4. Docling parses documents; Whisper transcribes audio.
+- **Curriculum spine** - structure a course into modules, schedule meetings, attach learning objectives (with Bloom's taxonomy levels), and publish assignments with due dates and weighted grading.
+- **Syllabus parser** - upload a syllabus PDF/DOCX, the LLM extracts modules, meetings, objectives, and assignments into an editable JSON payload, then applies them in one transactional step.
+- **Assignment grading** - per-student submission roster, score and feedback entry, automatic late-flagging for overdue submissions.
 - **Generate quizzes** from uploaded materials with one click. Edit, publish, and track student attempts.
 - **Generate flashcard sets** tied to specific documents or entire courses.
 - **Host live quizzes** - Kahoot-style real-time sessions with join codes, speed-based scoring, and live leaderboards.
@@ -48,6 +51,8 @@ Meli (_honey_ in several languages, _salt_ in Hebrew) is a RAG-powered platform 
 
 ### For Students
 
+- **Course calendar** - per-week view across all enrolled courses showing scheduled meetings and published assignment deadlines, sorted by time.
+- **Assignment submissions** - draft → submit flow with status tracking (not started / in progress / submitted / late / graded / excused).
 - **Practice quizzes** - take AI-generated quizzes with explanations for every answer.
 - **Flashcards with SM-2** - spaced repetition algorithm schedules reviews at optimal intervals.
 - **Adaptive revision** - infinite practice mode with a contextual bandit that adapts difficulty to your skill level in real time.
@@ -302,6 +307,46 @@ After 20 attempts, the `strategy` field transitions from `"rules"` to `"bandit"`
 #### Pool management
 
 Items are pre-generated at easy/medium/hard difficulty via the background task worker. When unserved items for any difficulty drop below 5, a `revision_pool_replenish` task is enqueued (7 easy, 7 medium, 6 hard). The `revision_item_served` junction table ensures no student sees the same item twice.
+
+### Curriculum, Calendar & Syllabus (Adaptive Engine — Phase 1)
+
+The curriculum spine layers above the existing content + bandit + FSRS-5 stack. Six new tables (`course_modules`, `course_meetings`, `learning_objectives`, `assignments`, `assignment_submissions`, `syllabus_imports`) plus a `documents.kind` column scoping uploads to `lecture` / `syllabus` / `reading` / `reference` / `other`.
+
+```
+                Instructor flow                                Student flow
+
+    +---------------+   parse_syllabus task    +-----------+
+    |  Upload PDF   +--->  LLM JSON extract --->  Review   |          +-----------+
+    |  kind=syllabus|                          |  payload  |          |  Calendar |
+    +---------------+                          +-----+-----+          |   page    |
+                                                     | apply          +-----+-----+
+                                                     v                      |
+    +-------------+   +---------+   +------------+   +-------------+   +----v----+
+    |   modules   |<--+ meetings+-->| objectives |   | assignments +-->|  feed   |
+    +-------------+   +---------+   +------------+   +------+------+   +---------+
+                                                            | publish
+                                                     +------v------+
+                                                     | submissions |
+                                                     | (per user)  |
+                                                     +------+------+
+                                                            | mark_overdue
+                                                            | (24h cron)
+                                                            v
+                                                       'late' status
+```
+
+| Capability | Service / Endpoint |
+|------------|-------------------|
+| Module CRUD | `/api/courses/{id}/modules` ([modules.py](backend/app/api/modules.py)) |
+| Meeting CRUD + calendar feed | `/api/courses/{id}/meetings`, `/api/courses/{id}/calendar` ([meetings.py](backend/app/api/meetings.py)) |
+| Objective CRUD with Bloom levels | `/api/courses/{id}/objectives` ([objectives.py](backend/app/api/objectives.py)) |
+| Assignments + submissions + grading | `/api/courses/{id}/assignments` ([assignments.py](backend/app/api/assignments.py)) |
+| Syllabus parse + apply | `/api/courses/{id}/syllabus/imports` ([syllabus.py](backend/app/api/syllabus.py)) — LLM extraction in [services/syllabus.py](backend/app/services/syllabus.py) |
+| Overdue cron (daily) | `mark_overdue_submissions` in [worker.py](backend/app/services/worker.py) — flips `not_started`/`in_progress` past `due_at` to `late` |
+
+Permissions: instructors get full CRUD scoped to courses they own. Students get read access to the calendar, list-published-assignments, and write access to their own submissions only. Cross-course access is blocked by ownership checks at the dependency layer (`get_owned_course` in [deps.py](backend/app/api/deps.py)).
+
+The syllabus parser is rate-limited (per-user hourly cap) to protect against unbounded LLM spend. Truncation beyond 40 000 characters is logged. Failed imports surface a "Re-trigger" affordance in the UI.
 
 ### Live Quiz (Kahoot-style)
 
@@ -719,6 +764,33 @@ Rate limited: students 10/hr, instructors 50/hr (configurable).
 </details>
 
 <details>
+<summary><strong>Curriculum (Modules / Meetings / Objectives / Assignments)</strong></summary>
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` `GET` `PUT` `DELETE` | `/api/courses/:id/modules[/:moduleId]` | Instructor | Course module CRUD (flat list; soft delete) |
+| `POST` `GET` `PUT` `DELETE` | `/api/courses/:id/meetings[/:meetingId]` | Instructor | Course meetings CRUD; unique `meeting_index` per course |
+| `GET` | `/api/courses/:id/calendar?from_date=&to_date=` | Enrolled | Combined feed: meetings + published assignments in time range (max 366 days) |
+| `POST` `GET` `PUT` `DELETE` | `/api/courses/:id/objectives[/:objectiveId]` | Instructor | Learning objectives with Bloom levels; mutually-exclusive module/meeting scope |
+| `POST` `GET` `PUT` `DELETE` | `/api/courses/:id/assignments[/:assignmentId]` | Instructor (write) / Enrolled (read) | Assignments CRUD; students see only published |
+| `POST` | `/api/courses/:id/assignments/:aid/submission` | Student | Upsert own submission (in_progress → submitted) |
+| `GET` | `/api/courses/:id/assignments/:aid/submissions` | Instructor | Roster of all submissions for an assignment |
+| `POST` | `/api/courses/:id/assignments/:aid/submissions/:sid/grade` | Instructor | Grade submission (score 0–9999.99, feedback, status) |
+
+</details>
+
+<details>
+<summary><strong>Syllabus Parser</strong></summary>
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/api/courses/:id/syllabus/imports` | Instructor | Trigger LLM parse of a `kind=syllabus` document (rate-limited) |
+| `GET` | `/api/courses/:id/syllabus/imports` | Instructor | List imports (statuses: pending → parsed → applied / failed / superseded) |
+| `POST` | `/api/courses/:id/syllabus/imports/:iid/apply` | Instructor | Apply (possibly edited) parsed payload — creates modules/meetings/objectives/assignments transactionally |
+
+</details>
+
+<details>
 <summary><strong>Canvas LMS</strong></summary>
 
 | Method | Endpoint | Auth | Description |
@@ -875,6 +947,8 @@ PostgreSQL 17 with pgvector and tsvector extensions. Key design decisions:
 - **Difficulty recalibration** via `recalibration_stats` + `recalibration_models` (Dirichlet/HMM over LLM-labeled difficulty vs. observed outcomes)
 - **Gamification** in `student_progress` (XP, streaks, badges JSONB, activity counts)
 - **Live quiz** state in `live_sessions` and `live_answers` tables
+- **Curriculum spine** in `course_modules`, `course_meetings`, `learning_objectives`, `assignments`, `assignment_submissions` (no soft-delete on submissions/imports — by design for audit trail)
+- **Syllabus parser** state in `syllabus_imports` (pending → parsed → applied / failed / superseded); `documents.kind` column scopes uploads
 
 ### Schema Diagram
 
@@ -1075,7 +1149,10 @@ Authentication is handled by **Clerk**. The frontend wraps the app in `<ClerkPro
 | **2e** Difficulty Adapter | Done | REINFORCE contextual bandit, adaptive revision sessions, pool management |
 | **2f** Analytics | Done | Instructor dashboard: course overview, quiz stats, student stats |
 | **2g** Flashcard Publishing | Done | Publish/unpublish control for flashcard sets (mirrors quizzes) |
-| **3** Planned | Planned | i18n (Traditional Chinese), Canvas LMS import, advanced analytics |
+| **3a** Adaptive Engine — Phase 1 | Done | Curriculum spine (modules / meetings / objectives / assignments), per-week calendar feed, scoped syllabus parser with LLM extraction + transactional applier, daily `mark_overdue_submissions` cron |
+| **3b** Adaptive Engine — Phase 2 | Planned | Concepts knowledge graph + prerequisite DAG, Beta-Binomial mastery, HLR forgetting decay, syllabus-as-generation-context |
+| **3c** Adaptive Engine — Phase 3 | Planned | KST outer-fringe `next_actions` ranking, instructor alerts, action-outcome telemetry, engine on/off A/B toggle |
+| **4** Planned | Planned | i18n (Traditional Chinese), Canvas LMS deeper integration, advanced analytics |
 
 <br/>
 
