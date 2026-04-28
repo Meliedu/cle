@@ -353,6 +353,50 @@ async def run_generate_summary(
     return {"course_id": str(course_id), "summary_id": str(record.id)}
 
 
+async def run_parse_syllabus(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    import asyncio
+
+    from app.models.curriculum import SyllabusImport
+    from app.models.document import Document
+    from app.services.parser import parse_document
+    from app.services.storage import download_file
+    from app.services.syllabus import parse_syllabus_text
+
+    import_id = uuid.UUID(payload["syllabus_import_id"])
+    document_id = uuid.UUID(payload["document_id"])
+
+    imp = (
+        await session.execute(
+            select(SyllabusImport).where(SyllabusImport.id == import_id)
+        )
+    ).scalar_one_or_none()
+    if imp is None:
+        return {"status": "missing"}
+
+    doc = (
+        await session.execute(
+            select(Document).where(Document.id == document_id)
+        )
+    ).scalar_one_or_none()
+    if doc is None or doc.kind != "syllabus":
+        imp.status = "failed"
+        imp.error_message = "syllabus document missing or kind changed"
+        await session.commit()
+        return {"status": "failed"}
+
+    raw_bytes = await asyncio.to_thread(download_file, doc.r2_key)
+    parse_result = await parse_document(raw_bytes, doc.file_type, doc.filename)
+    text = parse_result.text
+    imp.raw_text = text[:200000]
+    payload_json = await parse_syllabus_text(text)
+    imp.parsed_payload = payload_json
+    imp.status = "parsed"
+    await session.commit()
+    return {"status": "parsed", "syllabus_import_id": str(imp.id)}
+
+
 _HANDLERS = {
     "generate_quiz": run_generate_quiz,
     "generate_flashcards": run_generate_flashcards,

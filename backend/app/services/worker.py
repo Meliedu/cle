@@ -299,6 +299,10 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
         result = await run_generation_job(session, task.task_type, task.payload)
         await session.commit()
         return result
+    elif task.task_type == "parse_syllabus":
+        from app.services.jobs import run_parse_syllabus
+        result = await run_parse_syllabus(session, task.payload)
+        return result
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
 

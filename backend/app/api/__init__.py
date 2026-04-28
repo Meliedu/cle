@@ -20,6 +20,7 @@ from app.api.rag import router as rag_router
 from app.api.recalibration import router as recalibration_router
 from app.api.revision import router as revision_router
 from app.api.speech import router as speech_router
+from app.api.syllabus import router as syllabus_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(analytics_router)
@@ -36,6 +37,7 @@ api_router.include_router(pronunciation_router)
 api_router.include_router(progress_router)
 api_router.include_router(revision_router)
 api_router.include_router(speech_router)
+api_router.include_router(syllabus_router)
 api_router.include_router(live_router)
 api_router.include_router(meetings_router)
 api_router.include_router(modules_router)
