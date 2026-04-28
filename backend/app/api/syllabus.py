@@ -6,8 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_instructor
-from app.models import Course, Document, SyllabusImport, Task, User
+from app.api.deps import get_db, get_owned_course
+from app.models import Document, SyllabusImport, Task
+from app.models.course import Course
 from app.schemas.common import APIResponse
 from app.schemas.curriculum import (
     SyllabusImportApplyRequest,
@@ -19,37 +20,21 @@ from app.services.syllabus import apply_syllabus_payload
 router = APIRouter(prefix="/courses/{course_id}/syllabus", tags=["curriculum"])
 
 
-async def _own_course(course_id: uuid.UUID, user: User, db: AsyncSession) -> Course:
-    res = await db.execute(
-        select(Course).where(
-            Course.id == course_id,
-            Course.instructor_id == user.id,
-            Course.deleted_at.is_(None),
-        )
-    )
-    c = res.scalar_one_or_none()
-    if not c:
-        raise HTTPException(status_code=404, detail="Course not found")
-    return c
-
-
 @router.post(
     "/imports",
     response_model=APIResponse[SyllabusImportResponse],
     status_code=202,
 )
 async def trigger_import(
-    course_id: uuid.UUID,
     body: SyllabusImportTriggerRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ):
-    await _own_course(course_id, user, db)
     doc = (
         await db.execute(
             select(Document).where(
                 Document.id == body.document_id,
-                Document.course_id == course_id,
+                Document.course_id == course.id,
                 Document.kind == "syllabus",
                 Document.deleted_at.is_(None),
             )
@@ -59,12 +44,12 @@ async def trigger_import(
         raise HTTPException(status_code=404, detail="syllabus document not found")
 
     imp = SyllabusImport(
-        course_id=course_id,
+        course_id=course.id,
         document_id=doc.id,
         raw_text="",
         parsed_payload={},
         status="pending",
-        created_by=user.id,
+        created_by=course.instructor_id,
     )
     db.add(imp)
     await db.flush()
@@ -84,15 +69,13 @@ async def trigger_import(
 
 @router.get("/imports", response_model=APIResponse[list[SyllabusImportResponse]])
 async def list_imports(
-    course_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ):
-    await _own_course(course_id, user, db)
     rows = (
         await db.execute(
             select(SyllabusImport)
-            .where(SyllabusImport.course_id == course_id)
+            .where(SyllabusImport.course_id == course.id)
             .order_by(SyllabusImport.created_at.desc())
         )
     ).scalars().all()
@@ -107,18 +90,16 @@ async def list_imports(
     response_model=APIResponse[SyllabusImportResponse],
 )
 async def apply_import(
-    course_id: uuid.UUID,
     import_id: uuid.UUID,
     body: SyllabusImportApplyRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ):
-    await _own_course(course_id, user, db)
     imp = (
         await db.execute(
             select(SyllabusImport).where(
                 SyllabusImport.id == import_id,
-                SyllabusImport.course_id == course_id,
+                SyllabusImport.course_id == course.id,
             )
         )
     ).scalar_one_or_none()
@@ -131,20 +112,20 @@ async def apply_import(
         )
     await apply_syllabus_payload(
         db,
-        course_id=course_id,
+        course_id=course.id,
         payload=body.parsed_payload,
-        applied_by=user.id,
+        applied_by=course.instructor_id,
     )
     imp.parsed_payload = body.parsed_payload
     imp.status = "applied"
     imp.applied_at = datetime.now(timezone.utc)
-    imp.applied_by = user.id
+    imp.applied_by = course.instructor_id
 
     # supersede earlier applied imports for the same course
     earlier = (
         await db.execute(
             select(SyllabusImport).where(
-                SyllabusImport.course_id == course_id,
+                SyllabusImport.course_id == course.id,
                 SyllabusImport.id != imp.id,
                 SyllabusImport.status == "applied",
             )

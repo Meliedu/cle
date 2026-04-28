@@ -6,8 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_instructor
-from app.models import Course, LearningObjective, User
+from app.api.deps import get_db, get_owned_course
+from app.models import LearningObjective
+from app.models.course import Course
 from app.schemas.common import APIResponse
 from app.schemas.curriculum import (
     LearningObjectiveCreate,
@@ -16,20 +17,6 @@ from app.schemas.curriculum import (
 )
 
 router = APIRouter(prefix="/courses/{course_id}/objectives", tags=["curriculum"])
-
-
-async def _own_course(course_id: uuid.UUID, user: User, db: AsyncSession) -> Course:
-    result = await db.execute(
-        select(Course).where(
-            Course.id == course_id,
-            Course.instructor_id == user.id,
-            Course.deleted_at.is_(None),
-        )
-    )
-    course = result.scalar_one_or_none()
-    if not course:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
-    return course
 
 
 def _validate_scope(body: LearningObjectiveCreate | LearningObjectiveUpdate) -> None:
@@ -42,14 +29,12 @@ def _validate_scope(body: LearningObjectiveCreate | LearningObjectiveUpdate) -> 
 
 @router.post("", response_model=APIResponse[LearningObjectiveResponse], status_code=201)
 async def create_objective(
-    course_id: uuid.UUID,
     body: LearningObjectiveCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ) -> APIResponse[LearningObjectiveResponse]:
-    await _own_course(course_id, user, db)
     _validate_scope(body)
-    obj = LearningObjective(course_id=course_id, **body.model_dump())
+    obj = LearningObjective(course_id=course.id, **body.model_dump())
     db.add(obj)
     try:
         await db.commit()
@@ -62,15 +47,13 @@ async def create_objective(
 
 @router.get("", response_model=APIResponse[list[LearningObjectiveResponse]])
 async def list_objectives(
-    course_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ) -> APIResponse[list[LearningObjectiveResponse]]:
-    await _own_course(course_id, user, db)
     result = await db.execute(
         select(LearningObjective)
         .where(
-            LearningObjective.course_id == course_id,
+            LearningObjective.course_id == course.id,
             LearningObjective.deleted_at.is_(None),
         )
         .order_by(LearningObjective.order_index)
@@ -84,18 +67,16 @@ async def list_objectives(
 
 @router.put("/{objective_id}", response_model=APIResponse[LearningObjectiveResponse])
 async def update_objective(
-    course_id: uuid.UUID,
     objective_id: uuid.UUID,
     body: LearningObjectiveUpdate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ) -> APIResponse[LearningObjectiveResponse]:
-    await _own_course(course_id, user, db)
     _validate_scope(body)
     result = await db.execute(
         select(LearningObjective).where(
             LearningObjective.id == objective_id,
-            LearningObjective.course_id == course_id,
+            LearningObjective.course_id == course.id,
             LearningObjective.deleted_at.is_(None),
         )
     )
@@ -111,16 +92,14 @@ async def update_objective(
 
 @router.delete("/{objective_id}", response_model=APIResponse[None])
 async def delete_objective(
-    course_id: uuid.UUID,
     objective_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ) -> APIResponse[None]:
-    await _own_course(course_id, user, db)
     result = await db.execute(
         select(LearningObjective).where(
             LearningObjective.id == objective_id,
-            LearningObjective.course_id == course_id,
+            LearningObjective.course_id == course.id,
             LearningObjective.deleted_at.is_(None),
         )
     )

@@ -16,6 +16,7 @@ returns non-2xx we roll it back so failed calls don't burn the quota.
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 import sqlalchemy as sa
@@ -37,6 +38,10 @@ _PUBLIC_PATH_PREFIXES = ("/health", "/docs", "/openapi.json", "/redoc")
 # must share the same per-user rate limits.
 _EXTRA_GENERATION_PATHS = ("/api/speech/generate-prompts",)
 
+# Fix 5: regex to match syllabus import trigger (course_id varies so prefix
+# match is insufficient; a POST to this path kicks off an LLM job).
+_RATE_LIMITED_REGEX = re.compile(r"^/api/courses/[^/]+/syllabus/imports$")
+
 
 def _is_public_path(path: str) -> bool:
     return any(path.startswith(prefix) for prefix in _PUBLIC_PATH_PREFIXES)
@@ -45,7 +50,9 @@ def _is_public_path(path: str) -> bool:
 def _is_rate_limited_path(path: str) -> bool:
     if path.startswith("/api/rag/"):
         return True
-    return any(path == extra for extra in _EXTRA_GENERATION_PATHS)
+    if path in _EXTRA_GENERATION_PATHS:
+        return True
+    return bool(_RATE_LIMITED_REGEX.match(path))
 
 
 def _rate_limit_response(retry_after_seconds: int) -> dict:

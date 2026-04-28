@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 import jwt
 from fastapi import Depends, HTTPException, Request, status
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Enrollment, PendingEnrollment
+from app.models.course import Course
 from app.models.user import User
 from app.services.auth import detect_role_from_email, verify_jwt
 
@@ -186,3 +188,25 @@ async def require_student(user: User = Depends(get_current_user)) -> User:
             detail="Student access required",
         )
     return user
+
+
+async def get_owned_course(
+    course_id: uuid.UUID,
+    user: User = Depends(require_instructor),
+    db: AsyncSession = Depends(get_db),
+) -> Course:
+    """Dependency: resolve a course that the authenticated instructor owns.
+
+    Raises 404 (not 403) to avoid leaking course existence to unauthorized callers.
+    """
+    result = await db.execute(
+        select(Course).where(
+            Course.id == course_id,
+            Course.instructor_id == user.id,
+            Course.deleted_at.is_(None),
+        )
+    )
+    c = result.scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return c

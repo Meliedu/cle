@@ -179,7 +179,7 @@ class SubmissionUpsert(BaseModel):
 
 class SubmissionGrade(BaseModel):
     """Instructor-side: grade an existing submission."""
-    score: Decimal = Field(ge=0)
+    score: Decimal = Field(ge=0, le=Decimal("9999.99"))
     feedback: str | None = None
     status: Literal["graded", "excused"] = "graded"
 

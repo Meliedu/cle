@@ -3,9 +3,10 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db, require_instructor
+from app.api.deps import get_current_user, get_db, get_owned_course, require_instructor
 from app.models import (
     Assignment, AssignmentSubmission, Course, Enrollment, User,
 )
@@ -16,20 +17,6 @@ from app.schemas.curriculum import (
 )
 
 router = APIRouter(prefix="/courses/{course_id}/assignments", tags=["curriculum"])
-
-
-async def _own_course(course_id: uuid.UUID, user: User, db: AsyncSession) -> Course:
-    result = await db.execute(
-        select(Course).where(
-            Course.id == course_id,
-            Course.instructor_id == user.id,
-            Course.deleted_at.is_(None),
-        )
-    )
-    c = result.scalar_one_or_none()
-    if not c:
-        raise HTTPException(status_code=404, detail="Course not found")
-    return c
 
 
 async def _enrolled(course_id: uuid.UUID, user: User, db: AsyncSession) -> Course:
@@ -50,13 +37,11 @@ async def _enrolled(course_id: uuid.UUID, user: User, db: AsyncSession) -> Cours
 
 @router.post("", response_model=APIResponse[AssignmentResponse], status_code=201)
 async def create_assignment(
-    course_id: uuid.UUID,
     body: AssignmentCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ):
-    await _own_course(course_id, user, db)
-    a = Assignment(course_id=course_id, created_by=user.id, **body.model_dump())
+    a = Assignment(course_id=course.id, created_by=course.instructor_id, **body.model_dump())
     db.add(a)
     await db.commit()
     await db.refresh(a)
@@ -86,17 +71,15 @@ async def list_assignments(
 
 @router.put("/{assignment_id}", response_model=APIResponse[AssignmentResponse])
 async def update_assignment(
-    course_id: uuid.UUID,
     assignment_id: uuid.UUID,
     body: AssignmentUpdate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ):
-    await _own_course(course_id, user, db)
     res = await db.execute(
         select(Assignment).where(
             Assignment.id == assignment_id,
-            Assignment.course_id == course_id,
+            Assignment.course_id == course.id,
             Assignment.deleted_at.is_(None),
         )
     )
@@ -112,16 +95,14 @@ async def update_assignment(
 
 @router.delete("/{assignment_id}", response_model=APIResponse[None])
 async def delete_assignment(
-    course_id: uuid.UUID,
     assignment_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ):
-    await _own_course(course_id, user, db)
     res = await db.execute(
         select(Assignment).where(
             Assignment.id == assignment_id,
-            Assignment.course_id == course_id,
+            Assignment.course_id == course.id,
             Assignment.deleted_at.is_(None),
         )
     )
@@ -182,7 +163,25 @@ async def upsert_my_submission(
             sub.submitted_at = now
         if body.submission_payload is not None:
             sub.submission_payload = body.submission_payload
-    await db.commit()
+    # Fix 8: handle concurrent upsert race via IntegrityError catch
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        # Race: another request already created the row. Re-fetch and apply update.
+        res = await db.execute(
+            select(AssignmentSubmission).where(
+                AssignmentSubmission.assignment_id == assignment_id,
+                AssignmentSubmission.user_id == user.id,
+            )
+        )
+        sub = res.scalar_one()
+        sub.status = body.status
+        if body.status == "submitted" and sub.submitted_at is None:
+            sub.submitted_at = now
+        if body.submission_payload is not None:
+            sub.submission_payload = body.submission_payload
+        await db.commit()
     await db.refresh(sub)
     return APIResponse(success=True, data=AssignmentSubmissionResponse.model_validate(sub))
 
@@ -197,7 +196,33 @@ async def list_submissions(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
-    await _own_course(course_id, user, db)
+    # Fix 1: verify assignment belongs to this course before listing submissions
+    asn = (
+        await db.execute(
+            select(Assignment).where(
+                Assignment.id == assignment_id,
+                Assignment.course_id == course_id,
+                Assignment.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not asn:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    # Verify instructor owns this course (done after assignment check so both
+    # conditions must be satisfied simultaneously; 404 avoids leaking info)
+    course_check = (
+        await db.execute(
+            select(Course).where(
+                Course.id == course_id,
+                Course.instructor_id == user.id,
+                Course.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not course_check:
+        raise HTTPException(status_code=404, detail="Course not found")
+
     rows = (
         await db.execute(
             select(AssignmentSubmission).where(
@@ -223,7 +248,31 @@ async def grade_submission(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
-    await _own_course(course_id, user, db)
+    # Fix 1: verify assignment belongs to this course before grading
+    asn = (
+        await db.execute(
+            select(Assignment).where(
+                Assignment.id == assignment_id,
+                Assignment.course_id == course_id,
+                Assignment.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not asn:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    course_check = (
+        await db.execute(
+            select(Course).where(
+                Course.id == course_id,
+                Course.instructor_id == user.id,
+                Course.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not course_check:
+        raise HTTPException(status_code=404, detail="Course not found")
+
     sub = (
         await db.execute(
             select(AssignmentSubmission).where(

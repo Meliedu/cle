@@ -386,15 +386,37 @@ async def run_parse_syllabus(
         await session.commit()
         return {"status": "failed"}
 
-    raw_bytes = await asyncio.to_thread(download_file, doc.r2_key)
-    parse_result = await parse_document(raw_bytes, doc.file_type, doc.filename)
-    text = parse_result.text
-    imp.raw_text = text[:200000]
-    payload_json = await parse_syllabus_text(text)
-    imp.parsed_payload = payload_json
-    imp.status = "parsed"
-    await session.commit()
-    return {"status": "parsed", "syllabus_import_id": str(imp.id)}
+    # Fix 13: defense-in-depth cross-course check
+    if doc.course_id != imp.course_id:
+        imp.status = "failed"
+        imp.error_message = "document course mismatch"
+        await session.commit()
+        return {"status": "failed"}
+
+    try:
+        raw_bytes = await asyncio.to_thread(download_file, doc.r2_key)
+        parse_result = await parse_document(raw_bytes, doc.file_type, doc.filename)
+        text = parse_result.text
+        imp.raw_text = text[:200000]
+        payload_json = await parse_syllabus_text(text)
+        imp.parsed_payload = payload_json
+        imp.status = "parsed"
+        await session.commit()
+        return {"status": "parsed", "syllabus_import_id": str(imp.id)}
+    except Exception as exc:
+        # Fix 3: on any error, mark the import as failed so the UI can re-trigger
+        logger.exception(
+            "run_parse_syllabus failed for import_id=%s: %s", import_id, exc
+        )
+        try:
+            imp.status = "failed"
+            imp.error_message = f"{type(exc).__name__}: {str(exc)[:500]}"
+            await session.commit()
+        except Exception:
+            logger.exception(
+                "Failed to persist failure status for import_id=%s", import_id
+            )
+        return {"status": "failed"}
 
 
 _HANDLERS = {

@@ -5,8 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_instructor
-from app.models import Course, CourseModule, User
+from app.api.deps import get_db, get_owned_course
+from app.models import CourseModule
+from app.models.course import Course
 from app.schemas.common import APIResponse
 from app.schemas.curriculum import (
     CourseModuleCreate,
@@ -17,33 +18,29 @@ from app.schemas.curriculum import (
 router = APIRouter(prefix="/courses/{course_id}/modules", tags=["curriculum"])
 
 
-async def _own_course(
-    course_id: uuid.UUID, user: User, db: AsyncSession
-) -> Course:
-    result = await db.execute(
-        select(Course).where(
-            Course.id == course_id,
-            Course.instructor_id == user.id,
-            Course.deleted_at.is_(None),
-        )
-    )
-    course = result.scalar_one_or_none()
-    if not course:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Course not found"
-        )
-    return course
-
-
 @router.post("", response_model=APIResponse[CourseModuleResponse], status_code=201)
 async def create_module(
-    course_id: uuid.UUID,
     body: CourseModuleCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ) -> APIResponse[CourseModuleResponse]:
-    await _own_course(course_id, user, db)
-    module = CourseModule(course_id=course_id, **body.model_dump())
+    # Fix 10: validate parent_id belongs to the same course
+    if body.parent_id is not None:
+        parent = (
+            await db.execute(
+                select(CourseModule).where(
+                    CourseModule.id == body.parent_id,
+                    CourseModule.course_id == course.id,
+                    CourseModule.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if not parent:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Parent module not found",
+            )
+    module = CourseModule(course_id=course.id, **body.model_dump())
     db.add(module)
     await db.commit()
     await db.refresh(module)
@@ -52,15 +49,13 @@ async def create_module(
 
 @router.get("", response_model=APIResponse[list[CourseModuleResponse]])
 async def list_modules(
-    course_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ) -> APIResponse[list[CourseModuleResponse]]:
-    await _own_course(course_id, user, db)
     result = await db.execute(
         select(CourseModule)
         .where(
-            CourseModule.course_id == course_id,
+            CourseModule.course_id == course.id,
             CourseModule.deleted_at.is_(None),
         )
         .order_by(CourseModule.order_index)
@@ -74,17 +69,31 @@ async def list_modules(
 
 @router.put("/{module_id}", response_model=APIResponse[CourseModuleResponse])
 async def update_module(
-    course_id: uuid.UUID,
     module_id: uuid.UUID,
     body: CourseModuleUpdate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ) -> APIResponse[CourseModuleResponse]:
-    await _own_course(course_id, user, db)
+    # Fix 10: validate parent_id belongs to the same course
+    if body.parent_id is not None:
+        parent = (
+            await db.execute(
+                select(CourseModule).where(
+                    CourseModule.id == body.parent_id,
+                    CourseModule.course_id == course.id,
+                    CourseModule.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if not parent:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Parent module not found",
+            )
     result = await db.execute(
         select(CourseModule).where(
             CourseModule.id == module_id,
-            CourseModule.course_id == course_id,
+            CourseModule.course_id == course.id,
             CourseModule.deleted_at.is_(None),
         )
     )
@@ -102,16 +111,14 @@ async def update_module(
 
 @router.delete("/{module_id}", response_model=APIResponse[None])
 async def delete_module(
-    course_id: uuid.UUID,
     module_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_instructor),
+    course: Course = Depends(get_owned_course),
 ) -> APIResponse[None]:
-    await _own_course(course_id, user, db)
     result = await db.execute(
         select(CourseModule).where(
             CourseModule.id == module_id,
-            CourseModule.course_id == course_id,
+            CourseModule.course_id == course.id,
             CourseModule.deleted_at.is_(None),
         )
     )

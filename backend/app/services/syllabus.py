@@ -58,6 +58,14 @@ If a field is missing, omit it. Do not hallucinate dates."""
 
 async def _llm_extract(raw_text: str) -> dict[str, Any]:
     """LLM call. Separate function so tests can monkeypatch."""
+    # Fix 12: warn when the syllabus text is truncated before sending to LLM
+    content = raw_text[:40000]
+    if len(raw_text) > 40000:
+        logger.warning(
+            "Syllabus text truncated for LLM: original=%d chars, sent=%d chars",
+            len(raw_text),
+            40000,
+        )
     client = AsyncOpenAI(
         api_key=settings.openrouter_api_key,
         base_url=settings.openrouter_base_url,
@@ -66,7 +74,7 @@ async def _llm_extract(raw_text: str) -> dict[str, Any]:
         model=settings.llm_primary_model,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": raw_text[:40000]},
+            {"role": "user", "content": content},
         ],
         response_format={"type": "json_object"},
         temperature=0.1,
@@ -126,6 +134,16 @@ async def apply_syllabus_payload(
         mi = int(raw.get("meeting_index", 0))
         if mi <= 0:
             continue
+        # Fix 6: guard against missing/malformed scheduled_at
+        scheduled_raw = raw.get("scheduled_at")
+        if not scheduled_raw or not isinstance(scheduled_raw, str):
+            logger.warning("Skipping meeting %d with invalid scheduled_at", mi)
+            continue
+        try:
+            scheduled = datetime.fromisoformat(scheduled_raw.replace("Z", "+00:00"))
+        except (ValueError, AttributeError) as exc:
+            logger.warning("Skipping meeting %d with malformed scheduled_at: %s", mi, exc)
+            continue
         existing = (
             await db.execute(
                 select(CourseMeeting).where(
@@ -135,7 +153,6 @@ async def apply_syllabus_payload(
                 )
             )
         ).scalar_one_or_none()
-        scheduled = datetime.fromisoformat(raw["scheduled_at"].replace("Z", "+00:00"))
         mod_idx = raw.get("module_index")
         module_id = module_id_by_index.get(int(mod_idx)) if mod_idx is not None else None
         if existing:
@@ -192,7 +209,16 @@ async def apply_syllabus_payload(
         title = (raw.get("title") or "").strip()
         if not title:
             continue
-        due = datetime.fromisoformat(raw["due_at"].replace("Z", "+00:00"))
+        # Fix 6: guard against missing/malformed due_at
+        due_raw = raw.get("due_at")
+        if not due_raw or not isinstance(due_raw, str):
+            logger.warning("Skipping assignment '%s' with invalid due_at", title)
+            continue
+        try:
+            due = datetime.fromisoformat(due_raw.replace("Z", "+00:00"))
+        except (ValueError, AttributeError) as exc:
+            logger.warning("Skipping assignment '%s' with malformed due_at: %s", title, exc)
+            continue
         existing = (
             await db.execute(
                 select(Assignment).where(
