@@ -14,6 +14,10 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
             "status IN ('pending', 'processing', 'completed', 'failed')",
             name="ck_documents_status_valid",
         ),
+        CheckConstraint(
+            "kind IN ('lecture','syllabus','reading','reference','other')",
+            name="ck_documents_kind_valid",
+        ),
     )
 
     course_id: Mapped[uuid.UUID] = mapped_column(
@@ -33,3 +37,10 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
     canvas_file_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     canvas_file_etag: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="lecture")
+    meeting_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("course_meetings.id", ondelete="SET NULL")
+    )
+    module_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("course_modules.id", ondelete="SET NULL")
+    )

@@ -28,6 +28,14 @@ from app.models.revision import (
     RevisionSession,
 )
 from app.models.user import User
+from app.models.curriculum import (
+    Assignment,
+    AssignmentSubmission,
+    CourseMeeting,
+    CourseModule,
+    LearningObjective,
+    SyllabusImport,
+)
 
 __all__ = [
     "Base",
@@ -66,4 +74,10 @@ __all__ = [
     "BanditModel",
     "RecalibrationStats",
     "RecalibrationModel",
+    "CourseModule",
+    "CourseMeeting",
+    "LearningObjective",
+    "Assignment",
+    "AssignmentSubmission",
+    "SyllabusImport",
 ]
