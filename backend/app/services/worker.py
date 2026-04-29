@@ -360,6 +360,9 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
     last_prune_run = _utcnow()
     # Seed so the first overdue check runs ~24 h after startup, not immediately.
     last_overdue_run = _utcnow()
+    # Seed so the first HLR-style mastery decay sweep runs ~24 h after startup
+    # rather than at boot, mirroring the overdue-submissions cadence above.
+    last_decay_run = _utcnow()
 
     while not shutdown_event.is_set():
         try:
@@ -387,6 +390,22 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
                 except Exception:  # noqa: BLE001
                     logger.exception("mark_overdue_submissions job failed")
                 last_overdue_run = _utcnow()
+
+            # Daily HLR-style mastery decay sweep. Runs after the overdue
+            # tick so the canonical ordering is:
+            #   stuck-reset → prune → overdue → decay
+            # Decay is itself idempotent within a 24 h window (rows whose
+            # ``last_decay_at`` is already > cutoff are excluded), so a missed
+            # tick or an extra retry is safe.
+            if _utcnow() - last_decay_run > timedelta(hours=24):
+                try:
+                    async with async_session_factory() as decay_session:
+                        from app.services.mastery import decay_due_mastery_rows
+                        n = await decay_due_mastery_rows(decay_session)
+                        logger.info("HLR decay touched %d mastery rows", n)
+                except Exception:  # noqa: BLE001
+                    logger.exception("decay_due_mastery_rows job failed")
+                last_decay_run = _utcnow()
 
             # Short-lived claim session so we don't hold a DB connection open
             # during the full processing pipeline.
