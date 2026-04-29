@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.chunk import Chunk
 from app.models.course import Course
 from app.models.revision import RevisionPoolItem
+from app.models.task import Task
 from app.services.embedder import embed_query
 from app.services.generator import (
     generate_revision_flashcards,
@@ -123,6 +124,7 @@ async def replenish_pool(session: AsyncSession, payload: dict) -> None:
     )
 
     # Create RevisionPoolItem records from the results
+    new_pool_items: list[RevisionPoolItem] = []
     for difficulty, items in zip(difficulties, generation_results):
         for item in items:
             pool_item = _build_pool_item(
@@ -134,8 +136,29 @@ async def replenish_pool(session: AsyncSession, payload: dict) -> None:
                 source_chunk_id=source_chunk_id,
             )
             session.add(pool_item)
+            new_pool_items.append(pool_item)
 
     await session.flush()
+
+    # Enqueue tag-inheritance tasks for each new pool item so the mastery
+    # update path (which joins ``concept_tags`` filtered by target_kind +
+    # target_id) finds tagged concepts when students attempt them. The Task
+    # rows commit together with the pool items in the worker dispatch.
+    if source_chunk_id is not None:
+        for pool_item in new_pool_items:
+            session.add(
+                Task(
+                    task_type="tag_artifact_concepts",
+                    payload={
+                        "target_kind": "pool_item",
+                        "target_id": str(pool_item.id),
+                        "course_id": str(course_id),
+                        "source_chunk_id": str(source_chunk_id),
+                    },
+                    status="pending",
+                )
+            )
+        await session.flush()
     logger.info(
         "Replenished pool for course=%s content_type=%s counts=%s",
         course_id,

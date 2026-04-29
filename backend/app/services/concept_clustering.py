@@ -20,6 +20,10 @@ class ConceptCluster:
     suggested_description: str | None
     members: list[CandidateConcept]
     centroid: list[float] = field(default_factory=list)
+    # Per-member embedding vectors, parallel to ``members``. Exposed so
+    # callers (notably ``run_extract_concept_candidates``) can persist
+    # ``Concept.embedding`` without re-embedding the candidate text.
+    member_vectors: list[list[float]] = field(default_factory=list)
 
 
 def _cos_dist(a: list[float], b: list[float]) -> float:
@@ -80,6 +84,7 @@ async def cluster_candidates(
                 suggested_description=description,
                 members=list(cl["members"]),
                 centroid=cl["vec"],
+                member_vectors=list(cl["vecs"]),
             )
         )
     return out

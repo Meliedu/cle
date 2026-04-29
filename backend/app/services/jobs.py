@@ -25,6 +25,7 @@ from app.models.pronunciation import (
 )
 from app.models.quiz import Question, Quiz, QuizDocument
 from app.models.summary import CourseSummary
+from app.models.task import Task
 from app.schemas.rag import (
     GenerateFlashcardsRequest,
     GeneratePronunciationRequest,
@@ -53,6 +54,43 @@ async def _course_language(session: AsyncSession, course_id: uuid.UUID) -> str:
     if course is None:
         raise ValueError(f"Course {course_id} not found")
     return course.language
+
+
+def _enqueue_artifact_tag_task(
+    session: AsyncSession,
+    *,
+    target_kind: str,
+    target_id: uuid.UUID,
+    course_id: uuid.UUID,
+    source_chunk_id: uuid.UUID | None,
+) -> None:
+    """Queue a ``tag_artifact_concepts`` job for a freshly-created artifact.
+
+    The downstream handler (``run_tag_artifact_concepts``) inherits chunk
+    tags onto the new target at weight × 0.7 via
+    ``inherit_tags_from_chunk``. Without ``source_chunk_id`` the inherit
+    path has nothing to copy from — skip the enqueue entirely so the
+    worker doesn't churn on no-op ``skipped_orphan`` results.
+
+    The Task row is added to the *same* session as the artifact insert.
+    The worker commits both together (see ``worker.process_task``), so we
+    don't open a separate transaction here and never roll back the
+    parent's work.
+    """
+    if source_chunk_id is None:
+        return
+    session.add(
+        Task(
+            task_type="tag_artifact_concepts",
+            payload={
+                "target_kind": target_kind,
+                "target_id": str(target_id),
+                "course_id": str(course_id),
+                "source_chunk_id": str(source_chunk_id),
+            },
+            status="pending",
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -124,25 +162,45 @@ async def run_generate_quiz(
     session.add(quiz)
     await session.flush()
 
+    # We don't get per-question provenance back from the LLM, so use the
+    # top-ranked retrieved chunk as the "primary source" for tag inheritance.
+    # Same heuristic as ``pool.replenish_pool``. The 0.7 inheritance weight
+    # in ``inherit_tags_from_chunk`` already discounts the loss of fidelity.
+    primary_source_chunk_id = chunks[0].chunk_id if chunks else None
+
+    questions: list[Question] = []
     for idx, gq in enumerate(generated):
-        session.add(
-            Question(
-                quiz_id=quiz.id,
-                question_index=idx,
-                type=gq.type,
-                question_text=gq.question_text,
-                options=gq.options,
-                correct_answer=gq.correct_answer,
-                explanation=gq.explanation,
-                difficulty=gq.difficulty,
-            )
+        question = Question(
+            quiz_id=quiz.id,
+            question_index=idx,
+            type=gq.type,
+            question_text=gq.question_text,
+            options=gq.options,
+            correct_answer=gq.correct_answer,
+            explanation=gq.explanation,
+            difficulty=gq.difficulty,
+            source_chunk_id=primary_source_chunk_id,
         )
+        session.add(question)
+        questions.append(question)
 
     if document_uuids:
         for doc_id in document_uuids:
             session.add(QuizDocument(quiz_id=quiz.id, document_id=doc_id))
 
     await session.flush()
+
+    # Cascade-tag each new question by enqueuing a tag-inheritance job. The
+    # task rows commit together with the question rows in the worker.
+    for question in questions:
+        _enqueue_artifact_tag_task(
+            session,
+            target_kind="question",
+            target_id=question.id,
+            course_id=course_id,
+            source_chunk_id=question.source_chunk_id,
+        )
+
     logger.info("generate_quiz job finished quiz_id=%s questions=%d", quiz.id, len(generated))
     return {"quiz_id": str(quiz.id), "question_count": len(generated)}
 
@@ -197,20 +255,26 @@ async def run_generate_flashcards(
     session.add(fc_set)
     await session.flush()
 
+    # Use the top-ranked retrieved chunk as the primary source for tag
+    # inheritance — see comment in ``run_generate_quiz`` for rationale.
+    primary_source_chunk_id = chunks[0].chunk_id if chunks else None
+
     # Flashcards generated at mixed difficulty are stored as "medium" per-card
     # since the generator doesn't currently emit a per-card difficulty. A
     # specific-difficulty run tags all cards with that difficulty.
     card_difficulty = difficulty if difficulty != "mixed" else "medium"
+    cards: list[FlashcardCard] = []
     for idx, gc in enumerate(generated):
-        session.add(
-            FlashcardCard(
-                flashcard_set_id=fc_set.id,
-                card_index=idx,
-                front=gc.front,
-                back=gc.back,
-                difficulty=card_difficulty,
-            )
+        card = FlashcardCard(
+            flashcard_set_id=fc_set.id,
+            card_index=idx,
+            front=gc.front,
+            back=gc.back,
+            difficulty=card_difficulty,
+            source_chunk_id=primary_source_chunk_id,
         )
+        session.add(card)
+        cards.append(card)
 
     if document_uuids:
         for doc_id in document_uuids:
@@ -219,6 +283,16 @@ async def run_generate_flashcards(
             )
 
     await session.flush()
+
+    for card in cards:
+        _enqueue_artifact_tag_task(
+            session,
+            target_kind="flashcard_card",
+            target_id=card.id,
+            course_id=course_id,
+            source_chunk_id=card.source_chunk_id,
+        )
+
     logger.info(
         "generate_flashcards job finished set_id=%s cards=%d", fc_set.id, len(generated)
     )
@@ -278,19 +352,25 @@ async def run_generate_pronunciation(
     session.add(pron_set)
     await session.flush()
 
+    # Top-ranked retrieved chunk as primary source for tag inheritance —
+    # see ``run_generate_quiz`` for rationale.
+    primary_source_chunk_id = chunks[0].chunk_id if chunks else None
+
+    items: list[PronunciationItem] = []
     for idx, gp in enumerate(generated):
-        session.add(
-            PronunciationItem(
-                pronunciation_set_id=pron_set.id,
-                item_index=idx,
-                text=gp.text,
-                phonetic=gp.phonetic,
-                translation=gp.translation,
-                tips=gp.tips,
-                item_type=gp.item_type,
-                difficulty=gp.difficulty,
-            )
+        item = PronunciationItem(
+            pronunciation_set_id=pron_set.id,
+            item_index=idx,
+            text=gp.text,
+            phonetic=gp.phonetic,
+            translation=gp.translation,
+            tips=gp.tips,
+            item_type=gp.item_type,
+            difficulty=gp.difficulty,
+            source_chunk_id=primary_source_chunk_id,
         )
+        session.add(item)
+        items.append(item)
 
     if document_uuids:
         for doc_id in document_uuids:
@@ -301,6 +381,16 @@ async def run_generate_pronunciation(
             )
 
     await session.flush()
+
+    for item in items:
+        _enqueue_artifact_tag_task(
+            session,
+            target_kind="pronunciation_item",
+            target_id=item.id,
+            course_id=course_id,
+            source_chunk_id=item.source_chunk_id,
+        )
+
     logger.info(
         "generate_pronunciation job finished set_id=%s items=%d",
         pron_set.id,
@@ -449,7 +539,11 @@ async def run_extract_concept_candidates(
     clusters = await cluster_candidates(candidates)
     inserted = 0
     for cl in clusters:
-        for member in cl.members:
+        # ``cluster_candidates`` keeps ``members`` and ``member_vectors``
+        # parallel; pair each member with its embedding so the row carries
+        # an ``embedding`` (3072-dim, same space as the chunk store) usable
+        # for future dedupe / merge-target similarity ranking.
+        for member, vec in zip(cl.members, cl.member_vectors):
             session.add(
                 Concept(
                     course_id=course_id,
@@ -458,6 +552,7 @@ async def run_extract_concept_candidates(
                     extracted_from_chunk_id=member.source_chunk_id,
                     status="pending",
                     cluster_id=cl.cluster_id,
+                    embedding=vec,
                 )
             )
             inserted += 1

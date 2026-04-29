@@ -38,6 +38,12 @@ async def test_cluster_groups_similar_candidates(monkeypatch):
     big_o_cluster = next(c for c in clusters if "Big" in c.suggested_name)
     assert len(big_o_cluster.members) == 2
 
+    # member_vectors must be parallel to members so callers can persist
+    # ``Concept.embedding`` without re-embedding the candidate text.
+    for cl in clusters:
+        assert len(cl.member_vectors) == len(cl.members)
+        assert all(len(v) == 3072 for v in cl.member_vectors)
+
 
 @pytest.mark.asyncio
 async def test_cluster_empty_returns_empty():
