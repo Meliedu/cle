@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_owned_course
@@ -36,7 +37,7 @@ async def create_concept(
     db.add(concept)
     try:
         await db.commit()
-    except Exception as exc:
+    except IntegrityError as exc:
         await db.rollback()
         # Unique (course_id, lower(name)) violation
         raise HTTPException(
@@ -107,7 +108,7 @@ async def update_concept(
         setattr(concept, field, value)
     try:
         await db.commit()
-    except Exception as exc:
+    except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Concept name conflict") from exc
     await db.refresh(concept)
