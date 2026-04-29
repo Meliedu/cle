@@ -103,3 +103,46 @@ async def test_apply_attempt_no_tags_is_noop(db_session, test_instructor):
         await db_session.execute(select(ConceptMastery))
     ).scalars().all()
     assert rows == []
+
+
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+
+from app.services.mastery import hlr_decay_step, PRIOR
+
+
+def test_hlr_decay_step_no_decay_without_last_attempt():
+    a, b = hlr_decay_step(
+        Decimal("5.000"), Decimal("2.000"), None, datetime.now(timezone.utc)
+    )
+    assert a == Decimal("5.000")
+    assert b == Decimal("2.000")
+
+
+def test_hlr_decay_step_zero_days_is_noop():
+    now = datetime.now(timezone.utc)
+    a, b = hlr_decay_step(Decimal("5.000"), Decimal("2.000"), now, now)
+    assert a == Decimal("5.000")
+    assert b == Decimal("2.000")
+
+
+def test_hlr_decay_step_half_after_one_half_life():
+    past = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    now = past + timedelta(days=14)  # default τ=14d → exactly one half-life
+    a, b = hlr_decay_step(
+        Decimal("5.000"), Decimal("3.000"), past, now, half_life_days=14
+    )
+    # Excess α=4 → 2; excess β=2 → 1; new α=3, β=2.
+    assert float(a) == pytest.approx(3.0, abs=0.005)
+    assert float(b) == pytest.approx(2.0, abs=0.005)
+
+
+def test_hlr_decay_step_clamps_to_prior_floor():
+    """Even after many half-lives, posterior never falls below the uniform prior."""
+    past = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    now = past + timedelta(days=365)  # ~26 half-lives
+    a, b = hlr_decay_step(
+        Decimal("100.000"), Decimal("50.000"), past, now, half_life_days=14
+    )
+    assert a >= PRIOR
+    assert b >= PRIOR

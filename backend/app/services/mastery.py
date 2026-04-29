@@ -62,6 +62,7 @@ async def _get_or_create_mastery(
     concept_id: uuid.UUID,
     course_id: uuid.UUID,
 ) -> ConceptMastery:
+    # Try existing first — fastest path for most attempts.
     row = (
         await db.execute(
             select(ConceptMastery).where(
@@ -72,21 +73,37 @@ async def _get_or_create_mastery(
     ).scalar_one_or_none()
     if row is not None:
         return row
+
     now = datetime.now(timezone.utc)
-    row = ConceptMastery(
-        user_id=user_id,
-        concept_id=concept_id,
-        course_id=course_id,
-        alpha=PRIOR,
-        beta=PRIOR,
-        # mastery_score is GENERATED — DO NOT set
-        confidence=compute_confidence(PRIOR, PRIOR),
-        attempt_count=0,
-        last_decay_at=now,
-        updated_at=now,
+    # Race-safe upsert: concurrent first-attempt inserts both pass the SELECT
+    # above; ON CONFLICT DO NOTHING collapses the duplicate, then we re-SELECT
+    # to get the winning row. Avoids IntegrityError aborting the whole txn.
+    stmt = (
+        pg_insert(ConceptMastery)
+        .values(
+            user_id=user_id,
+            concept_id=concept_id,
+            course_id=course_id,
+            alpha=PRIOR,
+            beta=PRIOR,
+            confidence=compute_confidence(PRIOR, PRIOR),
+            attempt_count=0,
+            last_decay_at=now,
+            updated_at=now,
+        )
+        .on_conflict_do_nothing(index_elements=["user_id", "concept_id"])
     )
-    db.add(row)
+    await db.execute(stmt)
     await db.flush()
+
+    row = (
+        await db.execute(
+            select(ConceptMastery).where(
+                ConceptMastery.user_id == user_id,
+                ConceptMastery.concept_id == concept_id,
+            )
+        )
+    ).scalar_one()
     return row
 
 
