@@ -116,3 +116,51 @@ async def test_replay_processes_quiz_attempts_in_window(
     assert len(rows) == 1
     assert rows[0].attempt_count == 1
     assert float(rows[0].alpha) > 1.0
+
+
+@pytest.mark.asyncio
+async def test_replay_endpoint_rejects_when_inflight(
+    client, db_session, test_instructor
+):
+    """A second /replay POST while a previous Task is pending must return 409.
+
+    The replay handler is *not* watermark-idempotent: each Task fully
+    re-applies the last N days of evidence. If two pending Tasks were
+    enqueued (e.g. instructor double-clicks the button) they would each
+    re-apply the window, doubling the priors. The endpoint guards against
+    this by checking for an in-flight Task before enqueuing.
+    """
+    from app.api.deps import get_current_user
+    from app.main import app
+    from app.models import Course
+    from app.models.task import Task as TaskModel
+
+    course = Course(
+        instructor_id=test_instructor.id,
+        name="C",
+        language="english",
+        enroll_code="RP010",
+    )
+    db_session.add(course)
+    await db_session.commit()
+
+    # Pre-seed an in-flight replay Task for this course.
+    db_session.add(
+        TaskModel(
+            task_type="replay_attempt_history",
+            payload={"course_id": str(course.id), "window_days": 90},
+            status="pending",
+        )
+    )
+    await db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: test_instructor
+    try:
+        r = await client.post(
+            f"/api/courses/{course.id}/concepts/replay",
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert r.status_code == 409
+        assert "in progress" in r.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.clear()

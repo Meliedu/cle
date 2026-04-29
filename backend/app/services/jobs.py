@@ -603,6 +603,11 @@ async def run_replay_attempt_history(
     this job — otherwise evidence accumulates on top of whatever priors
     already exist.
 
+    **Failure mode:** This handler runs all attempts in a single transaction.
+    If any apply_attempt_evidence call raises (e.g. DB connection drop), the
+    entire replay rolls back. Operators should plan for full retries on
+    failure rather than partial-state recovery.
+
     Pronunciation rows currently use ``target_kind='pronunciation_item'``
     with ``target_id=ps.id`` (the score row's own UUID). Tags are written
     against real ``PronunciationItem.id`` values, so the join is a no-op
@@ -749,6 +754,12 @@ async def run_replay_attempt_history(
         )
         counters["pronunciation"] += 1
 
+    # Commit inside the handler for consistency with sibling concept-job
+    # handlers (run_update_concept_mastery, run_extract_concept_candidates,
+    # run_tag_artifact_concepts). The worker dispatch branch then doesn't
+    # commit again; the test suite calls the handler directly and gets a
+    # durable result without needing to remember to commit.
+    await session.commit()
     logger.info(
         "replay_attempt_history finished course_id=%s counters=%s",
         course_id,

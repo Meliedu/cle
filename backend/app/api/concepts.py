@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -144,10 +144,35 @@ async def replay_attempts(
 ) -> APIResponse[dict]:
     """Enqueue a 90-day replay of all attempts through Beta-Binomial mastery.
 
+    Replay is a re-prime tool, not a retry — re-running before a previous
+    replay completes would double-count evidence (each Task fully re-applies
+    the window). Returns 409 if an in-flight replay Task exists for this
+    course.
+
     Operators wanting a clean re-prime should wipe the course's
     ``concept_mastery`` rows before invoking this endpoint — the replay
     handler accumulates evidence on top of any existing priors.
     """
+    # Guard against concurrent / double-click replays. Two pending/running
+    # Task rows for the same course would each fully re-apply evidence,
+    # which is exactly NOT what re-prime semantics call for. ``Task.payload``
+    # is a generic JSON column (not JSONB), so use the ``->>`` text accessor
+    # via ``op`` for portability across both JSON and JSONB.
+    inflight = (
+        await db.execute(
+            select(Task).where(
+                Task.task_type == "replay_attempt_history",
+                Task.payload.op("->>")("course_id") == str(course.id),
+                or_(Task.status == "pending", Task.status == "running"),
+            )
+        )
+    ).scalar_one_or_none()
+    if inflight is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Replay already in progress for this course",
+        )
+
     db.add(
         Task(
             task_type="replay_attempt_history",
