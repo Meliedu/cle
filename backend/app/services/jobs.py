@@ -540,6 +540,38 @@ async def run_update_concept_mastery(
         else None
     )
 
+    # Idempotency guard: if a history row for this attempt already exists
+    # (recorded ON OR AFTER the task's enqueue time), skip — this Task ran
+    # before and was retried due to a handler/complete_task seam failure.
+    # Without this, ``_reset_stuck_tasks`` would flip a half-completed task
+    # back to ``pending`` and the second run would double-count evidence
+    # (alpha/beta drift + duplicate ConceptMasteryHistory row). Legacy
+    # enqueues that predate this fix lack ``_task_created_at`` and bypass
+    # the check; new enqueues always set it from worker dispatch.
+    task_created_at_iso = payload.get("_task_created_at")
+    if task_created_at_iso:
+        from datetime import datetime
+
+        from sqlalchemy import exists
+
+        from app.models import ConceptMasteryHistory
+
+        task_created_at = datetime.fromisoformat(task_created_at_iso)
+        already = (
+            await session.execute(
+                select(
+                    exists().where(
+                        ConceptMasteryHistory.user_id == user_id,
+                        ConceptMasteryHistory.source_kind == attempt_kind.value,
+                        ConceptMasteryHistory.source_id == target_id,
+                        ConceptMasteryHistory.recorded_at >= task_created_at,
+                    )
+                )
+            )
+        ).scalar_one()
+        if already:
+            return {"touched_concepts": 0, "skipped": "already_applied"}
+
     touched = await apply_attempt_evidence(
         session,
         user_id=user_id,

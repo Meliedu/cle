@@ -265,6 +265,66 @@ async def test_run_update_concept_mastery_applies_evidence(
 
 
 @pytest.mark.asyncio
+async def test_run_update_concept_mastery_dedupes_on_retry(db_session, test_instructor):
+    """Re-running the same task must not double-count evidence."""
+    from datetime import datetime, timezone
+    from decimal import Decimal
+    from app.models import Concept, ConceptMastery, ConceptTag, Course
+    from app.services.jobs import run_update_concept_mastery
+
+    course = Course(
+        instructor_id=test_instructor.id,
+        name="C", language="english", enroll_code="MD001",
+    )
+    db_session.add(course)
+    await db_session.commit()
+    concept = Concept(
+        course_id=course.id, name="X",
+        status="approved", instructor_curated=True,
+    )
+    db_session.add(concept)
+    await db_session.commit()
+    target_id = uuid.uuid4()
+    db_session.add(
+        ConceptTag(
+            concept_id=concept.id, target_kind="question", target_id=target_id,
+            weight=Decimal("1.00"),
+        )
+    )
+    await db_session.commit()
+
+    task_created_at = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "user_id": str(test_instructor.id),
+        "course_id": str(course.id),
+        "target_kind": "question",
+        "target_id": str(target_id),
+        "outcome": 1.0,
+        "attempt_kind": "quiz",
+        "_task_created_at": task_created_at,
+    }
+    r1 = await run_update_concept_mastery(db_session, payload)
+    assert r1["touched_concepts"] == 1
+
+    # Retry with the same task_created_at watermark — must dedupe.
+    r2 = await run_update_concept_mastery(db_session, payload)
+    assert r2.get("skipped") == "already_applied"
+
+    # Mastery row should reflect ONE update (alpha = 1 + 1 = 2), not two.
+    from sqlalchemy import select
+    m = (
+        await db_session.execute(
+            select(ConceptMastery).where(
+                ConceptMastery.user_id == test_instructor.id,
+                ConceptMastery.concept_id == concept.id,
+            )
+        )
+    ).scalar_one()
+    assert float(m.alpha) == 2.0
+    assert float(m.beta) == 1.0
+
+
+@pytest.mark.asyncio
 async def test_revision_attempt_enqueues_mastery_update(
     client, db_session, test_student
 ):

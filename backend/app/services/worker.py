@@ -338,7 +338,15 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
         return await run_tag_artifact_concepts(session, task.payload)
     elif task.task_type == "update_concept_mastery":
         from app.services.jobs import run_update_concept_mastery
-        return await run_update_concept_mastery(session, task.payload)
+        # Inject the task's enqueue time so the handler can dedupe on retry
+        # (see I-1 fix). Use a ``_`` prefix to mark the key as system-injected
+        # rather than caller-provided. If a stuck-task reset re-runs this
+        # Task, the second invocation will see a ConceptMasteryHistory row
+        # whose ``recorded_at >= task.created_at`` and skip the update.
+        return await run_update_concept_mastery(
+            session,
+            {**task.payload, "_task_created_at": task.created_at.isoformat()},
+        )
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
 
