@@ -137,13 +137,14 @@ async def tag_chunk_via_llm(
             weight = max(0.0, min(1.0, float(it.get("weight", 1.0))))
         except (TypeError, ValueError):
             continue
-        if weight <= 0:
+        weight_decimal = Decimal(f"{weight:.2f}")
+        if weight_decimal <= 0:
             continue
         stmt = pg_insert(ConceptTag).values(
             concept_id=uuid.UUID(cid_str),
             target_kind="chunk",
             target_id=chunk_id,
-            weight=Decimal(f"{weight:.2f}"),
+            weight=weight_decimal,
         ).on_conflict_do_nothing(
             index_elements=["concept_id", "target_kind", "target_id"]
         )
