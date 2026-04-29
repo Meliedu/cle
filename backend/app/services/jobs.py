@@ -460,6 +460,61 @@ async def run_extract_concept_candidates(
     }
 
 
+async def run_tag_artifact_concepts(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Tag a single artifact (chunk / question / flashcard / pool item).
+
+    payload: {target_kind, target_id, course_id, [source_chunk_id]}
+    """
+    from app.models import Chunk
+    from app.services.concept_tagger import (
+        inherit_tags_from_chunk,
+        tag_chunk_via_llm,
+    )
+
+    target_kind = payload["target_kind"]
+    target_id = uuid.UUID(payload["target_id"])
+    course_id = uuid.UUID(payload["course_id"])
+    source_chunk_id = (
+        uuid.UUID(payload["source_chunk_id"])
+        if payload.get("source_chunk_id") else None
+    )
+
+    if target_kind == "chunk":
+        chunk = (
+            await session.execute(
+                select(Chunk).where(Chunk.id == target_id)
+            )
+        ).scalar_one_or_none()
+        if chunk is None:
+            return {"status": "missing"}
+        n = await tag_chunk_via_llm(
+            session,
+            chunk_id=chunk.id,
+            chunk_text=chunk.content,
+            course_id=course_id,
+        )
+        await session.commit()
+        return {"status": "tagged", "inserted": n}
+
+    if source_chunk_id is None:
+        # Orphan artifact: fall back to LLM directly. We treat target as a
+        # chunk-like passage by reading associated text from the model. Caller
+        # must populate ``source_chunk_id`` when available — the orphan branch
+        # is currently a no-op; LLM tagging for orphans is a Phase 2 follow-up.
+        return {"status": "skipped_orphan"}
+
+    n = await inherit_tags_from_chunk(
+        session,
+        source_chunk_id=source_chunk_id,
+        target_kind=target_kind,
+        target_id=target_id,
+    )
+    await session.commit()
+    return {"status": "inherited", "inserted": n}
+
+
 _HANDLERS = {
     "generate_quiz": run_generate_quiz,
     "generate_flashcards": run_generate_flashcards,
