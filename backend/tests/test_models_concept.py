@@ -76,3 +76,28 @@ async def test_concept_tag_role_only_for_meeting(db_session, test_instructor):
     with pytest.raises(Exception):
         await db_session.commit()
     await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_concept_mastery_default_priors(db_session, test_instructor):
+    from app.models import Concept, ConceptMastery, Course
+    course = Course(
+        instructor_id=test_instructor.id,
+        name="C", language="english", enroll_code="CM001",
+    )
+    db_session.add(course)
+    await db_session.commit()
+    c = Concept(course_id=course.id, name="X", status="approved", instructor_curated=True)
+    db_session.add(c)
+    await db_session.commit()
+
+    m = ConceptMastery(
+        user_id=test_instructor.id, concept_id=c.id, course_id=course.id,
+    )
+    db_session.add(m)
+    await db_session.commit()
+    await db_session.refresh(m)
+    # Beta(1,1) → mean 0.5
+    assert float(m.alpha) == 1.0
+    assert float(m.beta) == 1.0
+    assert float(m.mastery_score) == 0.5

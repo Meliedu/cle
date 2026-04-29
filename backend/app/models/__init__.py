@@ -36,7 +36,13 @@ from app.models.curriculum import (
     LearningObjective,
     SyllabusImport,
 )
-from app.models.concept import Concept, ConceptPrerequisite, ConceptTag
+from app.models.concept import (
+    Concept,
+    ConceptMastery,
+    ConceptMasteryHistory,
+    ConceptPrerequisite,
+    ConceptTag,
+)
 
 __all__ = [
     "Base",
@@ -84,4 +90,6 @@ __all__ = [
     "Concept",
     "ConceptPrerequisite",
     "ConceptTag",
+    "ConceptMastery",
+    "ConceptMasteryHistory",
 ]

@@ -6,9 +6,11 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Computed,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     func,
@@ -122,5 +124,89 @@ class ConceptTag(Base):
     )
     role: Mapped[str | None] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ConceptMastery(Base):
+    __tablename__ = "concept_mastery"
+    __table_args__ = (
+        CheckConstraint("alpha > 0", name="ck_concept_mastery_alpha_pos"),
+        CheckConstraint("beta > 0", name="ck_concept_mastery_beta_pos"),
+        CheckConstraint(
+            "confidence >= 0 AND confidence <= 1",
+            name="ck_concept_mastery_confidence_range",
+        ),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    concept_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("concepts.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    course_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False
+    )
+    alpha: Mapped[Decimal] = mapped_column(
+        Numeric(8, 3), nullable=False, default=Decimal("1.000")
+    )
+    beta: Mapped[Decimal] = mapped_column(
+        Numeric(8, 3), nullable=False, default=Decimal("1.000")
+    )
+    # GENERATED STORED column — read-only on the SQLAlchemy side. The
+    # Computed() makes Base.metadata.create_all (used by the test bootstrap)
+    # mirror the production migration's GENERATED column definition.
+    mastery_score: Mapped[Decimal] = mapped_column(
+        Numeric(4, 3),
+        Computed("alpha / (alpha + beta)", persisted=True),
+        nullable=False,
+    )
+    confidence: Mapped[Decimal] = mapped_column(
+        Numeric(4, 3), nullable=False, default=Decimal("0.000")
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_correct_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_decay_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_seen_meeting_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("course_meetings.id", ondelete="SET NULL")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ConceptMasteryHistory(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "concept_mastery_history"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('attempt','decay','replay','reset')",
+            name="ck_concept_mastery_history_event_type_valid",
+        ),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    concept_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False
+    )
+    course_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False
+    )
+    alpha: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
+    beta: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_kind: Mapped[str | None] = mapped_column(String(20))
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    outcome: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
