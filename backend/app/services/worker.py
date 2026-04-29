@@ -336,6 +336,9 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
     elif task.task_type == "tag_artifact_concepts":
         from app.services.jobs import run_tag_artifact_concepts
         return await run_tag_artifact_concepts(session, task.payload)
+    elif task.task_type == "update_concept_mastery":
+        from app.services.jobs import run_update_concept_mastery
+        return await run_update_concept_mastery(session, task.payload)
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
 

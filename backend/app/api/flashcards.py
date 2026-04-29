@@ -22,6 +22,7 @@ from app.models.flashcard import (
     FlashcardSet,
 )
 from app.models.scheduler import SchedulerModel
+from app.models.task import Task
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.services.gamification import award_xp
@@ -34,6 +35,26 @@ from app.services.scheduler import (
     sm2_update,
     update_parameters,
 )
+# FSRS rating → mastery outcome. ``quality`` from the request is SM-2 (0..5);
+# we route through GRADE_MAP to FSRS (1..4) before looking up the outcome so
+# the bucket boundaries match the spec (again=0, hard=0.4, good=0.8, easy=1).
+# SM-2 quality values that don't appear in GRADE_MAP (1, 3) collapse to the
+# nearest "again" or "good" bucket via _quality_to_fsrs below.
+_FSRS_GRADE_TO_OUTCOME = {1: 0.0, 2: 0.4, 3: 0.8, 4: 1.0}
+
+
+def _quality_to_outcome(quality: int) -> float:
+    fsrs = GRADE_MAP.get(quality)
+    if fsrs is None:
+        # SM-2 quality 1 is between "again" and "hard" — fold to "again".
+        # SM-2 quality 3 is "below good" — fold to "hard".
+        if quality <= 1:
+            fsrs = 1
+        elif quality == 3:
+            fsrs = 2
+        else:
+            fsrs = 3
+    return _FSRS_GRADE_TO_OUTCOME.get(fsrs, 0.4)
 from app.schemas.flashcard import (
     FlashcardCardCreate,
     FlashcardCardResponse,
@@ -50,6 +71,32 @@ from app.schemas.flashcard import (
 )
 
 router = APIRouter(tags=["flashcards"])
+
+
+def _enqueue_mastery_for_flashcard(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    course_id: uuid.UUID,
+    card_id: uuid.UUID,
+    quality: int,
+) -> None:
+    """Add a single ``update_concept_mastery`` Task row for a flashcard review."""
+    outcome = _quality_to_outcome(quality)
+    db.add(
+        Task(
+            task_type="update_concept_mastery",
+            payload={
+                "user_id": str(user_id),
+                "course_id": str(course_id),
+                "target_kind": "flashcard_card",
+                "target_id": str(card_id),
+                "outcome": outcome,
+                "attempt_kind": "flashcard",
+            },
+            status="pending",
+        )
+    )
 
 
 @router.get(
@@ -386,6 +433,25 @@ async def update_progress(
         activity="flashcard",
     )
     await db.commit()
+
+    # Enqueue mastery update after progress is durable. Failure here must not
+    # roll back the student's review; we log and swallow.
+    try:
+        _enqueue_mastery_for_flashcard(
+            db,
+            user_id=user.id,
+            course_id=fc_set.course_id,
+            card_id=body.card_id,
+            quality=body.quality,
+        )
+        await db.commit()
+    except Exception:  # noqa: BLE001 — non-fatal: progress already persisted
+        logger.exception(
+            "Failed to enqueue mastery update for card_id=%s user_id=%s",
+            body.card_id,
+            user.id,
+        )
+        await db.rollback()
 
     return APIResponse(
         success=True,

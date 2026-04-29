@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -6,6 +7,8 @@ from types import SimpleNamespace
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.api._helpers import verify_enrollment
 from app.api.deps import get_current_user, get_db, require_student
@@ -107,6 +110,37 @@ async def _enqueue_replenish(
     )
     db.add(task)
     await db.flush()
+
+
+def _enqueue_mastery_for_revision(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    course_id: uuid.UUID,
+    pool_item_id: uuid.UUID,
+    score: float,
+) -> None:
+    """Add a single ``update_concept_mastery`` Task row for a revision attempt.
+
+    ``score`` is already in [0, 1] from the per-content-type score logic in
+    ``submit_answer`` (quiz: 1/0, flashcard: SM-2 quality bucket, speaking:
+    overall_score / 100). Caller commits.
+    """
+    outcome = max(0.0, min(1.0, float(score)))
+    db.add(
+        Task(
+            task_type="update_concept_mastery",
+            payload={
+                "user_id": str(user_id),
+                "course_id": str(course_id),
+                "target_kind": "pool_item",
+                "target_id": str(pool_item_id),
+                "outcome": outcome,
+                "attempt_kind": "revision",
+            },
+            status="pending",
+        )
+    )
 
 
 async def _pick_item(
@@ -445,6 +479,25 @@ async def submit_answer(
     next_item = await _select_and_serve(db, session, user)
 
     await db.commit()
+
+    # Enqueue mastery update after attempt is durable. Failure here must not
+    # roll back the student's attempt; we log and swallow.
+    try:
+        _enqueue_mastery_for_revision(
+            db,
+            user_id=user.id,
+            course_id=session.course_id,
+            pool_item_id=pool_item.id,
+            score=score,
+        )
+        await db.commit()
+    except Exception:  # noqa: BLE001 — non-fatal: attempt already persisted
+        logger.exception(
+            "Failed to enqueue mastery update for pool_item_id=%s user_id=%s",
+            pool_item.id,
+            user.id,
+        )
+        await db.rollback()
 
     # Compute session stats
     avg_score = float(session.total_score) / session.items_answered if session.items_answered > 0 else 0.0

@@ -515,6 +515,45 @@ async def run_tag_artifact_concepts(
     return {"status": "inherited", "inserted": n}
 
 
+async def run_update_concept_mastery(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Apply Beta-Binomial update for one attempt event.
+
+    Enqueued by quiz / flashcard / revision attempt handlers immediately
+    after the user's attempt is committed. Resolves the target's tagged
+    concepts and applies a (alpha += w*outcome, beta += w*(1-outcome))
+    update to each ``concept_mastery`` row, recording the event in
+    ``concept_mastery_history``.
+    """
+    from app.services.mastery import AttemptKind, apply_attempt_evidence
+
+    user_id = uuid.UUID(payload["user_id"])
+    course_id = uuid.UUID(payload["course_id"])
+    target_kind = payload["target_kind"]
+    target_id = uuid.UUID(payload["target_id"])
+    outcome = float(payload["outcome"])
+    attempt_kind = AttemptKind(payload["attempt_kind"])
+    last_seen_meeting_id = (
+        uuid.UUID(payload["last_seen_meeting_id"])
+        if payload.get("last_seen_meeting_id")
+        else None
+    )
+
+    touched = await apply_attempt_evidence(
+        session,
+        user_id=user_id,
+        course_id=course_id,
+        target_kind=target_kind,
+        target_id=target_id,
+        attempt_kind=attempt_kind,
+        outcome=outcome,
+        last_seen_meeting_id=last_seen_meeting_id,
+    )
+    await session.commit()
+    return {"touched_concepts": touched}
+
+
 _HANDLERS = {
     "generate_quiz": run_generate_quiz,
     "generate_flashcards": run_generate_flashcards,
