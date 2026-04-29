@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import type { CourseMeeting } from "@/lib/curriculum-types";
+import { ConceptTagList } from "@/components/concepts/concept-tag-pill";
 
 interface Props {
   readonly courseId: string;
@@ -117,6 +118,9 @@ export function MeetingForm({ courseId, meeting, onClose }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {meeting && (
+        <ConceptTagList targetKind="meeting" targetId={meeting.id} />
+      )}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <Label htmlFor="mtg-index">Meeting #</Label>

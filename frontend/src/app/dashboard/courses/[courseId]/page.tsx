@@ -237,6 +237,44 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
         </nav>
       )}
 
+      {/* Adaptive engine links */}
+      <nav
+        aria-label="Adaptive engine"
+        className="flex flex-wrap gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2"
+      >
+        <span className="self-center text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide mr-2">
+          Adaptive engine:
+        </span>
+        {isInstructor && (
+          <>
+            <Link
+              href={`/dashboard/courses/${courseId}/concepts`}
+              className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
+            >
+              Concepts
+            </Link>
+            <Link
+              href={`/dashboard/courses/${courseId}/concept-curation`}
+              className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
+            >
+              Concept Curation
+            </Link>
+            <Link
+              href={`/dashboard/courses/${courseId}/prerequisites`}
+              className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
+            >
+              Prerequisites
+            </Link>
+          </>
+        )}
+        <Link
+          href={`/dashboard/courses/${courseId}/mastery`}
+          className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
+        >
+          Mastery
+        </Link>
+      </nav>
+
       {/* Tab content — navigation is in the sidebar */}
       {activeTab === "overview" && (
         <div className="space-y-6">

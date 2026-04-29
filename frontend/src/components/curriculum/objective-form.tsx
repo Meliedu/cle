@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import type { BloomLevel, LearningObjective } from "@/lib/curriculum-types";
+import { ConceptTagList } from "@/components/concepts/concept-tag-pill";
 
 const BLOOM_LEVELS: readonly BloomLevel[] = [
   "remember",
@@ -126,6 +127,9 @@ export function ObjectiveForm({ courseId, objective, onClose }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {objective && (
+        <ConceptTagList targetKind="objective" targetId={objective.id} />
+      )}
       <div className="space-y-1.5">
         <Label htmlFor="obj-statement">
           Statement <span className="text-[var(--color-error)]">*</span>
