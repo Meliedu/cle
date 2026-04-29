@@ -30,6 +30,14 @@ class Concept(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
             "status IN ('pending','approved','rejected','merged')",
             name="ck_concepts_status_valid",
         ),
+        CheckConstraint(
+            "description IS NULL OR length(description) <= 2000",
+            name="ck_concepts_description_length",
+        ),
+        CheckConstraint(
+            "length(name) <= 255",
+            name="ck_concepts_name_length",
+        ),
         # Mirror the partial functional unique index from the migration so that
         # Base.metadata.create_all (used by the test bootstrap) builds the same
         # unique constraint the production schema enforces.

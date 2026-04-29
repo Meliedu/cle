@@ -48,3 +48,22 @@ async def test_extract_handles_llm_failure_gracefully():
 
     # One bad chunk shouldn't poison the whole job.
     assert result == []
+
+
+@pytest.mark.asyncio
+async def test_extract_truncates_long_description():
+    chunks = [{"id": uuid.uuid4(), "content": "Foo."}]
+    long_desc = "x" * 3000
+
+    async def fake_llm(text: str) -> list[dict]:
+        return [{"name": "TestConcept", "description": long_desc}]
+
+    with patch(
+        "app.services.concept_extraction._llm_extract_concepts",
+        side_effect=fake_llm,
+    ):
+        result = await extract_candidates_from_chunks(chunks)
+
+    assert len(result) == 1
+    assert result[0].description is not None
+    assert len(result[0].description) <= 2000

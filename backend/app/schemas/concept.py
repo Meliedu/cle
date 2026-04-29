@@ -15,13 +15,13 @@ MeetingRole = Literal["introduced", "covered", "reinforced"]
 
 class ConceptCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=2000)
     instructor_curated: bool = True
 
 
 class ConceptUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=2000)
     status: ConceptStatus | None = None
     canonical_id: uuid.UUID | None = None
     instructor_curated: bool | None = None
@@ -98,8 +98,8 @@ class ConceptClusterResponse(BaseModel):
 class ConceptClusterDecision(BaseModel):
     """Instructor curation action on a cluster."""
     action: Literal["approve", "rename", "merge", "reject"]
-    final_name: str | None = None         # required when action='approve' or 'rename'
-    final_description: str | None = None
+    final_name: str | None = Field(default=None, min_length=1, max_length=255)  # required when action='approve' or 'rename'
+    final_description: str | None = Field(default=None, max_length=2000)
     merge_into_concept_id: uuid.UUID | None = None  # required when action='merge'
 
 

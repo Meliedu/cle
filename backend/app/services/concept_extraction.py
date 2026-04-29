@@ -62,7 +62,10 @@ async def _llm_extract_concepts(text: str) -> list[dict[str, Any]]:
     else:
         items = []
     return [
-        {"name": str(it.get("name", "")).strip(), "description": it.get("description")}
+        {
+            "name": str(it.get("name", "")).strip(),
+            "description": (str(it.get("description") or "")[:2000] or None),
+        }
         for it in items
         if isinstance(it, dict) and it.get("name")
     ]
@@ -90,10 +93,13 @@ async def extract_candidates_from_chunks(
             name = it["name"][:255].strip()
             if not name:
                 continue
+            # Defense-in-depth: also truncate here in case _llm_extract_concepts
+            # was bypassed (e.g. monkeypatched for tests, or future caller paths).
+            description = (str(it.get("description") or "")[:2000] or None)
             out.append(
                 CandidateConcept(
                     name=name,
-                    description=(it.get("description") or None),
+                    description=description,
                     source_chunk_id=chunk_id,
                 )
             )

@@ -125,3 +125,30 @@ async def test_extract_endpoint_rejects_when_inflight(client, db_session, test_i
         assert "in progress" in r.json()["detail"].lower()
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_create_concept_rejects_oversized_description(client, db_session, test_instructor):
+    """Pydantic max_length=2000 must reject 3000-char description."""
+    from app.models import Course
+    course = Course(
+        instructor_id=test_instructor.id,
+        name="C", language="english", enroll_code="OS001",
+    )
+    db_session.add(course)
+    await db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: test_instructor
+    try:
+        r = await client.post(
+            f"/api/courses/{course.id}/concepts",
+            json={
+                "name": "Big-O",
+                "description": "x" * 3000,
+                "instructor_curated": True,
+            },
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert r.status_code == 422  # Pydantic validation error
+    finally:
+        app.dependency_overrides.clear()
