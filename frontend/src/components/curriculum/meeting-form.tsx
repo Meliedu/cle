@@ -74,7 +74,7 @@ export function MeetingForm({ courseId, meeting, onClose }: Props) {
   );
 
   const handleSubmit = useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
+    async (e: React.SyntheticEvent<HTMLFormElement>) => {
       e.preventDefault();
       if (!form.scheduled_at) {
         setError("Scheduled date/time is required");

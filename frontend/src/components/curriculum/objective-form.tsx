@@ -81,7 +81,7 @@ export function ObjectiveForm({ courseId, objective, onClose }: Props) {
     form.module_id !== "__none__" && form.meeting_id !== "__none__";
 
   const handleSubmit = useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
+    async (e: React.SyntheticEvent<HTMLFormElement>) => {
       e.preventDefault();
       if (!form.statement.trim()) {
         setError("Statement is required");

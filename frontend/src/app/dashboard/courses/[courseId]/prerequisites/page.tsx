@@ -31,7 +31,7 @@ export default function PrerequisitesPage(props: {
       </h1>
 
       <form
-        onSubmit={(event: React.FormEvent<HTMLFormElement>) => {
+        onSubmit={(event) => {
           event.preventDefault();
           if (prereqId && depId && prereqId !== depId) {
             create.mutate({
