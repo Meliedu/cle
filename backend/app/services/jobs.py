@@ -39,6 +39,7 @@ from app.services.generator import (
     generate_summary,
 )
 from app.services.retriever import retrieve_chunks
+from app.services.syllabus_grounding import load_syllabus_grounding
 from app.utils.sanitize import sanitize_query as _sanitize
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,7 @@ async def run_generate_quiz(
         top_k=20,
         document_ids=document_uuids,
     )
+    grounding = await load_syllabus_grounding(session, course_id)
     generated = await generate_quiz(
         chunks,
         num_questions=num_questions,
@@ -108,6 +110,7 @@ async def run_generate_quiz(
         question_types=question_types,
         mcq_option_count=mcq_option_count,
         difficulty=difficulty,
+        grounding_context=grounding,
     )
 
     quiz = Quiz(
@@ -176,11 +179,13 @@ async def run_generate_flashcards(
         top_k=20,
         document_ids=document_uuids,
     )
+    grounding = await load_syllabus_grounding(session, course_id)
     generated = await generate_flashcards(
         chunks,
         num_cards=num_cards,
         language=language,
         difficulty=difficulty,
+        grounding_context=grounding,
     )
 
     fc_set = FlashcardSet(
@@ -252,12 +257,14 @@ async def run_generate_pronunciation(
         top_k=20,
         document_ids=document_uuids,
     )
+    grounding = await load_syllabus_grounding(session, course_id)
     generated = await generate_pronunciation(
         chunks,
         num_items=num_items,
         item_types=item_types,
         difficulty=difficulty,
         language=language,
+        grounding_context=grounding,
     )
 
     pron_set = PronunciationSet(
@@ -328,7 +335,10 @@ async def run_generate_summary(
         top_k=20,
         document_ids=document_uuids,
     )
-    summary_text = await generate_summary(chunks, language=language)
+    grounding = await load_syllabus_grounding(session, course_id)
+    summary_text = await generate_summary(
+        chunks, language=language, grounding_context=grounding
+    )
 
     existing = await session.execute(
         select(CourseSummary).where(CourseSummary.course_id == course_id)
