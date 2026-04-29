@@ -586,6 +586,177 @@ async def run_update_concept_mastery(
     return {"touched_concepts": touched}
 
 
+async def run_replay_attempt_history(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Replay last N days of attempts through Beta-Binomial mastery for a course.
+
+    Walks ``quiz_attempts``, ``flashcard_progress``, ``revision_attempts`` and
+    ``pronunciation_scores``, skipping rows older than the window. Each
+    surviving attempt is run through :func:`apply_attempt_evidence`, which
+    writes a fresh ``ConceptMasteryHistory(event_type='attempt')`` row stamped
+    with ``recorded_at = now()`` (the replay time, not the original attempt
+    time — reviewers should be aware).
+
+    Replay is *not* idempotent at the watermark level. Operators wanting a
+    clean slate must wipe ``ConceptMastery`` for the course before enqueuing
+    this job — otherwise evidence accumulates on top of whatever priors
+    already exist.
+
+    Pronunciation rows currently use ``target_kind='pronunciation_item'``
+    with ``target_id=ps.id`` (the score row's own UUID). Tags are written
+    against real ``PronunciationItem.id`` values, so the join is a no-op
+    today; this branch is wired up so the handler runs without error and
+    a future fix to the pronunciation score → item FK will activate it.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.models import (
+        FlashcardCard,
+        FlashcardProgress,
+        FlashcardSet,
+        PronunciationScore,
+        Question,
+        Quiz,
+        QuizAttempt,
+        RevisionAttempt,
+        RevisionPoolItem,
+    )
+    from app.services.mastery import AttemptKind, apply_attempt_evidence
+
+    course_id = uuid.UUID(payload["course_id"])
+    window_days = int(payload.get("window_days", 90))
+    cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+
+    counters = {"quiz": 0, "flashcard": 0, "revision": 0, "pronunciation": 0}
+
+    # --- Quiz attempts -----------------------------------------------------
+    quiz_attempts = (
+        await session.execute(
+            select(QuizAttempt)
+            .join(Quiz, Quiz.id == QuizAttempt.quiz_id)
+            .where(
+                Quiz.course_id == course_id,
+                QuizAttempt.created_at >= cutoff,
+            )
+        )
+    ).scalars().all()
+    for attempt in quiz_attempts:
+        for qid_str, answer in (attempt.answers or {}).items():
+            try:
+                qid = uuid.UUID(qid_str)
+            except (ValueError, TypeError):
+                continue
+            question = (
+                await session.execute(
+                    select(Question).where(Question.id == qid)
+                )
+            ).scalar_one_or_none()
+            if question is None:
+                continue
+            outcome = 1.0 if answer == question.correct_answer else 0.0
+            await apply_attempt_evidence(
+                session,
+                user_id=attempt.user_id,
+                course_id=course_id,
+                target_kind="question",
+                target_id=qid,
+                attempt_kind=AttemptKind.QUIZ,
+                outcome=outcome,
+            )
+            counters["quiz"] += 1
+
+    # --- Flashcard progress (last_reviewed inside window) -----------------
+    fc_rows = (
+        await session.execute(
+            select(FlashcardProgress, FlashcardCard)
+            .join(
+                FlashcardCard,
+                FlashcardCard.id == FlashcardProgress.flashcard_card_id,
+            )
+            .join(
+                FlashcardSet,
+                FlashcardSet.id == FlashcardCard.flashcard_set_id,
+            )
+            .where(
+                FlashcardSet.course_id == course_id,
+                FlashcardProgress.last_reviewed.is_not(None),
+                FlashcardProgress.last_reviewed >= cutoff,
+            )
+        )
+    ).all()
+    grade_to_outcome = {1: 0.0, 2: 0.4, 3: 0.8, 4: 1.0}
+    for prog, card in fc_rows:
+        outcome = grade_to_outcome.get(prog.last_grade or 3, 0.8)
+        await apply_attempt_evidence(
+            session,
+            user_id=prog.user_id,
+            course_id=course_id,
+            target_kind="flashcard_card",
+            target_id=card.id,
+            attempt_kind=AttemptKind.FLASHCARD,
+            outcome=outcome,
+        )
+        counters["flashcard"] += 1
+
+    # --- Revision attempts ------------------------------------------------
+    rev_rows = (
+        await session.execute(
+            select(RevisionAttempt, RevisionPoolItem)
+            .join(
+                RevisionPoolItem,
+                RevisionPoolItem.id == RevisionAttempt.pool_item_id,
+            )
+            .where(
+                RevisionAttempt.course_id == course_id,
+                RevisionAttempt.created_at >= cutoff,
+            )
+        )
+    ).all()
+    for ra, pool in rev_rows:
+        await apply_attempt_evidence(
+            session,
+            user_id=ra.user_id,
+            course_id=course_id,
+            target_kind="pool_item",
+            target_id=pool.id,
+            attempt_kind=AttemptKind.REVISION,
+            outcome=float(ra.score),
+        )
+        counters["revision"] += 1
+
+    # --- Pronunciation scores --------------------------------------------
+    pron_rows = (
+        await session.execute(
+            select(PronunciationScore).where(
+                PronunciationScore.course_id == course_id,
+                PronunciationScore.created_at >= cutoff,
+            )
+        )
+    ).scalars().all()
+    for ps in pron_rows:
+        if ps.overall_score is None:
+            continue
+        outcome = max(0.0, min(1.0, float(ps.overall_score) / 100.0))
+        await apply_attempt_evidence(
+            session,
+            user_id=ps.user_id,
+            course_id=course_id,
+            target_kind="pronunciation_item",
+            target_id=ps.id,
+            attempt_kind=AttemptKind.PRONUNCIATION,
+            outcome=outcome,
+        )
+        counters["pronunciation"] += 1
+
+    logger.info(
+        "replay_attempt_history finished course_id=%s counters=%s",
+        course_id,
+        counters,
+    )
+    return {"course_id": str(course_id), "counters": counters}
+
+
 _HANDLERS = {
     "generate_quiz": run_generate_quiz,
     "generate_flashcards": run_generate_flashcards,

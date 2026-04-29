@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_owned_course
 from app.models import Concept
 from app.models.course import Course
+from app.models.task import Task
 from app.schemas.common import APIResponse
 from app.schemas.concept import (
     ConceptCreate,
@@ -134,3 +135,25 @@ async def delete_concept(
     concept.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     return APIResponse(success=True, data=None)
+
+
+@router.post("/replay", response_model=APIResponse[dict])
+async def replay_attempts(
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+) -> APIResponse[dict]:
+    """Enqueue a 90-day replay of all attempts through Beta-Binomial mastery.
+
+    Operators wanting a clean re-prime should wipe the course's
+    ``concept_mastery`` rows before invoking this endpoint — the replay
+    handler accumulates evidence on top of any existing priors.
+    """
+    db.add(
+        Task(
+            task_type="replay_attempt_history",
+            payload={"course_id": str(course.id), "window_days": 90},
+            status="pending",
+        )
+    )
+    await db.commit()
+    return APIResponse(success=True, data={"enqueued": True})

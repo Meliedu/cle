@@ -347,6 +347,14 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
             session,
             {**task.payload, "_task_created_at": task.created_at.isoformat()},
         )
+    elif task.task_type == "replay_attempt_history":
+        # Backfill job: re-applies the last N days of attempts through
+        # mastery. Intentionally *not* watermark-idempotent — operators
+        # wipe ConceptMastery first if they want a clean slate.
+        from app.services.jobs import run_replay_attempt_history
+        result = await run_replay_attempt_history(session, task.payload)
+        await session.commit()
+        return result
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
 
