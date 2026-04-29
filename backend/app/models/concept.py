@@ -54,6 +54,7 @@ class Concept(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     instructor_curated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    cluster_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
 
 class ConceptPrerequisite(Base):

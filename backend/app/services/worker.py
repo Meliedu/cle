@@ -330,6 +330,9 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
         from app.services.jobs import run_parse_syllabus
         result = await run_parse_syllabus(session, task.payload)
         return result
+    elif task.task_type == "extract_concept_candidates":
+        from app.services.jobs import run_extract_concept_candidates
+        return await run_extract_concept_candidates(session, task.payload)
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
 

@@ -419,6 +419,47 @@ async def run_parse_syllabus(
         return {"status": "failed"}
 
 
+async def run_extract_concept_candidates(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Sample chunks → LLM extract → cluster → write Concept(status='pending') rows."""
+    from app.models import Concept
+    from app.services.concept_clustering import cluster_candidates
+    from app.services.concept_extraction import (
+        extract_candidates_from_chunks,
+        sample_chunks_for_extraction,
+    )
+
+    course_id = uuid.UUID(payload["course_id"])
+    chunks = await sample_chunks_for_extraction(session, course_id)
+    candidates = await extract_candidates_from_chunks(chunks)
+    if not candidates:
+        return {"course_id": str(course_id), "candidates": 0, "clusters": 0}
+
+    clusters = await cluster_candidates(candidates)
+    inserted = 0
+    for cl in clusters:
+        for member in cl.members:
+            session.add(
+                Concept(
+                    course_id=course_id,
+                    name=member.name,
+                    description=member.description,
+                    extracted_from_chunk_id=member.source_chunk_id,
+                    status="pending",
+                    cluster_id=cl.cluster_id,
+                )
+            )
+            inserted += 1
+    await session.commit()
+    return {
+        "course_id": str(course_id),
+        "candidates": len(candidates),
+        "clusters": len(clusters),
+        "inserted": inserted,
+    }
+
+
 _HANDLERS = {
     "generate_quiz": run_generate_quiz,
     "generate_flashcards": run_generate_flashcards,
