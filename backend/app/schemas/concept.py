@@ -101,3 +101,27 @@ class ConceptClusterDecision(BaseModel):
     final_name: str | None = None         # required when action='approve' or 'rename'
     final_description: str | None = None
     merge_into_concept_id: uuid.UUID | None = None  # required when action='merge'
+
+
+class MasteryResponse(BaseModel):
+    concept_id: uuid.UUID
+    concept_name: str
+    course_id: uuid.UUID
+    alpha: Decimal
+    beta: Decimal
+    mastery_score: Decimal
+    confidence: Decimal
+    attempt_count: int
+    last_attempt_at: datetime | None
+    last_decay_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class CohortMasteryRow(BaseModel):
+    concept_id: uuid.UUID
+    concept_name: str
+    avg_mastery: float | None
+    weak_students: int
+    total_students_with_evidence: int
