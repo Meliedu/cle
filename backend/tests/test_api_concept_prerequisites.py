@@ -76,3 +76,45 @@ async def test_prerequisite_must_be_same_course(client, db_session, test_instruc
         assert r.status_code == 400
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_prerequisite_rejects_merged_concept(client, db_session, test_instructor):
+    """A merged concept (canonical_id != None) cannot be the endpoint of a new edge."""
+    from app.models import Concept, Course
+    course = Course(
+        instructor_id=test_instructor.id, name="C", language="english", enroll_code="C0050",
+    )
+    db_session.add(course)
+    await db_session.commit()
+    canonical = Concept(
+        course_id=course.id, name="Canonical", status="approved", instructor_curated=True,
+    )
+    merged = Concept(
+        course_id=course.id, name="Old Variant", status="merged", instructor_curated=False,
+    )
+    db_session.add_all([canonical, merged])
+    await db_session.commit()
+    merged.canonical_id = canonical.id
+    await db_session.commit()
+
+    other = Concept(
+        course_id=course.id, name="Other", status="approved", instructor_curated=True,
+    )
+    db_session.add(other)
+    await db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: test_instructor
+    try:
+        # Try to make `merged` a prereq of `other` — must be rejected (400).
+        r = await client.post(
+            f"/api/courses/{course.id}/concept-prerequisites",
+            json={
+                "prereq_concept_id": str(merged.id),
+                "dependent_concept_id": str(other.id),
+            },
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert r.status_code == 400
+    finally:
+        app.dependency_overrides.clear()

@@ -45,6 +45,7 @@ async def _both_in_course(
                 Concept.id.in_(ids),
                 Concept.course_id == course_id,
                 Concept.deleted_at.is_(None),
+                Concept.canonical_id.is_(None),
             )
         )
     ).scalars().all()
@@ -118,7 +119,11 @@ async def list_prerequisites(
         await db.execute(
             select(ConceptPrerequisite)
             .join(Concept, Concept.id == ConceptPrerequisite.dependent_concept_id)
-            .where(Concept.course_id == course.id)
+            .where(
+                Concept.course_id == course.id,
+                Concept.canonical_id.is_(None),
+                Concept.deleted_at.is_(None),
+            )
         )
     ).scalars().all()
     return APIResponse(
