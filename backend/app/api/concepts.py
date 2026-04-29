@@ -137,6 +137,52 @@ async def delete_concept(
     return APIResponse(success=True, data=None)
 
 
+@router.post("/extract", response_model=APIResponse[dict])
+async def extract_candidates(
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+) -> APIResponse[dict]:
+    """Enqueue an LLM concept-extraction pass for this course.
+
+    Samples up to 200 chunks, asks the LLM to extract concept candidates per
+    chunk, clusters them by cosine distance, and persists each cluster's
+    members as Concept(status='pending') rows for instructor curation.
+
+    Returns 409 if an extraction Task is already pending or running for this
+    course — re-running while in-flight would create duplicate cluster_id
+    groupings the curator cannot disambiguate.
+    """
+    # Guard against concurrent / double-click extracts. Two pending/running
+    # rows would interleave inserts under different cluster_ids for the same
+    # candidate concepts, polluting the curation queue. ``Task.payload`` is a
+    # generic JSON column (not JSONB), so use the ``->>`` text accessor via
+    # ``op`` for portability across both JSON and JSONB.
+    inflight = (
+        await db.execute(
+            select(Task).where(
+                Task.task_type == "extract_concept_candidates",
+                Task.payload.op("->>")("course_id") == str(course.id),
+                or_(Task.status == "pending", Task.status == "running"),
+            )
+        )
+    ).scalar_one_or_none()
+    if inflight is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Concept extraction already in progress for this course",
+        )
+
+    db.add(
+        Task(
+            task_type="extract_concept_candidates",
+            payload={"course_id": str(course.id)},
+            status="pending",
+        )
+    )
+    await db.commit()
+    return APIResponse(success=True, data={"enqueued": True})
+
+
 @router.post("/replay", response_model=APIResponse[dict])
 async def replay_attempts(
     db: AsyncSession = Depends(get_db),

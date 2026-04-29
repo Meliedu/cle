@@ -64,6 +64,25 @@ export function useUpdateConcept(courseId: string) {
   });
 }
 
+export function useEnqueueConceptExtraction(courseId: string) {
+  const { getToken } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const res = await apiFetch<ApiEnvelope<{ enqueued: boolean }>>(
+        `/courses/${courseId}/concepts/extract`,
+        { token, method: "POST" }
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["concept-clusters", courseId] });
+    },
+  });
+}
+
 export function useDeleteConcept(courseId: string) {
   const { getToken } = useAuth();
   const qc = useQueryClient();

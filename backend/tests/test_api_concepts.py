@@ -63,3 +63,65 @@ async def test_concept_cross_course_idor(client, db_session, test_instructor):
         assert r.status_code == 404      # get_owned_course returns 404 to mask existence
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_extract_endpoint_enqueues_task(client, db_session, test_instructor):
+    from app.models import Course, Task
+    from sqlalchemy import select
+
+    course = Course(
+        instructor_id=test_instructor.id,
+        name="C", language="english", enroll_code="EX001",
+    )
+    db_session.add(course)
+    await db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: test_instructor
+    try:
+        r = await client.post(
+            f"/api/courses/{course.id}/concepts/extract",
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert r.status_code == 200
+        assert r.json()["data"]["enqueued"] is True
+    finally:
+        app.dependency_overrides.clear()
+
+    tasks = (
+        await db_session.execute(
+            select(Task).where(Task.task_type == "extract_concept_candidates")
+        )
+    ).scalars().all()
+    assert len(tasks) == 1
+    assert tasks[0].payload["course_id"] == str(course.id)
+
+
+@pytest.mark.asyncio
+async def test_extract_endpoint_rejects_when_inflight(client, db_session, test_instructor):
+    from app.models import Course, Task
+    course = Course(
+        instructor_id=test_instructor.id,
+        name="C", language="english", enroll_code="EX002",
+    )
+    db_session.add(course)
+    await db_session.commit()
+    db_session.add(
+        Task(
+            task_type="extract_concept_candidates",
+            payload={"course_id": str(course.id)},
+            status="pending",
+        )
+    )
+    await db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: test_instructor
+    try:
+        r = await client.post(
+            f"/api/courses/{course.id}/concepts/extract",
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert r.status_code == 409
+        assert "in progress" in r.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.clear()
