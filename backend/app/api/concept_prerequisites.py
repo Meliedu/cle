@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.api.deps import get_db, get_owned_course
 from app.models import Concept, ConceptPrerequisite
@@ -115,14 +116,28 @@ async def list_prerequisites(
     db: AsyncSession = Depends(get_db),
     course: Course = Depends(get_owned_course),
 ) -> APIResponse[list[ConceptPrerequisiteResponse]]:
+    # Alias Concept twice so we can filter merged/deleted on BOTH endpoints
+    # of each edge. Otherwise an edge whose prereq side was merged would
+    # still be returned (with a pointer to a merged-out concept).
+    DependentConcept = aliased(Concept)
+    PrereqConcept = aliased(Concept)
     rows = (
         await db.execute(
             select(ConceptPrerequisite)
-            .join(Concept, Concept.id == ConceptPrerequisite.dependent_concept_id)
+            .join(
+                DependentConcept,
+                DependentConcept.id == ConceptPrerequisite.dependent_concept_id,
+            )
+            .join(
+                PrereqConcept,
+                PrereqConcept.id == ConceptPrerequisite.prereq_concept_id,
+            )
             .where(
-                Concept.course_id == course.id,
-                Concept.canonical_id.is_(None),
-                Concept.deleted_at.is_(None),
+                DependentConcept.course_id == course.id,
+                DependentConcept.canonical_id.is_(None),
+                DependentConcept.deleted_at.is_(None),
+                PrereqConcept.canonical_id.is_(None),
+                PrereqConcept.deleted_at.is_(None),
             )
         )
     ).scalars().all()

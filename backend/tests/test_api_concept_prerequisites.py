@@ -118,3 +118,81 @@ async def test_prerequisite_rejects_merged_concept(client, db_session, test_inst
         assert r.status_code == 400
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_list_prerequisites_excludes_edge_with_merged_prereq(
+    client, db_session, test_instructor
+):
+    """An edge whose prereq side becomes merged must NOT be returned."""
+    from app.models import Concept, ConceptPrerequisite, Course
+    course = Course(
+        instructor_id=test_instructor.id,
+        name="C", language="english", enroll_code="C0060",
+    )
+    db_session.add(course)
+    await db_session.commit()
+
+    # Create two valid concepts and link them as prereq → dependent.
+    prereq = Concept(
+        course_id=course.id, name="Prereq",
+        status="approved", instructor_curated=True,
+    )
+    dependent = Concept(
+        course_id=course.id, name="Dependent",
+        status="approved", instructor_curated=True,
+    )
+    # An unrelated, fully-valid edge that should still be returned.
+    other_prereq = Concept(
+        course_id=course.id, name="OtherPrereq",
+        status="approved", instructor_curated=True,
+    )
+    other_dep = Concept(
+        course_id=course.id, name="OtherDep",
+        status="approved", instructor_curated=True,
+    )
+    db_session.add_all([prereq, dependent, other_prereq, other_dep])
+    await db_session.commit()
+
+    db_session.add(
+        ConceptPrerequisite(
+            prereq_concept_id=prereq.id,
+            dependent_concept_id=dependent.id,
+            instructor_verified=True,
+        )
+    )
+    db_session.add(
+        ConceptPrerequisite(
+            prereq_concept_id=other_prereq.id,
+            dependent_concept_id=other_dep.id,
+            instructor_verified=True,
+        )
+    )
+    await db_session.commit()
+
+    # Now mark the prereq side as merged into a canonical.
+    canonical = Concept(
+        course_id=course.id, name="Canonical",
+        status="approved", instructor_curated=True,
+    )
+    db_session.add(canonical)
+    await db_session.commit()
+    prereq.canonical_id = canonical.id
+    prereq.status = "merged"
+    await db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: test_instructor
+    try:
+        r = await client.get(
+            f"/api/courses/{course.id}/concept-prerequisites",
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert r.status_code == 200
+        rows = r.json()["data"]
+        prereq_ids = {row["prereq_concept_id"] for row in rows}
+        # The edge whose prereq side is merged must be filtered out.
+        assert str(prereq.id) not in prereq_ids
+        # Unrelated valid edge still present.
+        assert str(other_prereq.id) in prereq_ids
+    finally:
+        app.dependency_overrides.clear()

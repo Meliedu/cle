@@ -52,6 +52,7 @@ async def my_mastery_for_course(
                 ConceptMastery.user_id == user.id,
                 ConceptMastery.course_id == course_id,
                 Concept.deleted_at.is_(None),
+                Concept.canonical_id.is_(None),
             )
             .order_by(Concept.name)
         )

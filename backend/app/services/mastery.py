@@ -14,7 +14,6 @@ import math
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
