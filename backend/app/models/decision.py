@@ -56,6 +56,11 @@ class NextAction(UUIDPrimaryKeyMixin, Base):
             "expires_at",
             postgresql_where=text("consumed_at IS NULL"),
         ),
+        Index(
+            "idx_next_actions_user_course",
+            "user_id",
+            "course_id",
+        ),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -89,6 +94,21 @@ class ActionOutcome(UUIDPrimaryKeyMixin, Base):
             "outcome_metric IS NULL OR outcome_metric IN "
             "('mastery_delta','quiz_score','recall','completion')",
             name="ck_action_outcomes_metric_valid",
+        ),
+        Index(
+            "idx_action_outcomes_variant_served",
+            "engine_variant",
+            "served_at",
+        ),
+        Index(
+            "idx_action_outcomes_user",
+            "user_id",
+            text("served_at DESC"),
+        ),
+        Index(
+            "idx_action_outcomes_course_action",
+            "course_id",
+            "action_type",
         ),
     )
 
@@ -144,6 +164,13 @@ class InstructorAlert(UUIDPrimaryKeyMixin, Base):
             unique=True,
             postgresql_where=text("status = 'open'"),
         ),
+        Index(
+            "idx_instructor_alerts_open",
+            "instructor_id",
+            "severity",
+            text("created_at DESC"),
+            postgresql_where=text("status = 'open'"),
+        ),
     )
 
     course_id: Mapped[uuid.UUID] = mapped_column(
@@ -159,7 +186,9 @@ class InstructorAlert(UUIDPrimaryKeyMixin, Base):
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     reason: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="open", server_default=text("'open'"),
+    )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resolved_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"),
