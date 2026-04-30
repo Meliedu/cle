@@ -5,6 +5,10 @@ row per dedupe key (course_id, alert_type, target_user_id). The partial
 unique index ``uq_instructor_alerts_open_idempotent`` enforces at-most-one
 open row per key; we catch IntegrityError on conflict — codebase precedent
 in concept_clusters.py and 6 sibling sites.
+
+The orchestrator ``evaluate_alerts_for_course`` delegates each rule to a
+private helper. Per-student rules use a single aggregating query (one
+SELECT per rule) instead of N+1 SELECT-per-student.
 """
 from __future__ import annotations
 
@@ -85,69 +89,69 @@ async def _try_insert(
         return False
 
 
-async def evaluate_alerts_for_course(
-    db: AsyncSession, *, course_id: uuid.UUID
-) -> dict:
-    course = (
-        await db.execute(select(Course).where(Course.id == course_id))
-    ).scalar_one_or_none()
-    if course is None:
-        return {"course_id": str(course_id), "alerts_created": 0}
+async def _rule_cohort_concept_weakness(
+    db: AsyncSession,
+    *,
+    course: Course,
+    instructor_id: uuid.UUID,
+) -> int:
+    weak_filter = (
+        (ConceptMastery.mastery_score < 0.5)
+        & (ConceptMastery.confidence >= 0.5)
+    )
+    weak_n = func.count().filter(weak_filter)
+    avg_m = func.avg(ConceptMastery.mastery_score)
 
-    now = datetime.now(timezone.utc)
-    created = 0
-
-    # --- cohort_concept_weakness ----------------------------------------
-    weak = (
+    rows = (
         await db.execute(
             select(
                 Concept.id, Concept.name,
-                func.avg(ConceptMastery.mastery_score).label("avg_m"),
-                func.count().filter(
-                    (ConceptMastery.mastery_score < 0.5)
-                    & (ConceptMastery.confidence >= 0.5)
-                ).label("weak_n"),
+                avg_m.label("avg_m"),
+                weak_n.label("weak_n"),
             )
             .join(ConceptMastery, ConceptMastery.concept_id == Concept.id)
             .where(
-                Concept.course_id == course_id,
+                Concept.course_id == course.id,
                 Concept.deleted_at.is_(None),
                 Concept.canonical_id.is_(None),
             )
             .group_by(Concept.id, Concept.name)
-            .having(
-                and_(func.avg(ConceptMastery.mastery_score) < 0.4,
-                     func.count().filter(
-                         (ConceptMastery.mastery_score < 0.5)
-                         & (ConceptMastery.confidence >= 0.5)
-                     ) >= 3)
-            )
+            .having(and_(avg_m < 0.4, weak_n >= 3))
         )
     ).all()
-    for cid, cname, avg_m, weak_n in weak:
+
+    created = 0
+    for cid, cname, avg_value, n_weak in rows:
         if await _try_insert(
             db,
-            course_id=course_id,
-            instructor_id=course.instructor_id,
+            course_id=course.id,
+            instructor_id=instructor_id,
             target_user_id=None,
             alert_type="cohort_concept_weakness",
             severity="warning",
             title=f"Cohort weak on {cname}",
             reason={
                 "concept_id": str(cid),
-                "avg_mastery": float(avg_m),
-                "weak_students": int(weak_n),
+                "avg_mastery": float(avg_value),
+                "weak_students": int(n_weak),
             },
         ):
             created += 1
+    return created
 
-    # --- content_gap ----------------------------------------------------
-    orphans = (
+
+async def _rule_content_gap(
+    db: AsyncSession,
+    *,
+    course: Course,
+    instructor_id: uuid.UUID,
+) -> int:
+    rows = (
         await db.execute(
             select(Concept.id, Concept.name)
             .outerjoin(ConceptTag, ConceptTag.concept_id == Concept.id)
             .where(
-                Concept.course_id == course_id,
+                Concept.course_id == course.id,
                 Concept.status == "approved",
                 Concept.deleted_at.is_(None),
                 Concept.canonical_id.is_(None),
@@ -156,11 +160,13 @@ async def evaluate_alerts_for_course(
             .having(func.count(ConceptTag.concept_id) == 0)
         )
     ).all()
-    for cid, cname in orphans:
+
+    created = 0
+    for cid, cname in rows:
         if await _try_insert(
             db,
-            course_id=course_id,
-            instructor_id=course.instructor_id,
+            course_id=course.id,
+            instructor_id=instructor_id,
             target_user_id=None,
             alert_type="content_gap",
             severity="info",
@@ -168,98 +174,150 @@ async def evaluate_alerts_for_course(
             reason={"concept_id": str(cid), "concept_name": cname},
         ):
             created += 1
+    return created
 
-    # --- student_disengaging --------------------------------------------
+
+async def _rule_student_disengaging(
+    db: AsyncSession,
+    *,
+    course: Course,
+    instructor_id: uuid.UUID,
+    now: datetime,
+) -> int:
+    """One aggregating query: per-student recent vs prior quiz-attempt counts.
+
+    Replaces 2N SELECTs (recent + prior per enrolled student) with a single
+    GROUP BY having recent=0 AND prior>0. The OUTER JOIN on QuizAttempt
+    keeps students with zero recent activity in the result set.
+    """
     seven_days_ago = now - timedelta(days=7)
     fourteen_days_ago = now - timedelta(days=14)
-    enrolled = (
-        await db.execute(
-            select(Enrollment.user_id).where(
-                Enrollment.course_id == course_id,
-                Enrollment.role == "student",
-            )
+
+    recent_count = func.count(QuizAttempt.id).filter(
+        QuizAttempt.created_at >= seven_days_ago
+    )
+    prior_count = func.count(QuizAttempt.id).filter(
+        and_(
+            QuizAttempt.created_at >= fourteen_days_ago,
+            QuizAttempt.created_at < seven_days_ago,
         )
-    ).scalars().all()
-    for uid in enrolled:
-        recent = (
-            await db.execute(
-                select(func.count(QuizAttempt.id))
-                .join(Quiz, Quiz.id == QuizAttempt.quiz_id)
-                .where(
-                    Quiz.course_id == course_id,
-                    QuizAttempt.user_id == uid,
-                    QuizAttempt.created_at >= seven_days_ago,
-                )
-            )
-        ).scalar_one()
-        prior = (
-            await db.execute(
-                select(func.count(QuizAttempt.id))
-                .join(Quiz, Quiz.id == QuizAttempt.quiz_id)
-                .where(
-                    Quiz.course_id == course_id,
-                    QuizAttempt.user_id == uid,
-                    QuizAttempt.created_at >= fourteen_days_ago,
-                    QuizAttempt.created_at < seven_days_ago,
-                )
-            )
-        ).scalar_one()
-        if recent == 0 and prior > 0:
-            if await _try_insert(
-                db,
-                course_id=course_id,
-                instructor_id=course.instructor_id,
-                target_user_id=uid,
-                alert_type="student_disengaging",
-                severity="warning",
-                title="Student inactive 7d after prior activity",
-                reason={"recent": 0, "prior": int(prior)},
-            ):
-                created += 1
+    )
 
-    # --- student_falling_behind -----------------------------------------
-    for uid in enrolled:
-        # Recency window is on Assignment.due_at, not AssignmentSubmission.updated_at:
-        # updated_at is set when mark_overdue_submissions flips status to 'late', which
-        # reflects cron run time — not how recently the student missed the deadline.
-        late_count = (
-            await db.execute(
-                select(func.count())
-                .select_from(AssignmentSubmission)
-                .join(Assignment, Assignment.id == AssignmentSubmission.assignment_id)
-                .where(
-                    AssignmentSubmission.user_id == uid,
-                    AssignmentSubmission.status == "late",
-                    Assignment.course_id == course_id,
-                    Assignment.due_at >= fourteen_days_ago,
-                )
+    rows = (
+        await db.execute(
+            select(
+                Enrollment.user_id,
+                recent_count.label("recent"),
+                prior_count.label("prior"),
             )
-        ).scalar_one()
-        if late_count >= 2:
-            if await _try_insert(
-                db,
-                course_id=course_id,
-                instructor_id=course.instructor_id,
-                target_user_id=uid,
-                alert_type="student_falling_behind",
-                severity="warning",
-                title=f"{late_count} late submissions in 14d",
-                reason={"late_count": int(late_count)},
-            ):
-                created += 1
+            .join(Quiz, Quiz.course_id == Enrollment.course_id)
+            .outerjoin(
+                QuizAttempt,
+                and_(
+                    QuizAttempt.quiz_id == Quiz.id,
+                    QuizAttempt.user_id == Enrollment.user_id,
+                ),
+            )
+            .where(
+                Enrollment.course_id == course.id,
+                Enrollment.role == "student",
+                Quiz.deleted_at.is_(None),
+            )
+            .group_by(Enrollment.user_id)
+            .having(and_(recent_count == 0, prior_count > 0))
+        )
+    ).all()
 
-    # --- prereq_gap_for_upcoming_meeting --------------------------------
+    created = 0
+    for uid, recent, prior in rows:
+        if await _try_insert(
+            db,
+            course_id=course.id,
+            instructor_id=instructor_id,
+            target_user_id=uid,
+            alert_type="student_disengaging",
+            severity="warning",
+            title="Student inactive 7d after prior activity",
+            reason={"recent": int(recent), "prior": int(prior)},
+        ):
+            created += 1
+    return created
+
+
+async def _rule_student_falling_behind(
+    db: AsyncSession,
+    *,
+    course: Course,
+    instructor_id: uuid.UUID,
+    now: datetime,
+) -> int:
+    """One aggregating query: per-student late submission count in last 14d.
+
+    Recency window is on Assignment.due_at, not AssignmentSubmission.updated_at:
+    updated_at is set when mark_overdue_submissions flips status to 'late', which
+    reflects cron run time — not how recently the student missed the deadline.
+
+    Replaces N SELECTs (one per enrolled student) with a single GROUP BY
+    having late_count >= 2.
+    """
+    fourteen_days_ago = now - timedelta(days=14)
+    late_count = func.count()
+
+    rows = (
+        await db.execute(
+            select(
+                AssignmentSubmission.user_id,
+                late_count.label("late_n"),
+            )
+            .join(
+                Assignment, Assignment.id == AssignmentSubmission.assignment_id
+            )
+            .where(
+                AssignmentSubmission.status == "late",
+                Assignment.course_id == course.id,
+                Assignment.due_at >= fourteen_days_ago,
+            )
+            .group_by(AssignmentSubmission.user_id)
+            .having(late_count >= 2)
+        )
+    ).all()
+
+    created = 0
+    for uid, n_late in rows:
+        if await _try_insert(
+            db,
+            course_id=course.id,
+            instructor_id=instructor_id,
+            target_user_id=uid,
+            alert_type="student_falling_behind",
+            severity="warning",
+            title=f"{int(n_late)} late submissions in 14d",
+            reason={"late_count": int(n_late)},
+        ):
+            created += 1
+    return created
+
+
+async def _rule_prereq_gap_for_upcoming_meeting(
+    db: AsyncSession,
+    *,
+    course: Course,
+    instructor_id: uuid.UUID,
+    enrolled_count: int,
+    now: datetime,
+) -> int:
     horizon = now + timedelta(hours=72)
     meetings = (
         await db.execute(
             select(CourseMeeting).where(
-                CourseMeeting.course_id == course_id,
+                CourseMeeting.course_id == course.id,
                 CourseMeeting.scheduled_at.between(now, horizon),
                 CourseMeeting.deleted_at.is_(None),
             )
         )
     ).scalars().all()
-    enrolled_count = len(enrolled) or 1
+
+    created = 0
     for meeting in meetings:
         # Concepts tagged on this meeting → prereqs that are weak across cohort.
         prereqs = (
@@ -285,7 +343,7 @@ async def evaluate_alerts_for_course(
                     .select_from(ConceptMastery)
                     .where(
                         ConceptMastery.concept_id == prereq_id,
-                        ConceptMastery.course_id == course_id,
+                        ConceptMastery.course_id == course.id,
                         ConceptMastery.mastery_score < 0.7,
                     )
                 )
@@ -293,8 +351,8 @@ async def evaluate_alerts_for_course(
             if int(n_weak) * 2 >= enrolled_count:  # 50%+ weak
                 if await _try_insert(
                     db,
-                    course_id=course_id,
-                    instructor_id=course.instructor_id,
+                    course_id=course.id,
+                    instructor_id=instructor_id,
                     target_user_id=None,
                     alert_type="prereq_gap_for_upcoming_meeting",
                     severity="warning",
@@ -308,18 +366,30 @@ async def evaluate_alerts_for_course(
                     },
                 ):
                     created += 1
+    return created
 
-    # --- low_quiz_participation -----------------------------------------
+
+async def _rule_low_quiz_participation(
+    db: AsyncSession,
+    *,
+    course: Course,
+    instructor_id: uuid.UUID,
+    enrolled_count: int,
+    now: datetime,
+) -> int:
+    seven_days_ago = now - timedelta(days=7)
     quizzes = (
         await db.execute(
             select(Quiz).where(
-                Quiz.course_id == course_id,
+                Quiz.course_id == course.id,
                 Quiz.is_published.is_(True),
                 Quiz.created_at < seven_days_ago,
                 Quiz.deleted_at.is_(None),
             )
         )
     ).scalars().all()
+
+    created = 0
     for quiz in quizzes:
         n_attempters = (
             await db.execute(
@@ -331,8 +401,8 @@ async def evaluate_alerts_for_course(
         if int(n_attempters) * 100 < enrolled_count * 30:  # <30%
             if await _try_insert(
                 db,
-                course_id=course_id,
-                instructor_id=course.instructor_id,
+                course_id=course.id,
+                instructor_id=instructor_id,
                 target_user_id=None,
                 alert_type="low_quiz_participation",
                 severity="info",
@@ -344,18 +414,29 @@ async def evaluate_alerts_for_course(
                 },
             ):
                 created += 1
+    return created
 
-    # --- missed_deadline -----------------------------------------------
+
+async def _rule_missed_deadline(
+    db: AsyncSession,
+    *,
+    course: Course,
+    instructor_id: uuid.UUID,
+    enrolled_count: int,
+    now: datetime,
+) -> int:
     one_day_ago = now - timedelta(hours=24)
     overdue = (
         await db.execute(
             select(Assignment).where(
-                Assignment.course_id == course_id,
+                Assignment.course_id == course.id,
                 Assignment.due_at < one_day_ago,
                 Assignment.deleted_at.is_(None),
             )
         )
     ).scalars().all()
+
+    created = 0
     for asn in overdue:
         n_submitted = (
             await db.execute(
@@ -368,8 +449,8 @@ async def evaluate_alerts_for_course(
         if int(n_submitted) * 100 < enrolled_count * 80:  # <80%
             if await _try_insert(
                 db,
-                course_id=course_id,
-                instructor_id=course.instructor_id,
+                course_id=course.id,
+                instructor_id=instructor_id,
                 target_user_id=None,
                 alert_type="missed_deadline",
                 severity="critical",
@@ -381,5 +462,61 @@ async def evaluate_alerts_for_course(
                 },
             ):
                 created += 1
+    return created
 
+
+async def evaluate_alerts_for_course(
+    db: AsyncSession, *, course_id: uuid.UUID
+) -> dict:
+    course = (
+        await db.execute(select(Course).where(Course.id == course_id))
+    ).scalar_one_or_none()
+    if course is None:
+        return {"course_id": str(course_id), "alerts_created": 0}
+
+    now = datetime.now(timezone.utc)
+    enrolled_count = (
+        await db.execute(
+            select(func.count(Enrollment.user_id)).where(
+                Enrollment.course_id == course_id,
+                Enrollment.role == "student",
+            )
+        )
+    ).scalar_one() or 1
+
+    instructor_id = course.instructor_id
+    created = 0
+    created += await _rule_cohort_concept_weakness(
+        db, course=course, instructor_id=instructor_id
+    )
+    created += await _rule_content_gap(
+        db, course=course, instructor_id=instructor_id
+    )
+    created += await _rule_student_disengaging(
+        db, course=course, instructor_id=instructor_id, now=now
+    )
+    created += await _rule_student_falling_behind(
+        db, course=course, instructor_id=instructor_id, now=now
+    )
+    created += await _rule_prereq_gap_for_upcoming_meeting(
+        db,
+        course=course,
+        instructor_id=instructor_id,
+        enrolled_count=enrolled_count,
+        now=now,
+    )
+    created += await _rule_low_quiz_participation(
+        db,
+        course=course,
+        instructor_id=instructor_id,
+        enrolled_count=enrolled_count,
+        now=now,
+    )
+    created += await _rule_missed_deadline(
+        db,
+        course=course,
+        instructor_id=instructor_id,
+        enrolled_count=enrolled_count,
+        now=now,
+    )
     return {"course_id": str(course_id), "alerts_created": created}
