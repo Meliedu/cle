@@ -146,6 +146,7 @@ async def _expand_concept_candidates(
                 ConceptTag.concept_id == concept_id,
                 Assignment.course_id == course_id,
                 Assignment.deleted_at.is_(None),
+                Assignment.is_published.is_(True),
                 Assignment.due_at.between(now, horizon),
                 Assignment.id.not_in(submitted_subq),
             )
@@ -194,6 +195,7 @@ async def _flashcard_review_candidates(
             .where(
                 FlashcardProgress.user_id == user_id,
                 FlashcardSet.course_id == course_id,
+                FlashcardSet.is_published.is_(True),
                 FlashcardProgress.next_review.is_not(None),
                 FlashcardProgress.next_review <= now,
             )
@@ -201,7 +203,12 @@ async def _flashcard_review_candidates(
     ).scalar_one()
     if not due_count:
         return []
-    s = score_flashcard_review(cards_due_count=int(due_count))
+    # Cap due-count at 6000 so 1.5 × 6000 = 9000 stays safely under
+    # the NUMERIC(7,3) ceiling of 9999.999. Any student with 6000+
+    # due cards has the recommendation pinned to the top regardless;
+    # clamping at 6000 sacrifices nothing for stability.
+    capped_due = min(int(due_count), 6000)
+    s = score_flashcard_review(cards_due_count=capped_due)
     return [
         _Candidate(
             action_type="flashcard_review",

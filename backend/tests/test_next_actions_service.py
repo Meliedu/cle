@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 
 from app.models import (
+    Assignment,
     Concept,
     ConceptMastery,
     ConceptTag,
@@ -158,3 +159,57 @@ async def test_record_serve_stamps_served_at(
 
     served = await record_serve(db_session, [r.id for r in rows])
     assert all(r.served_at is not None for r in served)
+
+
+@pytest.mark.asyncio
+async def test_unpublished_assignment_not_recommended(
+    db_session, test_instructor: User, test_student: User
+):
+    """Materializer must not surface unpublished assignments to students."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+    course = Course(
+        name="Unpub asn",
+        language="en",
+        instructor_id=test_instructor.id,
+        enroll_code="UNP-1",
+        adaptive_engine_mode="on",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    db_session.add(Enrollment(course_id=course.id, user_id=test_student.id, role="student"))
+    c = Concept(course_id=course.id, name="topic", status="approved")
+    db_session.add(c)
+    await db_session.flush()
+    db_session.add(
+        ConceptMastery(
+            user_id=test_student.id, concept_id=c.id, course_id=course.id,
+            alpha=Decimal("1.000"), beta=Decimal("3.000"),
+            confidence=Decimal("0.600"),
+        )
+    )
+    asn = Assignment(
+        course_id=course.id,
+        title="Draft",
+        kind="quiz",
+        due_at=_dt.now(_tz.utc) + _td(days=2),
+        created_by=test_instructor.id,
+        is_published=False,  # KEY: not yet published
+    )
+    db_session.add(asn)
+    await db_session.flush()
+    db_session.add(
+        ConceptTag(
+            concept_id=c.id,
+            target_kind="assignment",
+            target_id=asn.id,
+            weight=Decimal("1.00"),
+        )
+    )
+    await db_session.commit()
+
+    rows = await materialize_next_actions(
+        db_session, user_id=test_student.id, course_id=course.id
+    )
+    # No row should target the draft assignment.
+    assert all(r.target_id != asn.id for r in rows)
