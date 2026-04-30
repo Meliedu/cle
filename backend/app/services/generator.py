@@ -123,15 +123,27 @@ def _with_grounding(user_prompt: str, grounding_context: str | None) -> str:
 
     Returns the prompt unchanged when ``grounding_context`` is None or empty,
     so callers that don't supply grounding observe the legacy prompt shape.
+
+    The grounding payload is HTML-escaped before embedding so an instructor
+    cannot craft a syllabus that closes the ``<syllabus_grounding>`` tag
+    early and injects prompt instructions outside the grounding zone
+    (Task M-3, OWASP LLM01:2025). Order matters: escape ``&`` first so the
+    later replacements do not double-encode entities we just introduced.
     """
     if not grounding_context:
         return user_prompt
+    escaped = (
+        grounding_context
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
     return (
         "You must align outputs with the following stated learning outcomes "
         "from the course syllabus. Prefer questions / cards / summary points "
         "that exercise these outcomes.\n\n"
         "<syllabus_grounding>\n"
-        f"{grounding_context}\n"
+        f"{escaped}\n"
         "</syllabus_grounding>\n\n"
         + user_prompt
     )

@@ -8,6 +8,7 @@ import {
   useConcepts,
   useEnqueueConceptExtraction,
 } from "@/hooks/use-concepts";
+import { ApiError } from "@/lib/api";
 
 interface Props {
   readonly courseId: string;
@@ -44,9 +45,11 @@ export function ConceptClusterQueue({ courseId }: Props) {
           {enqueue.isPending ? "Starting…" : "Run extraction"}
         </button>
       </div>
-      {enqueue.error instanceof Error && (
+      {enqueue.isError && (
         <p className="text-xs text-[var(--color-error)]">
-          {enqueue.error.message}
+          {enqueue.error instanceof ApiError && enqueue.error.status < 500
+            ? enqueue.error.message
+            : "Extraction failed. Please try again."}
         </p>
       )}
       {clusterCount === 0 ? (
