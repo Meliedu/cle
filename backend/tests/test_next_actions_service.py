@@ -288,3 +288,91 @@ async def test_get_or_recompute_refreshes_after_ttl(db_session, test_instructor,
         db_session, user_id=test_student.id, course_id=course.id
     )
     assert {r.id for r in rows1} != {r.id for r in rows2}
+
+
+@pytest.mark.asyncio
+async def test_apply_attempt_evidence_closes_open_outcome(
+    db_session, test_instructor: User, test_student: User
+):
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+    from app.models import (
+        ActionOutcome,
+        Concept,
+        ConceptTag,
+        Course,
+        Enrollment,
+        NextAction,
+    )
+    from app.services.mastery import AttemptKind, apply_attempt_evidence
+
+    course = Course(
+        name="Close",
+        language="en",
+        instructor_id=test_instructor.id,
+        enroll_code="CLO-1",
+        adaptive_engine_mode="on",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    db_session.add(Enrollment(course_id=course.id, user_id=test_student.id, role="student"))
+    c = Concept(course_id=course.id, name="Closed", status="approved")
+    db_session.add(c)
+    await db_session.flush()
+    target_question = uuid.uuid4()
+    db_session.add(
+        ConceptTag(
+            concept_id=c.id,
+            target_kind="chunk",
+            target_id=target_question,
+            weight=Decimal("1.00"),
+        )
+    )
+    served_at = _dt.now(_tz.utc)
+    na = NextAction(
+        user_id=test_student.id,
+        course_id=course.id,
+        action_type="practice_weakness",
+        target_kind="chunk",
+        target_id=target_question,
+        priority_score=Decimal("1.000"),
+        candidate_source="outer_fringe",
+        reason={},
+        expires_at=served_at + _td(hours=1),
+        engine_variant="on",
+        served_at=served_at,
+    )
+    db_session.add(na)
+    await db_session.flush()
+    db_session.add(
+        ActionOutcome(
+            next_action_id=na.id,
+            user_id=test_student.id,
+            course_id=course.id,
+            action_type="practice_weakness",
+            target_kind="chunk",
+            target_id=target_question,
+            engine_variant="on",
+            served_at=served_at,
+        )
+    )
+    await db_session.commit()
+
+    await apply_attempt_evidence(
+        db_session,
+        user_id=test_student.id,
+        course_id=course.id,
+        target_kind="chunk",
+        target_id=target_question,
+        attempt_kind=AttemptKind.QUIZ,
+        outcome=0.85,
+    )
+    await db_session.commit()
+    refreshed = (await db_session.execute(
+        __import__("sqlalchemy").select(ActionOutcome).where(
+            ActionOutcome.next_action_id == na.id
+        )
+    )).scalar_one()
+    assert refreshed.completed is True
+    assert refreshed.outcome_metric == "quiz_score"
+    assert float(refreshed.outcome_score) == pytest.approx(0.85, abs=1e-3)

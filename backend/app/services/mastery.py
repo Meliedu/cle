@@ -181,6 +181,33 @@ async def apply_attempt_evidence(
         )
         touched += 1
 
+    # Close any open action_outcomes row pointing at this exact target.
+    if touched:
+        from sqlalchemy import update as _update
+        from app.models import ActionOutcome
+
+        metric_by_kind = {
+            "quiz": "quiz_score",
+            "flashcard": "recall",
+            "revision": "quiz_score",
+            "pronunciation": "completion",
+        }
+        await db.execute(
+            _update(ActionOutcome)
+            .where(
+                ActionOutcome.user_id == user_id,
+                ActionOutcome.target_kind == target_kind,
+                ActionOutcome.target_id == target_id,
+                ActionOutcome.completed.is_(False),
+            )
+            .values(
+                completed=True,
+                outcome_metric=metric_by_kind.get(attempt_kind.value, "completion"),
+                outcome_score=Decimal(f"{outcome:.3f}"),
+                observed_at=now,
+            )
+        )
+
     return touched
 
 
