@@ -219,6 +219,9 @@ async def evaluate_alerts_for_course(
 
     # --- student_falling_behind -----------------------------------------
     for uid in enrolled:
+        # Recency window is on Assignment.due_at, not AssignmentSubmission.updated_at:
+        # updated_at is set when mark_overdue_submissions flips status to 'late', which
+        # reflects cron run time — not how recently the student missed the deadline.
         late_count = (
             await db.execute(
                 select(func.count())
@@ -228,7 +231,7 @@ async def evaluate_alerts_for_course(
                     AssignmentSubmission.user_id == uid,
                     AssignmentSubmission.status == "late",
                     Assignment.course_id == course_id,
-                    AssignmentSubmission.updated_at >= fourteen_days_ago,
+                    Assignment.due_at >= fourteen_days_ago,
                 )
             )
         ).scalar_one()
