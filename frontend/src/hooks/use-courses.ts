@@ -83,3 +83,37 @@ export function useCourse(courseId: string) {
     },
   });
 }
+
+export interface CourseUpdatePayload {
+  readonly name?: string;
+  readonly code?: string | null;
+  readonly description?: string | null;
+  readonly language?: string;
+  readonly semester?: string | null;
+  readonly settings?: Record<string, unknown>;
+}
+
+export function useUpdateCourse(courseId: string) {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: CourseUpdatePayload) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const response = await apiFetch<ApiEnvelope<CourseResponse>>(
+        `/courses/${courseId}`,
+        {
+          method: "PUT",
+          token,
+          body: JSON.stringify(payload),
+        }
+      );
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["courses", courseId], data);
+      queryClient.invalidateQueries({ queryKey: ["courses"] });
+    },
+  });
+}
