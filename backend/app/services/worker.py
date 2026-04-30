@@ -418,163 +418,224 @@ async def horizon_scan_recompute(session: AsyncSession) -> int:
     return len(course_ids)
 
 
+async def _tick_stuck_reset(
+    now: datetime, last_run: datetime
+) -> tuple[bool, datetime]:
+    """Every 5 min: reset stuck tasks + reconcile orphaned documents."""
+    if now - last_run <= timedelta(minutes=5):
+        return False, last_run
+    try:
+        async with async_session_factory() as reset_session:
+            await _reset_stuck_tasks(reset_session)
+            await _reconcile_orphaned_documents(reset_session)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to run reconciliation")
+    return True, _utcnow()
+
+
+async def _tick_hourly_prune(
+    now: datetime, last_run: datetime
+) -> tuple[bool, datetime]:
+    """Hourly: prune api_usage + expired OAuth nonces."""
+    if now - last_run <= timedelta(hours=1):
+        return False, last_run
+    # ``prune_nonces_and_usage`` already wraps its body in try/except so a
+    # transient DB error can't crash the worker loop.
+    await prune_nonces_and_usage()
+    return True, _utcnow()
+
+
+async def _tick_daily_overdue(
+    now: datetime, last_run: datetime
+) -> tuple[bool, datetime]:
+    """Daily: flip overdue not_started/in_progress submissions to late."""
+    if now - last_run <= timedelta(hours=24):
+        return False, last_run
+    try:
+        async with async_session_factory() as overdue_session:
+            await mark_overdue_submissions(overdue_session)
+    except Exception:  # noqa: BLE001
+        logger.exception("mark_overdue_submissions job failed")
+    return True, _utcnow()
+
+
+async def _tick_daily_decay(
+    now: datetime, last_run: datetime
+) -> tuple[bool, datetime]:
+    """Daily HLR-style mastery decay sweep.
+
+    Runs after the overdue tick so the canonical ordering is:
+        stuck-reset → prune → overdue → decay
+    Decay is idempotent within a 24 h window (rows whose ``last_decay_at``
+    is already > cutoff are excluded), so a missed tick or an extra retry
+    is safe.
+    """
+    if now - last_run <= timedelta(hours=24):
+        return False, last_run
+    try:
+        async with async_session_factory() as decay_session:
+            from app.services.mastery import decay_due_mastery_rows
+            n = await decay_due_mastery_rows(decay_session)
+            logger.info("HLR decay touched %d mastery rows", n)
+    except Exception:  # noqa: BLE001
+        logger.exception("decay_due_mastery_rows job failed")
+    return True, _utcnow()
+
+
+async def _tick_daily_horizon_scan(
+    now: datetime, last_run: datetime
+) -> tuple[bool, datetime]:
+    """Daily: enqueue recompute for courses with deadlines/meetings entering 24h."""
+    if now - last_run <= timedelta(hours=24):
+        return False, last_run
+    try:
+        async with async_session_factory() as horizon_session:
+            await horizon_scan_recompute(horizon_session)
+    except Exception:  # noqa: BLE001
+        logger.exception("horizon_scan_recompute failed")
+    return True, _utcnow()
+
+
+async def _tick_hourly_alerts(
+    now: datetime, last_run: datetime
+) -> tuple[bool, datetime]:
+    """Hourly: enqueue an evaluate_instructor_alerts task per active course."""
+    if now - last_run <= timedelta(hours=1):
+        return False, last_run
+    try:
+        async with async_session_factory() as alert_session:
+            from app.models import Course
+
+            ids = (
+                await alert_session.execute(
+                    select(Course.id).where(Course.deleted_at.is_(None))
+                )
+            ).scalars().all()
+            for cid in ids:
+                alert_session.add(
+                    Task(
+                        task_type="evaluate_instructor_alerts",
+                        payload={"course_id": str(cid)},
+                        status="pending",
+                    )
+                )
+            await alert_session.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("alert enqueue failed")
+    return True, _utcnow()
+
+
+async def _tick_quarterly_retune(
+    now: datetime, last_run: datetime
+) -> tuple[bool, datetime]:
+    """Quarterly: retune action coefficients from action_outcomes telemetry."""
+    if now - last_run <= timedelta(days=90):
+        return False, last_run
+    try:
+        async with async_session_factory() as tune_session:
+            tune_session.add(
+                Task(
+                    task_type="tune_action_coefficients",
+                    payload={"window_days": 90},
+                    status="pending",
+                )
+            )
+            await tune_session.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("retune enqueue failed")
+    return True, _utcnow()
+
+
+async def _process_claimed_task(task: Task) -> None:
+    """Process a single claimed task in fresh sessions.
+
+    Process and complete in fresh sessions so pipeline-internal commits
+    (and any rollback they trigger) can't leave the claim session in an
+    undefined state that would break ``fail_task``.
+    """
+    task_id = task.id
+    logger.info(
+        "Processing task %s (type=%s, attempt=%s)",
+        task_id, task.task_type, task.attempts,
+    )
+    try:
+        task_result: dict | None = None
+        async with async_session_factory() as process_session:
+            reloaded = await process_session.get(Task, task_id)
+            if reloaded is None:
+                # Row vanished between claim and process. There's no row
+                # left to leave "running", but log loudly — this is
+                # unexpected outside of explicit admin deletion.
+                logger.error("Task %s disappeared after claim; skipping", task_id)
+                return
+            task_result = await process_task(process_session, reloaded)
+
+        async with async_session_factory() as complete_session:
+            await complete_task(complete_session, task_id, task_result)
+        logger.info("Task %s completed", task_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Task %s failed", task_id)
+        try:
+            async with async_session_factory() as fail_session:
+                await fail_task(
+                    fail_session, task_id, _sanitize_error_message(exc)
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("fail_task itself failed for %s", task_id)
+
+
+async def _run_cron_ticks(
+    now: datetime, watermarks: dict[str, datetime]
+) -> None:
+    """Run all timed cron ticks in canonical order, mutating watermarks
+    in place. Each ``_tick_*`` helper updates its own watermark
+    unconditionally so transient failures don't thrash."""
+    _, watermarks["stuck_reset"] = await _tick_stuck_reset(
+        now, watermarks["stuck_reset"]
+    )
+    _, watermarks["prune"] = await _tick_hourly_prune(now, watermarks["prune"])
+    _, watermarks["overdue"] = await _tick_daily_overdue(now, watermarks["overdue"])
+    _, watermarks["decay"] = await _tick_daily_decay(now, watermarks["decay"])
+    _, watermarks["horizon"] = await _tick_daily_horizon_scan(
+        now, watermarks["horizon"]
+    )
+    _, watermarks["alert"] = await _tick_hourly_alerts(now, watermarks["alert"])
+    _, watermarks["retune"] = await _tick_quarterly_retune(
+        now, watermarks["retune"]
+    )
+
+
+def _initial_watermarks() -> dict[str, datetime]:
+    """Seed cron watermarks so daily/hourly ticks fire after their cadence
+    interval rather than immediately at boot. ``stuck_reset`` is seeded
+    one hour in the past so the very first iteration triggers a
+    reconciliation pass — useful when a worker restarts mid-shift."""
+    now = _utcnow()
+    return {
+        "stuck_reset": now - timedelta(hours=1),
+        "prune": now,
+        "overdue": now,
+        "decay": now,
+        "horizon": now,
+        "alert": now,
+        "retune": now,
+    }
+
+
 async def worker_loop(shutdown_event: asyncio.Event) -> None:
     logger.info("Task worker started")
-    last_stuck_reset = _utcnow() - timedelta(hours=1)
-    # Seed ``last_prune_run`` so the first prune tick runs ~1 h after startup
-    # rather than immediately — keeps boot quiet while still guaranteeing
-    # hourly cadence.
-    last_prune_run = _utcnow()
-    # Seed so the first overdue check runs ~24 h after startup, not immediately.
-    last_overdue_run = _utcnow()
-    # Seed so the first HLR-style mastery decay sweep runs ~24 h after startup
-    # rather than at boot, mirroring the overdue-submissions cadence above.
-    last_decay_run = _utcnow()
-    # Seed so the first horizon scan runs ~24 h after startup rather than at boot.
-    last_horizon_run = _utcnow()
-    # Seed Phase 3 cron watermarks so first ticks fire after the cadence
-    # interval rather than immediately at boot.
-    last_alert_run = _utcnow()
-    last_retune_run = _utcnow()
-
+    watermarks = _initial_watermarks()
     while not shutdown_event.is_set():
         try:
-            # Periodically reset stuck tasks + reconcile orphaned docs.
-            if _utcnow() - last_stuck_reset > timedelta(minutes=5):
-                try:
-                    async with async_session_factory() as reset_session:
-                        await _reset_stuck_tasks(reset_session)
-                        await _reconcile_orphaned_documents(reset_session)
-                except Exception:  # noqa: BLE001
-                    logger.exception("Failed to run reconciliation")
-                last_stuck_reset = _utcnow()
-
-            # Hourly prune of api_usage + expired OAuth nonces. Runs inside
-            # this loop so we don't need a second scheduler asyncio task.
-            if _utcnow() - last_prune_run > timedelta(hours=1):
-                await prune_nonces_and_usage()
-                last_prune_run = _utcnow()
-
-            # Daily sweep: flip overdue not_started/in_progress submissions to late.
-            if _utcnow() - last_overdue_run > timedelta(hours=24):
-                try:
-                    async with async_session_factory() as overdue_session:
-                        await mark_overdue_submissions(overdue_session)
-                except Exception:  # noqa: BLE001
-                    logger.exception("mark_overdue_submissions job failed")
-                last_overdue_run = _utcnow()
-
-            # Daily HLR-style mastery decay sweep. Runs after the overdue
-            # tick so the canonical ordering is:
-            #   stuck-reset → prune → overdue → decay
-            # Decay is itself idempotent within a 24 h window (rows whose
-            # ``last_decay_at`` is already > cutoff are excluded), so a missed
-            # tick or an extra retry is safe.
-            if _utcnow() - last_decay_run > timedelta(hours=24):
-                try:
-                    async with async_session_factory() as decay_session:
-                        from app.services.mastery import decay_due_mastery_rows
-                        n = await decay_due_mastery_rows(decay_session)
-                        logger.info("HLR decay touched %d mastery rows", n)
-                except Exception:  # noqa: BLE001
-                    logger.exception("decay_due_mastery_rows job failed")
-                last_decay_run = _utcnow()
-
-            # Daily: enqueue recompute for any course with deadlines/meetings entering 24h.
-            if _utcnow() - last_horizon_run > timedelta(hours=24):
-                try:
-                    async with async_session_factory() as horizon_session:
-                        await horizon_scan_recompute(horizon_session)
-                except Exception:  # noqa: BLE001
-                    logger.exception("horizon_scan_recompute failed")
-                last_horizon_run = _utcnow()
-
-            # Hourly: re-evaluate alert rules across all courses (one task per course).
-            if _utcnow() - last_alert_run > timedelta(hours=1):
-                try:
-                    async with async_session_factory() as alert_session:
-                        from app.models import Course
-
-                        ids = (
-                            await alert_session.execute(
-                                select(Course.id).where(Course.deleted_at.is_(None))
-                            )
-                        ).scalars().all()
-                        for cid in ids:
-                            alert_session.add(
-                                Task(
-                                    task_type="evaluate_instructor_alerts",
-                                    payload={"course_id": str(cid)},
-                                    status="pending",
-                                )
-                            )
-                        await alert_session.commit()
-                except Exception:  # noqa: BLE001
-                    logger.exception("alert enqueue failed")
-                last_alert_run = _utcnow()
-
-            # Quarterly: retune action coefficients from action_outcomes telemetry.
-            if _utcnow() - last_retune_run > timedelta(days=90):
-                try:
-                    async with async_session_factory() as tune_session:
-                        tune_session.add(
-                            Task(
-                                task_type="tune_action_coefficients",
-                                payload={"window_days": 90},
-                                status="pending",
-                            )
-                        )
-                        await tune_session.commit()
-                except Exception:  # noqa: BLE001
-                    logger.exception("retune enqueue failed")
-                last_retune_run = _utcnow()
-
-            # Short-lived claim session so we don't hold a DB connection open
-            # during the full processing pipeline.
+            await _run_cron_ticks(_utcnow(), watermarks)
+            # Short-lived claim session so we don't hold a DB connection
+            # open during the full processing pipeline.
             async with async_session_factory() as claim_session:
                 task = await claim_task(claim_session)
-
             if task is None:
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
                 continue
-
-            task_id = task.id
-            logger.info(
-                "Processing task %s (type=%s, attempt=%s)",
-                task_id, task.task_type, task.attempts,
-            )
-
-            # Process and complete in fresh sessions so that pipeline-internal
-            # commits (and any rollback they trigger) can't leave the claim
-            # session in an undefined state that breaks fail_task.
-            try:
-                task_result: dict | None = None
-                async with async_session_factory() as process_session:
-                    reloaded = await process_session.get(Task, task_id)
-                    if reloaded is None:
-                        # Row vanished between claim and process. There's no row
-                        # left to leave "running", but log loudly — this is
-                        # unexpected outside of explicit admin deletion.
-                        logger.error(
-                            "Task %s disappeared after claim; skipping",
-                            task_id,
-                        )
-                        continue
-                    task_result = await process_task(process_session, reloaded)
-
-                async with async_session_factory() as complete_session:
-                    await complete_task(complete_session, task_id, task_result)
-                logger.info("Task %s completed", task_id)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("Task %s failed", task_id)
-                try:
-                    async with async_session_factory() as fail_session:
-                        await fail_task(
-                            fail_session, task_id, _sanitize_error_message(exc)
-                        )
-                except Exception:  # noqa: BLE001
-                    logger.exception("fail_task itself failed for %s", task_id)
-
+            await _process_claimed_task(task)
         except Exception:  # noqa: BLE001
             logger.exception("Worker loop error")
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
