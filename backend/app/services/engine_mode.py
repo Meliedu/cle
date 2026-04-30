@@ -23,7 +23,12 @@ ResolvedMode = Literal["on", "off"]
 
 
 def _coin_flip_random_50(user_id: uuid.UUID, course_id: uuid.UUID) -> ResolvedMode:
-    """Deterministically map (user, course) → 'on' or 'off'."""
+    """Deterministically map (user, course) → 'on' or 'off'.
+
+    Hash input: user_id.bytes (16 bytes) || course_id.bytes (16 bytes).
+    Order is a permanent contract — changing it would re-bucket all students
+    and corrupt historical action_outcomes cohort assignments.
+    """
     h = hashlib.blake2b(digest_size=8)
     h.update(user_id.bytes)
     h.update(course_id.bytes)
@@ -52,7 +57,11 @@ async def resolve_engine_mode(
             select(Course.adaptive_engine_mode).where(Course.id == course_id)
         )
     ).scalar_one_or_none()
-    if course_mode is None or course_mode == "off":
+    if course_mode is None:
+        # Course is NOT NULL on the column, so None means the row is missing.
+        # Surface stale/invalid course IDs instead of silently disabling the engine.
+        raise ValueError(f"Course {course_id} not found — cannot resolve engine mode")
+    if course_mode == "off":
         return "off"
     if course_mode == "on":
         return "on"

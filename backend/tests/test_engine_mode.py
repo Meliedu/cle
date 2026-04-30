@@ -47,6 +47,22 @@ async def test_no_override_falls_through_to_course(db_session, test_instructor: 
 
 
 @pytest.mark.asyncio
+async def test_no_override_course_on_returns_on(db_session, test_instructor: User, test_student: User):
+    course = Course(
+        name="Course on",
+        language="en",
+        instructor_id=test_instructor.id,
+        enroll_code="ENG-ON1",
+        adaptive_engine_mode="on",
+    )
+    db_session.add(course)
+    await db_session.commit()
+
+    mode = await resolve_engine_mode(db_session, user_id=test_student.id, course_id=course.id)
+    assert mode == "on"
+
+
+@pytest.mark.asyncio
 async def test_random_50_is_deterministic(db_session, test_instructor: User, test_student: User):
     course = Course(
         name="Random 50",
