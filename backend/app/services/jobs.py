@@ -45,6 +45,13 @@ from app.utils.sanitize import sanitize_query as _sanitize
 
 logger = logging.getLogger(__name__)
 
+# Batch size for ``run_replay_attempt_history``. Each pass over the four
+# attempt tables (quiz / flashcard / revision / pronunciation) streams rows
+# in chunks of this size and commits between batches so a long replay
+# doesn't hold a single transaction (and its DB connection + working set)
+# open for the whole window. Module-level so tests can monkey-patch it.
+REPLAY_BATCH_SIZE = 500
+
 
 async def _course_language(session: AsyncSession, course_id: uuid.UUID) -> str:
     row = await session.execute(
@@ -708,10 +715,11 @@ async def run_replay_attempt_history(
     this job — otherwise evidence accumulates on top of whatever priors
     already exist.
 
-    **Failure mode:** This handler runs all attempts in a single transaction.
-    If any apply_attempt_evidence call raises (e.g. DB connection drop), the
-    entire replay rolls back. Operators should plan for full retries on
-    failure rather than partial-state recovery.
+    Processes attempts in batches of REPLAY_BATCH_SIZE (default 500) with
+    intermediate commits. A failure partway through leaves earlier batches
+    durable; operators can safely retry to pick up the remainder. The 409
+    in-flight guard at the endpoint prevents concurrent replays for the same
+    course.
 
     Pronunciation rows currently use ``target_kind='pronunciation_item'``
     with ``target_id=ps.id`` (the score row's own UUID). Tags are written
@@ -735,136 +743,183 @@ async def run_replay_attempt_history(
     from app.services.mastery import AttemptKind, apply_attempt_evidence
 
     course_id = uuid.UUID(payload["course_id"])
-    window_days = int(payload.get("window_days", 90))
+    # clamp 1..365 days; defense-in-depth against poisoned payloads
+    window_days = max(1, min(int(payload.get("window_days", 90)), 365))
     cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
 
     counters = {"quiz": 0, "flashcard": 0, "revision": 0, "pronunciation": 0}
+    batch_size = REPLAY_BATCH_SIZE
 
     # --- Quiz attempts -----------------------------------------------------
-    quiz_attempts = (
-        await session.execute(
-            select(QuizAttempt)
-            .join(Quiz, Quiz.id == QuizAttempt.quiz_id)
-            .where(
-                Quiz.course_id == course_id,
-                QuizAttempt.created_at >= cutoff,
-            )
-        )
-    ).scalars().all()
-    for attempt in quiz_attempts:
-        for qid_str, answer in (attempt.answers or {}).items():
-            try:
-                qid = uuid.UUID(qid_str)
-            except (ValueError, TypeError):
-                continue
-            question = (
-                await session.execute(
-                    select(Question).where(Question.id == qid)
+    quiz_offset = 0
+    while True:
+        quiz_attempts = (
+            await session.execute(
+                select(QuizAttempt)
+                .join(Quiz, Quiz.id == QuizAttempt.quiz_id)
+                .where(
+                    Quiz.course_id == course_id,
+                    QuizAttempt.created_at >= cutoff,
                 )
-            ).scalar_one_or_none()
-            if question is None:
-                continue
-            outcome = 1.0 if answer == question.correct_answer else 0.0
-            await apply_attempt_evidence(
-                session,
-                user_id=attempt.user_id,
-                course_id=course_id,
-                target_kind="question",
-                target_id=qid,
-                attempt_kind=AttemptKind.QUIZ,
-                outcome=outcome,
+                .order_by(QuizAttempt.created_at, QuizAttempt.id)
+                .offset(quiz_offset)
+                .limit(batch_size)
             )
-            counters["quiz"] += 1
+        ).scalars().all()
+        if not quiz_attempts:
+            break
+        for attempt in quiz_attempts:
+            for qid_str, answer in (attempt.answers or {}).items():
+                try:
+                    qid = uuid.UUID(qid_str)
+                except (ValueError, TypeError):
+                    continue
+                question = (
+                    await session.execute(
+                        select(Question).where(Question.id == qid)
+                    )
+                ).scalar_one_or_none()
+                if question is None:
+                    continue
+                outcome = 1.0 if answer == question.correct_answer else 0.0
+                await apply_attempt_evidence(
+                    session,
+                    user_id=attempt.user_id,
+                    course_id=course_id,
+                    target_kind="question",
+                    target_id=qid,
+                    attempt_kind=AttemptKind.QUIZ,
+                    outcome=outcome,
+                )
+                counters["quiz"] += 1
+        await session.commit()
+        if len(quiz_attempts) < batch_size:
+            break
+        quiz_offset += batch_size
 
     # --- Flashcard progress (last_reviewed inside window) -----------------
-    fc_rows = (
-        await session.execute(
-            select(FlashcardProgress, FlashcardCard)
-            .join(
-                FlashcardCard,
-                FlashcardCard.id == FlashcardProgress.flashcard_card_id,
-            )
-            .join(
-                FlashcardSet,
-                FlashcardSet.id == FlashcardCard.flashcard_set_id,
-            )
-            .where(
-                FlashcardSet.course_id == course_id,
-                FlashcardProgress.last_reviewed.is_not(None),
-                FlashcardProgress.last_reviewed >= cutoff,
-            )
-        )
-    ).all()
     grade_to_outcome = {1: 0.0, 2: 0.4, 3: 0.8, 4: 1.0}
-    for prog, card in fc_rows:
-        outcome = grade_to_outcome.get(prog.last_grade or 3, 0.8)
-        await apply_attempt_evidence(
-            session,
-            user_id=prog.user_id,
-            course_id=course_id,
-            target_kind="flashcard_card",
-            target_id=card.id,
-            attempt_kind=AttemptKind.FLASHCARD,
-            outcome=outcome,
-        )
-        counters["flashcard"] += 1
+    fc_offset = 0
+    while True:
+        fc_rows = (
+            await session.execute(
+                select(FlashcardProgress, FlashcardCard)
+                .join(
+                    FlashcardCard,
+                    FlashcardCard.id == FlashcardProgress.flashcard_card_id,
+                )
+                .join(
+                    FlashcardSet,
+                    FlashcardSet.id == FlashcardCard.flashcard_set_id,
+                )
+                .where(
+                    FlashcardSet.course_id == course_id,
+                    FlashcardProgress.last_reviewed.is_not(None),
+                    FlashcardProgress.last_reviewed >= cutoff,
+                )
+                .order_by(
+                    FlashcardProgress.last_reviewed,
+                    FlashcardProgress.id,
+                )
+                .offset(fc_offset)
+                .limit(batch_size)
+            )
+        ).all()
+        if not fc_rows:
+            break
+        for prog, card in fc_rows:
+            outcome = grade_to_outcome.get(prog.last_grade or 3, 0.8)
+            await apply_attempt_evidence(
+                session,
+                user_id=prog.user_id,
+                course_id=course_id,
+                target_kind="flashcard_card",
+                target_id=card.id,
+                attempt_kind=AttemptKind.FLASHCARD,
+                outcome=outcome,
+            )
+            counters["flashcard"] += 1
+        await session.commit()
+        if len(fc_rows) < batch_size:
+            break
+        fc_offset += batch_size
 
     # --- Revision attempts ------------------------------------------------
-    rev_rows = (
-        await session.execute(
-            select(RevisionAttempt, RevisionPoolItem)
-            .join(
-                RevisionPoolItem,
-                RevisionPoolItem.id == RevisionAttempt.pool_item_id,
+    rev_offset = 0
+    while True:
+        rev_rows = (
+            await session.execute(
+                select(RevisionAttempt, RevisionPoolItem)
+                .join(
+                    RevisionPoolItem,
+                    RevisionPoolItem.id == RevisionAttempt.pool_item_id,
+                )
+                .where(
+                    RevisionAttempt.course_id == course_id,
+                    RevisionAttempt.created_at >= cutoff,
+                )
+                .order_by(RevisionAttempt.created_at, RevisionAttempt.id)
+                .offset(rev_offset)
+                .limit(batch_size)
             )
-            .where(
-                RevisionAttempt.course_id == course_id,
-                RevisionAttempt.created_at >= cutoff,
+        ).all()
+        if not rev_rows:
+            break
+        for ra, pool in rev_rows:
+            await apply_attempt_evidence(
+                session,
+                user_id=ra.user_id,
+                course_id=course_id,
+                target_kind="pool_item",
+                target_id=pool.id,
+                attempt_kind=AttemptKind.REVISION,
+                outcome=float(ra.score),
             )
-        )
-    ).all()
-    for ra, pool in rev_rows:
-        await apply_attempt_evidence(
-            session,
-            user_id=ra.user_id,
-            course_id=course_id,
-            target_kind="pool_item",
-            target_id=pool.id,
-            attempt_kind=AttemptKind.REVISION,
-            outcome=float(ra.score),
-        )
-        counters["revision"] += 1
+            counters["revision"] += 1
+        await session.commit()
+        if len(rev_rows) < batch_size:
+            break
+        rev_offset += batch_size
 
     # --- Pronunciation scores --------------------------------------------
-    pron_rows = (
-        await session.execute(
-            select(PronunciationScore).where(
-                PronunciationScore.course_id == course_id,
-                PronunciationScore.created_at >= cutoff,
+    pron_offset = 0
+    while True:
+        pron_rows = (
+            await session.execute(
+                select(PronunciationScore)
+                .where(
+                    PronunciationScore.course_id == course_id,
+                    PronunciationScore.created_at >= cutoff,
+                )
+                .order_by(
+                    PronunciationScore.created_at,
+                    PronunciationScore.id,
+                )
+                .offset(pron_offset)
+                .limit(batch_size)
             )
-        )
-    ).scalars().all()
-    for ps in pron_rows:
-        if ps.overall_score is None:
-            continue
-        outcome = max(0.0, min(1.0, float(ps.overall_score) / 100.0))
-        await apply_attempt_evidence(
-            session,
-            user_id=ps.user_id,
-            course_id=course_id,
-            target_kind="pronunciation_item",
-            target_id=ps.id,
-            attempt_kind=AttemptKind.PRONUNCIATION,
-            outcome=outcome,
-        )
-        counters["pronunciation"] += 1
+        ).scalars().all()
+        if not pron_rows:
+            break
+        for ps in pron_rows:
+            if ps.overall_score is None:
+                continue
+            outcome = max(0.0, min(1.0, float(ps.overall_score) / 100.0))
+            await apply_attempt_evidence(
+                session,
+                user_id=ps.user_id,
+                course_id=course_id,
+                target_kind="pronunciation_item",
+                target_id=ps.id,
+                attempt_kind=AttemptKind.PRONUNCIATION,
+                outcome=outcome,
+            )
+            counters["pronunciation"] += 1
+        await session.commit()
+        if len(pron_rows) < batch_size:
+            break
+        pron_offset += batch_size
 
-    # Commit inside the handler for consistency with sibling concept-job
-    # handlers (run_update_concept_mastery, run_extract_concept_candidates,
-    # run_tag_artifact_concepts). The worker dispatch branch then doesn't
-    # commit again; the test suite calls the handler directly and gets a
-    # durable result without needing to remember to commit.
-    await session.commit()
     logger.info(
         "replay_attempt_history finished course_id=%s counters=%s",
         course_id,

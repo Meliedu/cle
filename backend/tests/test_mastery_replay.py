@@ -164,3 +164,111 @@ async def test_replay_endpoint_rejects_when_inflight(
         assert "in progress" in r.json()["detail"].lower()
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_replay_processes_attempts_across_multiple_batches(
+    db_session, test_instructor
+):
+    """Replay must commit and continue past REPLAY_BATCH_SIZE rows."""
+    from datetime import datetime, timedelta, timezone
+    from decimal import Decimal
+    from sqlalchemy import select, update
+
+    from app.models import (
+        Concept, ConceptMastery, ConceptTag, Course, Quiz, Question, QuizAttempt,
+    )
+    import app.services.jobs as jobs_mod
+    from app.services.jobs import run_replay_attempt_history
+
+    original_bs = jobs_mod.REPLAY_BATCH_SIZE
+    jobs_mod.REPLAY_BATCH_SIZE = 2  # tiny batch so 5 rows trigger 3 batches.
+
+    try:
+        course = Course(
+            instructor_id=test_instructor.id,
+            name="C", language="english", enroll_code="RPB01",
+        )
+        db_session.add(course)
+        await db_session.commit()
+        concept = Concept(
+            course_id=course.id, name="X",
+            status="approved", instructor_curated=True,
+        )
+        db_session.add(concept)
+        await db_session.commit()
+        quiz = Quiz(course_id=course.id, title="Q", created_by=test_instructor.id)
+        db_session.add(quiz)
+        await db_session.commit()
+        q = Question(
+            quiz_id=quiz.id, question_text="?",
+            options={"A": "a"}, correct_answer="A",
+            type="multiple_choice", difficulty="easy", question_index=0,
+        )
+        db_session.add(q)
+        await db_session.commit()
+        db_session.add(
+            ConceptTag(
+                concept_id=concept.id, target_kind="question", target_id=q.id,
+                weight=Decimal("1.00"),
+            )
+        )
+        await db_session.commit()
+
+        attempt_ids = []
+        for _ in range(5):
+            a = QuizAttempt(
+                quiz_id=quiz.id, user_id=test_instructor.id,
+                answers={str(q.id): "A"},
+            )
+            db_session.add(a)
+            await db_session.flush()
+            attempt_ids.append(a.id)
+        await db_session.commit()
+
+        ten_days_ago = datetime.now(timezone.utc) - timedelta(days=10)
+        await db_session.execute(
+            update(QuizAttempt)
+            .where(QuizAttempt.id.in_(attempt_ids))
+            .values(created_at=ten_days_ago)
+        )
+        await db_session.commit()
+
+        result = await run_replay_attempt_history(
+            db_session,
+            {"course_id": str(course.id), "window_days": 90},
+        )
+        assert result["counters"]["quiz"] == 5
+
+        rows = (
+            await db_session.execute(
+                select(ConceptMastery).where(ConceptMastery.concept_id == concept.id)
+            )
+        ).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].attempt_count == 5
+        assert float(rows[0].alpha) == 6.0  # 1 + 5 correct attempts
+    finally:
+        jobs_mod.REPLAY_BATCH_SIZE = original_bs
+
+
+@pytest.mark.asyncio
+async def test_replay_clamps_window_days(db_session, test_instructor):
+    """window_days > 365 is clamped to 365 without error."""
+    from app.models import Course
+    from app.services.jobs import run_replay_attempt_history
+
+    course = Course(
+        instructor_id=test_instructor.id,
+        name="C", language="english", enroll_code="RPC01",
+    )
+    db_session.add(course)
+    await db_session.commit()
+
+    result = await run_replay_attempt_history(
+        db_session,
+        {"course_id": str(course.id), "window_days": 99999},
+    )
+    assert result["counters"] == {
+        "quiz": 0, "flashcard": 0, "revision": 0, "pronunciation": 0,
+    }
