@@ -928,6 +928,85 @@ async def run_replay_attempt_history(
     return {"course_id": str(course_id), "counters": counters}
 
 
+async def run_materialize_next_actions(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Materialise top-10 next_actions for one (user, course)."""
+    from app.services.next_actions import materialize_next_actions
+
+    user_id = uuid.UUID(payload["user_id"])
+    course_id = uuid.UUID(payload["course_id"])
+    rows = await materialize_next_actions(
+        session, user_id=user_id, course_id=course_id
+    )
+    return {"count": len(rows), "user_id": str(user_id), "course_id": str(course_id)}
+
+
+async def run_record_action_outcome(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Persist a single action_outcomes row.
+
+    Used by both the click endpoint (clicked=True) and the post-attempt
+    observation hook (completed=True with outcome_metric+outcome_score).
+    """
+    from datetime import datetime
+    from decimal import Decimal
+
+    from app.models import ActionOutcome
+
+    served_at_iso = payload["served_at"]
+    served_at = datetime.fromisoformat(served_at_iso)
+
+    next_action_id_raw = payload.get("next_action_id")
+    course_id_raw = payload.get("course_id")
+    target_id_raw = payload.get("target_id")
+    outcome_score_raw = payload.get("outcome_score")
+    observed_at_raw = payload.get("observed_at")
+
+    row = ActionOutcome(
+        next_action_id=uuid.UUID(next_action_id_raw) if next_action_id_raw else None,
+        user_id=uuid.UUID(payload["user_id"]),
+        course_id=uuid.UUID(course_id_raw) if course_id_raw else None,
+        action_type=payload["action_type"],
+        target_kind=payload.get("target_kind"),
+        target_id=uuid.UUID(target_id_raw) if target_id_raw else None,
+        engine_variant=payload["engine_variant"],
+        served_at=served_at,
+        clicked=bool(payload.get("clicked", False)),
+        completed=bool(payload.get("completed", False)),
+        outcome_score=(
+            Decimal(f"{float(outcome_score_raw):.3f}")
+            if outcome_score_raw is not None else None
+        ),
+        outcome_metric=payload.get("outcome_metric"),
+        observed_at=datetime.fromisoformat(observed_at_raw) if observed_at_raw else None,
+    )
+    session.add(row)
+    await session.commit()
+    return {"status": "recorded", "id": str(row.id)}
+
+
+async def run_evaluate_instructor_alerts(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Evaluate alert rules for one course (Task 15 fills the body)."""
+    from app.services.alerts import evaluate_alerts_for_course
+
+    course_id = uuid.UUID(payload["course_id"])
+    return await evaluate_alerts_for_course(session, course_id=course_id)
+
+
+async def run_tune_action_coefficients(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Quarterly coefficient retune (Task 17 fills the body)."""
+    from app.services.action_coeffs import retune_action_coefficients
+
+    window_days = int(payload.get("window_days", 90))
+    return await retune_action_coefficients(session, window_days=window_days)
+
+
 _HANDLERS = {
     "generate_quiz": run_generate_quiz,
     "generate_flashcards": run_generate_flashcards,

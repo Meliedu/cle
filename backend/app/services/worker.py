@@ -354,6 +354,18 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
         # commits internally, mirroring the other concept-job handlers.
         from app.services.jobs import run_replay_attempt_history
         return await run_replay_attempt_history(session, task.payload)
+    elif task.task_type == "materialize_next_actions":
+        from app.services.jobs import run_materialize_next_actions
+        return await run_materialize_next_actions(session, task.payload)
+    elif task.task_type == "record_action_outcome":
+        from app.services.jobs import run_record_action_outcome
+        return await run_record_action_outcome(session, task.payload)
+    elif task.task_type == "evaluate_instructor_alerts":
+        from app.services.jobs import run_evaluate_instructor_alerts
+        return await run_evaluate_instructor_alerts(session, task.payload)
+    elif task.task_type == "tune_action_coefficients":
+        from app.services.jobs import run_tune_action_coefficients
+        return await run_tune_action_coefficients(session, task.payload)
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
 
@@ -370,6 +382,10 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
     # Seed so the first HLR-style mastery decay sweep runs ~24 h after startup
     # rather than at boot, mirroring the overdue-submissions cadence above.
     last_decay_run = _utcnow()
+    # Seed Phase 3 cron watermarks so first ticks fire after the cadence
+    # interval rather than immediately at boot.
+    last_alert_run = _utcnow()
+    last_retune_run = _utcnow()
 
     while not shutdown_event.is_set():
         try:
@@ -413,6 +429,46 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
                 except Exception:  # noqa: BLE001
                     logger.exception("decay_due_mastery_rows job failed")
                 last_decay_run = _utcnow()
+
+            # Hourly: re-evaluate alert rules across all courses (one task per course).
+            if _utcnow() - last_alert_run > timedelta(hours=1):
+                try:
+                    async with async_session_factory() as alert_session:
+                        from app.models import Course
+
+                        ids = (
+                            await alert_session.execute(
+                                select(Course.id).where(Course.deleted_at.is_(None))
+                            )
+                        ).scalars().all()
+                        for cid in ids:
+                            alert_session.add(
+                                Task(
+                                    task_type="evaluate_instructor_alerts",
+                                    payload={"course_id": str(cid)},
+                                    status="pending",
+                                )
+                            )
+                        await alert_session.commit()
+                except Exception:  # noqa: BLE001
+                    logger.exception("alert enqueue failed")
+                last_alert_run = _utcnow()
+
+            # Quarterly: retune action coefficients from action_outcomes telemetry.
+            if _utcnow() - last_retune_run > timedelta(days=90):
+                try:
+                    async with async_session_factory() as tune_session:
+                        tune_session.add(
+                            Task(
+                                task_type="tune_action_coefficients",
+                                payload={"window_days": 90},
+                                status="pending",
+                            )
+                        )
+                        await tune_session.commit()
+                except Exception:  # noqa: BLE001
+                    logger.exception("retune enqueue failed")
+                last_retune_run = _utcnow()
 
             # Short-lived claim session so we don't hold a DB connection open
             # during the full processing pipeline.
