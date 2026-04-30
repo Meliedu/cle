@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 ActionType = Literal[
     "review_concept", "prep_meeting", "complete_assignment",
@@ -35,6 +35,8 @@ class NextActionResponse(BaseModel):
     action_type: ActionType
     target_kind: NextActionTargetKind | None
     target_id: uuid.UUID | None
+    # Pydantic v2 serialises Decimal to a JSON string (not a number); frontend
+    # consumers must parseFloat() before doing numeric operations or sorting.
     priority_score: Decimal
     candidate_source: CandidateSource
     reason: dict
