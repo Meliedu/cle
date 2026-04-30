@@ -19,6 +19,7 @@ from app.api.live import router as live_router
 from app.api.mastery import router as mastery_router
 from app.api.meetings import router as meetings_router
 from app.api.modules import router as modules_router
+from app.api.next_actions import router as next_actions_router
 from app.api.objectives import router as objectives_router
 from app.api.progress import router as progress_router
 from app.api.pronunciation import router as pronunciation_router
@@ -58,3 +59,4 @@ api_router.include_router(internal_router)
 api_router.include_router(mastery_router)
 api_router.include_router(engine_settings_router)
 api_router.include_router(instructor_alerts_router)
+api_router.include_router(next_actions_router)
