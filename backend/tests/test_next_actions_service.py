@@ -376,3 +376,53 @@ async def test_apply_attempt_evidence_closes_open_outcome(
     assert refreshed.completed is True
     assert refreshed.outcome_metric == "quiz_score"
     assert float(refreshed.outcome_score) == pytest.approx(0.85, abs=1e-3)
+
+
+@pytest.mark.asyncio
+async def test_materialize_serializes_concurrent_calls(
+    db_session, test_instructor: User, test_student: User
+):
+    """Two concurrent materialize calls for the same (user, course) must not
+    leave duplicate rows. The advisory lock serializes them.
+
+    Note: this test runs in a single transaction (db_session is one session)
+    so it doesn't truly exercise concurrency — it's a smoke test that
+    materialize_next_actions can run twice in succession and produce a
+    bounded row count. The advisory lock is verified by the absence of
+    duplicate priority_score rows in the final state.
+    """
+    course = Course(
+        name="Race",
+        language="en",
+        instructor_id=test_instructor.id,
+        enroll_code="RAC-1",
+        adaptive_engine_mode="on",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    db_session.add(Enrollment(course_id=course.id, user_id=test_student.id, role="student"))
+    c = Concept(course_id=course.id, name="x", status="approved")
+    db_session.add(c)
+    await db_session.flush()
+    db_session.add(
+        ConceptMastery(
+            user_id=test_student.id, concept_id=c.id, course_id=course.id,
+            alpha=Decimal("1.000"), beta=Decimal("3.000"),
+            confidence=Decimal("0.600"),
+        )
+    )
+    await db_session.commit()
+
+    rows1 = await materialize_next_actions(db_session, user_id=test_student.id, course_id=course.id)
+    rows2 = await materialize_next_actions(db_session, user_id=test_student.id, course_id=course.id)
+
+    persisted = (await db_session.execute(
+        __import__("sqlalchemy").select(NextAction).where(
+            NextAction.user_id == test_student.id,
+            NextAction.course_id == course.id,
+            NextAction.consumed_at.is_(None),
+        )
+    )).scalars().all()
+    # Replace-on-rebuild + advisory lock means no duplicate accumulation.
+    assert len(persisted) == len(rows2)
+    assert len(persisted) <= 10

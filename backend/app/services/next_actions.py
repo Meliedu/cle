@@ -230,6 +230,16 @@ async def materialize_next_actions(
     now: datetime | None = None,
 ) -> list[NextAction]:
     now = now or datetime.now(timezone.utc)
+    # Serialize concurrent materialize calls for the same (user, course).
+    # Two workers (e.g. one from an attempt event + one from the daily horizon
+    # scan) can otherwise both DELETE then both INSERT, leaving 20 stale rows.
+    # Hash to a 63-bit signed bigint (Postgres advisory keys are bigint).
+    # The lock auto-releases at transaction commit.
+    from sqlalchemy import text as _text
+    lock_key = (
+        int.from_bytes(user_id.bytes, "big") ^ int.from_bytes(course_id.bytes, "big")
+    ) & 0x7FFFFFFFFFFFFFFF
+    await db.execute(_text("SELECT pg_advisory_xact_lock(:k)"), {"k": lock_key})
     variant = await resolve_engine_mode(db, user_id=user_id, course_id=course_id)
     if variant == "off":
         # Drop any stale unconsumed rows so the off-arm UI is clean.
