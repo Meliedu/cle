@@ -61,3 +61,18 @@ def test_catch_up_reading_grows_with_overdue_days():
     a = score_catch_up_reading(days_overdue=0, coeffs=DEFAULT_COEFFS)
     b = score_catch_up_reading(days_overdue=7, coeffs=DEFAULT_COEFFS)
     assert b > a
+
+
+def test_prep_meeting_zero_when_no_concepts():
+    """Empty concept-weight list is a real runtime path (meeting with no tags yet)."""
+    assert score_prep_meeting(meeting_concept_weights=[], days_until_meeting=1.0) == 0.0
+
+
+def test_complete_assignment_defaults_weight_when_none():
+    """Materializer may pass None when an assignment has no weight set."""
+    s = score_complete_assignment(
+        assignment_weight=None,
+        days_until_due=0.0,
+        coeffs=DEFAULT_COEFFS,
+    )
+    assert s == DEFAULT_COEFFS["complete_assignment"]

@@ -37,11 +37,11 @@ def score_prep_meeting(
 
 def score_complete_assignment(
     *,
-    assignment_weight: Decimal,
+    assignment_weight: Decimal | None,
     days_until_due: float,
     coeffs: Mapping[str, float] = DEFAULT_COEFFS,
 ) -> float:
-    """5.0 × assignment.weight × 1/(1 + D_a)."""
+    """5.0 × assignment.weight × 1/(1 + D_a). Treats ``None`` weight as 1.0."""
     w = float(assignment_weight) if assignment_weight is not None else 1.0
     return coeffs["complete_assignment"] * w * (1.0 / (1.0 + max(0.0, days_until_due)))
 
