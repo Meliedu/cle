@@ -78,8 +78,10 @@ async def outer_fringe_concepts(
         {
             "user_id": user_id,
             "course_id": course_id,
-            "mastery_bar": float(OUTER_FRINGE_MASTERY_BAR),
-            "confidence_bar": float(OUTER_FRINGE_CONFIDENCE_BAR),
+            # Bind Decimal directly — float() would lose representability for
+            # 0.7 and risk misclassifying boundary mastery_score = 0.700 rows.
+            "mastery_bar": OUTER_FRINGE_MASTERY_BAR,
+            "confidence_bar": OUTER_FRINGE_CONFIDENCE_BAR,
         },
     )
     return [
