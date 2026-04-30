@@ -26,6 +26,7 @@ router = APIRouter(tags=["instructor-alerts"])
 )
 async def list_alerts(
     status: AlertStatus = Query(default="open"),
+    limit: int = Query(default=100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     course: Course = Depends(get_owned_course),
 ) -> APIResponse[list[InstructorAlertResponse]]:
@@ -37,6 +38,7 @@ async def list_alerts(
                 InstructorAlert.status == status,
             )
             .order_by(InstructorAlert.severity.desc(), InstructorAlert.created_at.desc())
+            .limit(limit)
         )
     ).scalars().all()
     return APIResponse(

@@ -90,23 +90,41 @@ async def list_next_actions(
             await db.commit()
 
     # If mode resolved to 'off' the list is empty; record a single off-arm
-    # observational row so the A/B query has data on both sides.
+    # observational row so the A/B query has data on both sides. Cap to one
+    # sentinel row per (user, course, calendar day) so off-arm students
+    # polling the Today page don't inflate the A/B dataset.
     if not served:
         from app.services.engine_mode import resolve_engine_mode
         variant = await resolve_engine_mode(
             db, user_id=user.id, course_id=course_id
         )
         if variant == "off":
-            db.add(
-                ActionOutcome(
-                    user_id=user.id,
-                    course_id=course_id,
-                    action_type="do_quiz",  # placeholder action_type for off-arm
-                    engine_variant="off",
-                    served_at=datetime.now(timezone.utc),
-                )
+            today_cutoff = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
             )
-            await db.commit()
+            existing = (
+                await db.execute(
+                    select(ActionOutcome.id)
+                    .where(
+                        ActionOutcome.user_id == user.id,
+                        ActionOutcome.course_id == course_id,
+                        ActionOutcome.engine_variant == "off",
+                        ActionOutcome.served_at >= today_cutoff,
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if existing is None:
+                db.add(
+                    ActionOutcome(
+                        user_id=user.id,
+                        course_id=course_id,
+                        action_type="do_quiz",  # placeholder action_type for off-arm
+                        engine_variant="off",
+                        served_at=datetime.now(timezone.utc),
+                    )
+                )
+                await db.commit()
 
     return APIResponse(
         success=True,

@@ -201,66 +201,28 @@ async def run_update_concept_mastery(
     return {"touched_concepts": touched}
 
 
-async def run_replay_attempt_history(
-    session: AsyncSession, payload: dict[str, Any]
-) -> dict[str, Any]:
-    """Replay last N days of attempts through Beta-Binomial mastery for a course.
-
-    Walks ``quiz_attempts``, ``flashcard_progress``, ``revision_attempts`` and
-    ``pronunciation_scores``, skipping rows older than the window. Each
-    surviving attempt is run through :func:`apply_attempt_evidence`, which
-    writes a fresh ``ConceptMasteryHistory(event_type='attempt')`` row stamped
-    with ``recorded_at = now()`` (the replay time, not the original attempt
-    time — reviewers should be aware).
-
-    Replay is *not* idempotent at the watermark level. Operators wanting a
-    clean slate must wipe ``ConceptMastery`` for the course before enqueuing
-    this job — otherwise evidence accumulates on top of whatever priors
-    already exist.
-
-    Processes attempts in batches of REPLAY_BATCH_SIZE (default 500) with
-    intermediate commits. A failure partway through leaves earlier batches
-    durable; operators can safely retry to pick up the remainder. The 409
-    in-flight guard at the endpoint prevents concurrent replays for the same
-    course.
-
-    Pronunciation rows currently use ``target_kind='pronunciation_item'``
-    with ``target_id=ps.id`` (the score row's own UUID). Tags are written
-    against real ``PronunciationItem.id`` values, so the join is a no-op
-    today; this branch is wired up so the handler runs without error and
-    a future fix to the pronunciation score → item FK will activate it.
+def _replay_batch_size() -> int:
+    """Resolve the active batch size, honouring tests that monkey-patch
+    ``app.services.jobs.REPLAY_BATCH_SIZE`` after the handler moved here.
     """
-    from datetime import datetime, timedelta, timezone
-
-    from app.models import (
-        FlashcardCard,
-        FlashcardProgress,
-        FlashcardSet,
-        PronunciationScore,
-        Question,
-        Quiz,
-        QuizAttempt,
-        RevisionAttempt,
-        RevisionPoolItem,
-    )
-    from app.services.mastery import AttemptKind, apply_attempt_evidence
-
-    course_id = uuid.UUID(payload["course_id"])
-    # clamp 1..365 days; defense-in-depth against poisoned payloads
-    window_days = max(1, min(int(payload.get("window_days", 90)), 365))
-    cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
-
-    counters = {"quiz": 0, "flashcard": 0, "revision": 0, "pronunciation": 0}
-    # Read REPLAY_BATCH_SIZE through ``app.services.jobs`` so existing tests
-    # that monkey-patch ``app.services.jobs.REPLAY_BATCH_SIZE`` keep working
-    # after the handler moved here. ``jobs`` re-exports ours, so the two
-    # stay in sync; if the patch is absent we fall back to our own copy.
     from app.services import jobs as _jobs_mod
 
-    batch_size = getattr(_jobs_mod, "REPLAY_BATCH_SIZE", REPLAY_BATCH_SIZE)
+    return getattr(_jobs_mod, "REPLAY_BATCH_SIZE", REPLAY_BATCH_SIZE)
 
-    # --- Quiz attempts -----------------------------------------------------
-    quiz_offset = 0
+
+async def _replay_quiz_attempts(
+    session: AsyncSession,
+    *,
+    course_id: uuid.UUID,
+    cutoff: "datetime",
+) -> int:
+    """Replay quiz attempts in the window. Returns count of attempts replayed."""
+    from app.models import Question, Quiz, QuizAttempt
+    from app.services.mastery import AttemptKind, apply_attempt_evidence
+
+    batch_size = _replay_batch_size()
+    replayed = 0
+    offset = 0
     while True:
         quiz_attempts = (
             await session.execute(
@@ -271,7 +233,7 @@ async def run_replay_attempt_history(
                     QuizAttempt.created_at >= cutoff,
                 )
                 .order_by(QuizAttempt.created_at, QuizAttempt.id)
-                .offset(quiz_offset)
+                .offset(offset)
                 .limit(batch_size)
             )
         ).scalars().all()
@@ -300,17 +262,30 @@ async def run_replay_attempt_history(
                     attempt_kind=AttemptKind.QUIZ,
                     outcome=outcome,
                 )
-                counters["quiz"] += 1
+                replayed += 1
         await session.commit()
         if len(quiz_attempts) < batch_size:
             break
-        quiz_offset += batch_size
+        offset += batch_size
+    return replayed
 
-    # --- Flashcard progress (last_reviewed inside window) -----------------
+
+async def _replay_flashcard_attempts(
+    session: AsyncSession,
+    *,
+    course_id: uuid.UUID,
+    cutoff: "datetime",
+) -> int:
+    """Replay flashcard progress events in the window."""
+    from app.models import FlashcardCard, FlashcardProgress, FlashcardSet
+    from app.services.mastery import AttemptKind, apply_attempt_evidence
+
     grade_to_outcome = {1: 0.0, 2: 0.4, 3: 0.8, 4: 1.0}
-    fc_offset = 0
+    batch_size = _replay_batch_size()
+    replayed = 0
+    offset = 0
     while True:
-        fc_rows = (
+        rows = (
             await session.execute(
                 select(FlashcardProgress, FlashcardCard)
                 .join(
@@ -330,13 +305,13 @@ async def run_replay_attempt_history(
                     FlashcardProgress.last_reviewed,
                     FlashcardProgress.id,
                 )
-                .offset(fc_offset)
+                .offset(offset)
                 .limit(batch_size)
             )
         ).all()
-        if not fc_rows:
+        if not rows:
             break
-        for prog, card in fc_rows:
+        for prog, card in rows:
             outcome = grade_to_outcome.get(prog.last_grade or 3, 0.8)
             await apply_attempt_evidence(
                 session,
@@ -347,16 +322,29 @@ async def run_replay_attempt_history(
                 attempt_kind=AttemptKind.FLASHCARD,
                 outcome=outcome,
             )
-            counters["flashcard"] += 1
+            replayed += 1
         await session.commit()
-        if len(fc_rows) < batch_size:
+        if len(rows) < batch_size:
             break
-        fc_offset += batch_size
+        offset += batch_size
+    return replayed
 
-    # --- Revision attempts ------------------------------------------------
-    rev_offset = 0
+
+async def _replay_revision_attempts(
+    session: AsyncSession,
+    *,
+    course_id: uuid.UUID,
+    cutoff: "datetime",
+) -> int:
+    """Replay revision attempts in the window."""
+    from app.models import RevisionAttempt, RevisionPoolItem
+    from app.services.mastery import AttemptKind, apply_attempt_evidence
+
+    batch_size = _replay_batch_size()
+    replayed = 0
+    offset = 0
     while True:
-        rev_rows = (
+        rows = (
             await session.execute(
                 select(RevisionAttempt, RevisionPoolItem)
                 .join(
@@ -368,13 +356,13 @@ async def run_replay_attempt_history(
                     RevisionAttempt.created_at >= cutoff,
                 )
                 .order_by(RevisionAttempt.created_at, RevisionAttempt.id)
-                .offset(rev_offset)
+                .offset(offset)
                 .limit(batch_size)
             )
         ).all()
-        if not rev_rows:
+        if not rows:
             break
-        for ra, pool in rev_rows:
+        for ra, pool in rows:
             await apply_attempt_evidence(
                 session,
                 user_id=ra.user_id,
@@ -384,16 +372,29 @@ async def run_replay_attempt_history(
                 attempt_kind=AttemptKind.REVISION,
                 outcome=float(ra.score),
             )
-            counters["revision"] += 1
+            replayed += 1
         await session.commit()
-        if len(rev_rows) < batch_size:
+        if len(rows) < batch_size:
             break
-        rev_offset += batch_size
+        offset += batch_size
+    return replayed
 
-    # --- Pronunciation scores --------------------------------------------
-    pron_offset = 0
+
+async def _replay_pronunciation_attempts(
+    session: AsyncSession,
+    *,
+    course_id: uuid.UUID,
+    cutoff: "datetime",
+) -> int:
+    """Replay pronunciation scores in the window."""
+    from app.models import PronunciationScore
+    from app.services.mastery import AttemptKind, apply_attempt_evidence
+
+    batch_size = _replay_batch_size()
+    replayed = 0
+    offset = 0
     while True:
-        pron_rows = (
+        rows = (
             await session.execute(
                 select(PronunciationScore)
                 .where(
@@ -404,13 +405,13 @@ async def run_replay_attempt_history(
                     PronunciationScore.created_at,
                     PronunciationScore.id,
                 )
-                .offset(pron_offset)
+                .offset(offset)
                 .limit(batch_size)
             )
         ).scalars().all()
-        if not pron_rows:
+        if not rows:
             break
-        for ps in pron_rows:
+        for ps in rows:
             if ps.overall_score is None:
                 continue
             outcome = max(0.0, min(1.0, float(ps.overall_score) / 100.0))
@@ -423,11 +424,64 @@ async def run_replay_attempt_history(
                 attempt_kind=AttemptKind.PRONUNCIATION,
                 outcome=outcome,
             )
-            counters["pronunciation"] += 1
+            replayed += 1
         await session.commit()
-        if len(pron_rows) < batch_size:
+        if len(rows) < batch_size:
             break
-        pron_offset += batch_size
+        offset += batch_size
+    return replayed
+
+
+async def run_replay_attempt_history(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Replay last N days of attempts through Beta-Binomial mastery for a course.
+
+    Walks ``quiz_attempts``, ``flashcard_progress``, ``revision_attempts`` and
+    ``pronunciation_scores``, skipping rows older than the window. Each
+    surviving attempt is run through :func:`apply_attempt_evidence`, which
+    writes a fresh ``ConceptMasteryHistory(event_type='attempt')`` row stamped
+    with ``recorded_at = now()`` (the replay time, not the original attempt
+    time — reviewers should be aware).
+
+    Replay is *not* idempotent at the watermark level. Operators wanting a
+    clean slate must wipe ``ConceptMastery`` for the course before enqueuing
+    this job — otherwise evidence accumulates on top of whatever priors
+    already exist.
+
+    Processes attempts in batches of REPLAY_BATCH_SIZE (default 500) with
+    intermediate commits per attempt-source helper. A failure partway through
+    leaves earlier batches durable; operators can safely retry to pick up the
+    remainder. The 409 in-flight guard at the endpoint prevents concurrent
+    replays for the same course.
+
+    Pronunciation rows currently use ``target_kind='pronunciation_item'``
+    with ``target_id=ps.id`` (the score row's own UUID). Tags are written
+    against real ``PronunciationItem.id`` values, so the join is a no-op
+    today; this branch is wired up so the handler runs without error and
+    a future fix to the pronunciation score → item FK will activate it.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    course_id = uuid.UUID(payload["course_id"])
+    # clamp 1..365 days; defense-in-depth against poisoned payloads
+    window_days = max(1, min(int(payload.get("window_days", 90)), 365))
+    cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+
+    counters = {
+        "quiz": await _replay_quiz_attempts(
+            session, course_id=course_id, cutoff=cutoff
+        ),
+        "flashcard": await _replay_flashcard_attempts(
+            session, course_id=course_id, cutoff=cutoff
+        ),
+        "revision": await _replay_revision_attempts(
+            session, course_id=course_id, cutoff=cutoff
+        ),
+        "pronunciation": await _replay_pronunciation_attempts(
+            session, course_id=course_id, cutoff=cutoff
+        ),
+    }
 
     logger.info(
         "replay_attempt_history finished course_id=%s counters=%s",
@@ -531,5 +585,6 @@ async def run_tune_action_coefficients(
     """Quarterly coefficient retune (Task 17 fills the body)."""
     from app.services.action_coeffs import retune_action_coefficients
 
-    window_days = int(payload.get("window_days", 90))
+    # Clamp 1..365 days; defense-in-depth against poisoned payloads.
+    window_days = max(1, min(int(payload.get("window_days", 90)), 365))
     return await retune_action_coefficients(session, window_days=window_days)

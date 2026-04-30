@@ -100,18 +100,3 @@ class InstructorAlertResponse(BaseModel):
 
 class InstructorAlertUpdate(BaseModel):
     status: Literal["dismissed", "resolved"]
-
-
-class ActionOutcomeRow(BaseModel):
-    """Read shape used by the instructor analytics endpoint."""
-    engine_variant: str
-    served_count: int
-    click_rate: float
-    completion_rate: float
-    mean_outcome_score: float | None
-
-
-class ActionOutcomesSummary(BaseModel):
-    course_id: uuid.UUID
-    window_days: int
-    rows: list[ActionOutcomeRow]

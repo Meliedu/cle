@@ -12,11 +12,12 @@ SELECT per rule) instead of N+1 SELECT-per-student.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, distinct, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,9 +51,20 @@ async def _try_insert(
     reason: dict,
 ) -> bool:
     # Cohort alerts (target_user_id IS NULL) are NOT deduped by the partial
-    # unique index — Postgres treats NULLs as distinct. The migration comment
-    # documents this explicitly. Dedupe with a SELECT before insert.
+    # unique index — Postgres treats NULLs as distinct, so ON CONFLICT can't
+    # serialize concurrent inserts. Acquire a per-(course_id, alert_type)
+    # transaction-scoped advisory lock to make the SELECT-then-INSERT atomic
+    # against concurrent workers; the lock auto-releases on commit/rollback.
     if target_user_id is None:
+        h = hashlib.blake2b(digest_size=8)
+        h.update(course_id.bytes)
+        h.update(alert_type.encode("utf-8"))
+        # bigint range: mask top bit so the value fits a signed bigint.
+        lock_key = int.from_bytes(h.digest(), "big") & 0x7FFFFFFFFFFFFFFF
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(:k)"), {"k": lock_key}
+        )
+
         existing = (
             await db.execute(
                 select(InstructorAlert.id).where(
@@ -276,6 +288,7 @@ async def _rule_student_falling_behind(
                 AssignmentSubmission.status == "late",
                 Assignment.course_id == course.id,
                 Assignment.due_at >= fourteen_days_ago,
+                Assignment.deleted_at.is_(None),
             )
             .group_by(AssignmentSubmission.user_id)
             .having(late_count >= 2)
@@ -306,6 +319,13 @@ async def _rule_prereq_gap_for_upcoming_meeting(
     enrolled_count: int,
     now: datetime,
 ) -> int:
+    """One query per upcoming meeting: prereqs × cohort weak counts.
+
+    Replaces 2-level N+1 (prereqs per meeting + COUNT per prereq) with a
+    single GROUP BY HAVING for the cohort weak-count. The outer loop
+    (one query per upcoming meeting) is intentional — meetings differ in
+    their tagged-concept set.
+    """
     horizon = now + timedelta(hours=72)
     meetings = (
         await db.execute(
@@ -318,54 +338,57 @@ async def _rule_prereq_gap_for_upcoming_meeting(
     ).scalars().all()
 
     created = 0
+    n_weak = func.count().filter(ConceptMastery.mastery_score < 0.7)
     for meeting in meetings:
-        # Concepts tagged on this meeting → prereqs that are weak across cohort.
-        prereqs = (
+        rows = (
             await db.execute(
-                select(ConceptPrerequisite.prereq_concept_id, Concept.name)
+                select(
+                    ConceptPrerequisite.prereq_concept_id,
+                    Concept.name,
+                    n_weak.label("weak_n"),
+                )
                 .join(
                     ConceptTag,
                     ConceptTag.concept_id == ConceptPrerequisite.dependent_concept_id,
                 )
-                .join(Concept, Concept.id == ConceptPrerequisite.prereq_concept_id)
+                .join(
+                    Concept, Concept.id == ConceptPrerequisite.prereq_concept_id
+                )
+                .outerjoin(
+                    ConceptMastery,
+                    and_(
+                        ConceptMastery.concept_id
+                        == ConceptPrerequisite.prereq_concept_id,
+                        ConceptMastery.course_id == course.id,
+                    ),
+                )
                 .where(
                     ConceptTag.target_kind == "meeting",
                     ConceptTag.target_id == meeting.id,
                     ConceptPrerequisite.strength >= 0.5,
                 )
-                .distinct()
+                .group_by(ConceptPrerequisite.prereq_concept_id, Concept.name)
+                .having(n_weak * 2 >= enrolled_count)  # ≥50% weak
             )
         ).all()
-        for prereq_id, prereq_name in prereqs:
-            n_weak = (
-                await db.execute(
-                    select(func.count())
-                    .select_from(ConceptMastery)
-                    .where(
-                        ConceptMastery.concept_id == prereq_id,
-                        ConceptMastery.course_id == course.id,
-                        ConceptMastery.mastery_score < 0.7,
-                    )
-                )
-            ).scalar_one()
-            if int(n_weak) * 2 >= enrolled_count:  # 50%+ weak
-                if await _try_insert(
-                    db,
-                    course_id=course.id,
-                    instructor_id=instructor_id,
-                    target_user_id=None,
-                    alert_type="prereq_gap_for_upcoming_meeting",
-                    severity="warning",
-                    title=f"Prereq gap before {meeting.title or 'meeting'}",
-                    reason={
-                        "meeting_id": str(meeting.id),
-                        "prereq_concept_id": str(prereq_id),
-                        "prereq_name": prereq_name,
-                        "weak_n": int(n_weak),
-                        "enrolled": enrolled_count,
-                    },
-                ):
-                    created += 1
+        for prereq_id, prereq_name, weak in rows:
+            if await _try_insert(
+                db,
+                course_id=course.id,
+                instructor_id=instructor_id,
+                target_user_id=None,
+                alert_type="prereq_gap_for_upcoming_meeting",
+                severity="warning",
+                title=f"Prereq gap before {meeting.title or 'meeting'}",
+                reason={
+                    "meeting_id": str(meeting.id),
+                    "prereq_concept_id": str(prereq_id),
+                    "prereq_name": prereq_name,
+                    "weak_n": int(weak),
+                    "enrolled": enrolled_count,
+                },
+            ):
+                created += 1
     return created
 
 
@@ -377,43 +400,44 @@ async def _rule_low_quiz_participation(
     enrolled_count: int,
     now: datetime,
 ) -> int:
+    """One aggregating query: per-quiz unique-attempter count + threshold filter.
+
+    Replaces N+1 (one COUNT per published quiz) with a single GROUP BY HAVING.
+    """
     seven_days_ago = now - timedelta(days=7)
-    quizzes = (
+    n_attempters = func.count(distinct(QuizAttempt.user_id))
+    rows = (
         await db.execute(
-            select(Quiz).where(
+            select(Quiz.id, Quiz.title, n_attempters.label("attempters"))
+            .outerjoin(QuizAttempt, QuizAttempt.quiz_id == Quiz.id)
+            .where(
                 Quiz.course_id == course.id,
                 Quiz.is_published.is_(True),
                 Quiz.created_at < seven_days_ago,
                 Quiz.deleted_at.is_(None),
             )
+            .group_by(Quiz.id, Quiz.title)
+            .having(n_attempters * 100 < enrolled_count * 30)
         )
-    ).scalars().all()
+    ).all()
 
     created = 0
-    for quiz in quizzes:
-        n_attempters = (
-            await db.execute(
-                select(func.count(func.distinct(QuizAttempt.user_id))).where(
-                    QuizAttempt.quiz_id == quiz.id
-                )
-            )
-        ).scalar_one()
-        if int(n_attempters) * 100 < enrolled_count * 30:  # <30%
-            if await _try_insert(
-                db,
-                course_id=course.id,
-                instructor_id=instructor_id,
-                target_user_id=None,
-                alert_type="low_quiz_participation",
-                severity="info",
-                title=f"<30% attempted '{quiz.title}'",
-                reason={
-                    "quiz_id": str(quiz.id),
-                    "attempters": int(n_attempters),
-                    "enrolled": enrolled_count,
-                },
-            ):
-                created += 1
+    for qid, title, n in rows:
+        if await _try_insert(
+            db,
+            course_id=course.id,
+            instructor_id=instructor_id,
+            target_user_id=None,
+            alert_type="low_quiz_participation",
+            severity="info",
+            title=f"<30% attempted '{title}'",
+            reason={
+                "quiz_id": str(qid),
+                "attempters": int(n),
+                "enrolled": enrolled_count,
+            },
+        ):
+            created += 1
     return created
 
 
@@ -425,43 +449,52 @@ async def _rule_missed_deadline(
     enrolled_count: int,
     now: datetime,
 ) -> int:
+    """One aggregating query: per-assignment submitted-count + threshold filter.
+
+    Replaces N+1 (one COUNT per overdue assignment) with a single GROUP BY
+    HAVING. Also bounds recency to the past 30 days so old assignments
+    don't keep surfacing every evaluator run.
+    """
     one_day_ago = now - timedelta(hours=24)
-    overdue = (
+    thirty_days_ago = now - timedelta(days=30)
+    n_submitted = func.count(AssignmentSubmission.user_id).filter(
+        AssignmentSubmission.status.in_(("submitted", "graded"))
+    )
+    rows = (
         await db.execute(
-            select(Assignment).where(
+            select(Assignment.id, Assignment.title, n_submitted.label("submitted_n"))
+            .outerjoin(
+                AssignmentSubmission,
+                AssignmentSubmission.assignment_id == Assignment.id,
+            )
+            .where(
                 Assignment.course_id == course.id,
                 Assignment.due_at < one_day_ago,
+                Assignment.due_at >= thirty_days_ago,
                 Assignment.deleted_at.is_(None),
             )
+            .group_by(Assignment.id, Assignment.title)
+            .having(n_submitted * 100 < enrolled_count * 80)
         )
-    ).scalars().all()
+    ).all()
 
     created = 0
-    for asn in overdue:
-        n_submitted = (
-            await db.execute(
-                select(func.count(AssignmentSubmission.user_id)).where(
-                    AssignmentSubmission.assignment_id == asn.id,
-                    AssignmentSubmission.status.in_(("submitted", "graded")),
-                )
-            )
-        ).scalar_one()
-        if int(n_submitted) * 100 < enrolled_count * 80:  # <80%
-            if await _try_insert(
-                db,
-                course_id=course.id,
-                instructor_id=instructor_id,
-                target_user_id=None,
-                alert_type="missed_deadline",
-                severity="critical",
-                title=f"<80% turned in '{asn.title}'",
-                reason={
-                    "assignment_id": str(asn.id),
-                    "submitted": int(n_submitted),
-                    "enrolled": enrolled_count,
-                },
-            ):
-                created += 1
+    for aid, title, n in rows:
+        if await _try_insert(
+            db,
+            course_id=course.id,
+            instructor_id=instructor_id,
+            target_user_id=None,
+            alert_type="missed_deadline",
+            severity="critical",
+            title=f"<80% turned in '{title}'",
+            reason={
+                "assignment_id": str(aid),
+                "submitted": int(n),
+                "enrolled": enrolled_count,
+            },
+        ):
+            created += 1
     return created
 
 
@@ -469,7 +502,12 @@ async def evaluate_alerts_for_course(
     db: AsyncSession, *, course_id: uuid.UUID
 ) -> dict:
     course = (
-        await db.execute(select(Course).where(Course.id == course_id))
+        await db.execute(
+            select(Course).where(
+                Course.id == course_id,
+                Course.deleted_at.is_(None),
+            )
+        )
     ).scalar_one_or_none()
     if course is None:
         return {"course_id": str(course_id), "alerts_created": 0}
