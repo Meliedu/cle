@@ -212,6 +212,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["target_user_id"], ["users.id"], ondelete="CASCADE",
         ),
+        # Audit reference — no ondelete; user deletion is blocked while
+        # rows reference them. Matches the project-wide audit FK pattern
+        # (e.g. courses.instructor_id, documents.uploaded_by).
         sa.ForeignKeyConstraint(["resolved_by"], ["users.id"]),
     )
     op.create_index(
@@ -223,8 +226,11 @@ def upgrade() -> None:
     # Idempotency support: at-most-one OPEN alert per (course, type, target).
     # NULL target_user_id is allowed (cohort-level alerts) and Postgres treats
     # NULLs as distinct in unique indexes — that's the behaviour we want, so we
-    # don't add NULLS NOT DISTINCT here. Cohort alerts are deduped by the
-    # evaluator's "do not insert if any open row matches" guard instead.
+    # don't add NULLS NOT DISTINCT here. Cohort alerts are deduped explicitly
+    # by ``app.services.alerts._try_insert``: when target_user_id is None it
+    # SELECTs for any open row matching (course_id, alert_type, NULL) and
+    # skips the insert if one exists. Without that guard cohort alerts would
+    # accumulate without DB enforcement.
     op.create_index(
         "uq_instructor_alerts_open_idempotent",
         "instructor_alerts",
@@ -251,6 +257,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["course_id"], ["courses.id"], ondelete="CASCADE"),
+        # Audit reference — see resolved_by note on instructor_alerts.
         sa.ForeignKeyConstraint(["set_by"], ["users.id"]),
     )
     op.create_index(
