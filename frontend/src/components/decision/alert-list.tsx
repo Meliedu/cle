@@ -23,12 +23,14 @@ export function AlertList({ courseId }: Props) {
     <button
       key={s}
       type="button"
+      role="tab"
+      aria-selected={status === s}
       onClick={() => setStatus(s)}
       className={
-        "rounded px-3 py-1 text-xs " +
+        "rounded px-3 py-1 text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] " +
         (status === s
           ? "bg-[var(--color-accent)] text-[var(--color-on-accent)]"
-          : "text-[var(--color-muted)] hover:text-[var(--color-text)]")
+          : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]")
       }
     >
       {s}
@@ -37,11 +39,13 @@ export function AlertList({ courseId }: Props) {
 
   return (
     <section className="space-y-3">
-      <nav className="flex gap-2">{tabs}</nav>
-      {isLoading && <p className="text-sm text-[var(--color-muted)]">Loading…</p>}
+      <nav className="flex gap-2" role="tablist" aria-label="Alert status">
+        {tabs}
+      </nav>
+      {isLoading && <p className="text-sm text-[var(--color-text-muted)]">Loading…</p>}
       {error && <p className="text-sm text-[var(--color-error)]">Failed to load.</p>}
       {!isLoading && (data ?? []).length === 0 && (
-        <p className="text-sm text-[var(--color-muted)]">
+        <p className="text-sm text-[var(--color-text-muted)]">
           Nothing here. ({status})
         </p>
       )}

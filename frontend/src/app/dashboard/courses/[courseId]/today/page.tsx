@@ -12,7 +12,7 @@ export default function TodayPage(
     <main className="space-y-4">
       <header>
         <h1 className="text-xl font-semibold text-[var(--color-text)]">Today</h1>
-        <p className="text-sm text-[var(--color-muted)]">
+        <p className="text-sm text-[var(--color-text-muted)]">
           The next things worth doing — based on what you&apos;ve already mastered.
         </p>
       </header>

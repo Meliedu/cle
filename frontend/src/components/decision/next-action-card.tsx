@@ -28,11 +28,12 @@ function describeTarget(action: NextAction): string {
 }
 
 export function NextActionCard({ action, onClick, busy }: Props) {
-  const score = parseFloat(action.priority_score);
+  const raw = Number.parseFloat(action.priority_score);
+  const score = Number.isFinite(raw) ? raw : 0;
   const isHighPriority = score >= 3.0;
   return (
     <article
-      className="space-y-2 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+      className="space-y-2 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-border-hover)]"
       data-testid="next-action-card"
     >
       <header className="flex items-baseline justify-between">
@@ -44,7 +45,7 @@ export function NextActionCard({ action, onClick, busy }: Props) {
             "text-xs " +
             (isHighPriority
               ? "text-[var(--color-warning)]"
-              : "text-[var(--color-muted)]")
+              : "text-[var(--color-text-muted)]")
           }
         >
           priority {score.toFixed(2)}
@@ -55,7 +56,7 @@ export function NextActionCard({ action, onClick, busy }: Props) {
         type="button"
         disabled={busy}
         onClick={onClick}
-        className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs text-[var(--color-on-accent)] disabled:opacity-50"
+        className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs text-[var(--color-on-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:opacity-50"
       >
         {busy ? "Opening…" : "Start"}
       </button>

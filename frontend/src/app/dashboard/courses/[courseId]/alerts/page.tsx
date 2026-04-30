@@ -13,7 +13,7 @@ export default function AlertsPage(
         <h1 className="text-xl font-semibold text-[var(--color-text)]">
           Alerts
         </h1>
-        <p className="text-sm text-[var(--color-muted)]">
+        <p className="text-sm text-[var(--color-text-muted)]">
           Auto-evaluated course health signals — dismiss or resolve as you act on each.
         </p>
       </header>

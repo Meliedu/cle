@@ -31,15 +31,27 @@ const OPTIONS: { value: EngineMode; label: string; help: string }[] = [
 ];
 
 export function EngineModeSelector({ courseId }: Props) {
-  const { data, isLoading } = useEngineSettings(courseId);
+  const { data, isLoading, error } = useEngineSettings(courseId);
   const update = useUpdateEngineMode(courseId);
-  if (isLoading || !data) return null;
+
+  if (isLoading) {
+    return (
+      <p className="text-sm text-[var(--color-text-muted)]">Loading…</p>
+    );
+  }
+  if (error || !data) {
+    return (
+      <p role="alert" className="text-sm text-[var(--color-error)]">
+        Failed to load engine settings.
+      </p>
+    );
+  }
   return (
     <fieldset className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <legend className="text-sm font-medium text-[var(--color-text)]">
         Adaptive engine mode
       </legend>
-      <p className="text-xs text-[var(--color-muted)]">
+      <p className="text-xs text-[var(--color-text-muted)]">
         Currently {data.overrides_count} per-student override
         {data.overrides_count === 1 ? "" : "s"} active.
       </p>
@@ -54,14 +66,20 @@ export function EngineModeSelector({ courseId }: Props) {
             disabled={update.isPending}
             onChange={() => update.mutate(o.value)}
             className="mt-1"
+            style={{ accentColor: "var(--color-primary)" }}
           />
           <span>
             <strong>{o.label}</strong>
             <br />
-            <span className="text-xs text-[var(--color-muted)]">{o.help}</span>
+            <span className="text-xs text-[var(--color-text-muted)]">{o.help}</span>
           </span>
         </label>
       ))}
+      {update.isError && (
+        <p role="alert" className="text-sm text-[var(--color-error)]">
+          Could not update engine mode. Please try again.
+        </p>
+      )}
     </fieldset>
   );
 }

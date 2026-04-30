@@ -14,7 +14,7 @@ export default function EnginePage(
         <h1 className="text-xl font-semibold text-[var(--color-text)]">
           Adaptive engine
         </h1>
-        <p className="text-sm text-[var(--color-muted)]">
+        <p className="text-sm text-[var(--color-text-muted)]">
           Choose how aggressively Meli surfaces personalised next-actions for this course.
         </p>
       </header>
