@@ -43,6 +43,7 @@ from app.services.scoring import (
 TTL_HOURS = 1
 TOP_N = 10
 DEADLINE_HORIZON_DAYS = 7
+LAZY_REFRESH_MINUTES = 30
 
 
 @dataclass
@@ -333,6 +334,33 @@ async def materialize_next_actions(
     for r in rows:
         await db.refresh(r)
     return rows
+
+
+async def get_or_recompute_next_actions(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    course_id: uuid.UUID,
+) -> list[NextAction]:
+    """Return cached rows if any are < 30 min old; else materialise fresh."""
+    now = datetime.now(timezone.utc)
+    threshold = now - timedelta(minutes=LAZY_REFRESH_MINUTES)
+    cached = (
+        await db.execute(
+            select(NextAction)
+            .where(
+                NextAction.user_id == user_id,
+                NextAction.course_id == course_id,
+                NextAction.consumed_at.is_(None),
+                NextAction.expires_at > now,
+                NextAction.created_at >= threshold,
+            )
+            .order_by(NextAction.priority_score.desc())
+        )
+    ).scalars().all()
+    if cached:
+        return list(cached)
+    return await materialize_next_actions(db, user_id=user_id, course_id=course_id, now=now)
 
 
 async def record_serve(

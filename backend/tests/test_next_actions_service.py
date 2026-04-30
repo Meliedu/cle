@@ -213,3 +213,78 @@ async def test_unpublished_assignment_not_recommended(
     )
     # No row should target the draft assignment.
     assert all(r.target_id != asn.id for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_get_or_recompute_returns_cached(db_session, test_instructor, test_student):
+    from app.services.next_actions import get_or_recompute_next_actions
+    course = Course(
+        name="Cache",
+        language="en",
+        instructor_id=test_instructor.id,
+        enroll_code="MAT-CACHE",
+        adaptive_engine_mode="on",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    c = Concept(course_id=course.id, name="cached", status="approved")
+    db_session.add(c)
+    await db_session.flush()
+    db_session.add(
+        ConceptMastery(
+            user_id=test_student.id, concept_id=c.id, course_id=course.id,
+            alpha=Decimal("1.000"), beta=Decimal("2.000"),
+            confidence=Decimal("0.600"),
+        )
+    )
+    await db_session.commit()
+
+    rows1 = await get_or_recompute_next_actions(
+        db_session, user_id=test_student.id, course_id=course.id
+    )
+    rows2 = await get_or_recompute_next_actions(
+        db_session, user_id=test_student.id, course_id=course.id
+    )
+    # Same row IDs — second call returned the cache.
+    assert {r.id for r in rows1} == {r.id for r in rows2}
+
+
+@pytest.mark.asyncio
+async def test_get_or_recompute_refreshes_after_ttl(db_session, test_instructor, test_student):
+    """Stale cache (>30 min) triggers recompute; ids change."""
+    from datetime import timedelta as _td
+
+    from app.services.next_actions import get_or_recompute_next_actions
+    course = Course(
+        name="Stale",
+        language="en",
+        instructor_id=test_instructor.id,
+        enroll_code="MAT-STALE",
+        adaptive_engine_mode="on",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    c = Concept(course_id=course.id, name="stale", status="approved")
+    db_session.add(c)
+    await db_session.flush()
+    db_session.add(
+        ConceptMastery(
+            user_id=test_student.id, concept_id=c.id, course_id=course.id,
+            alpha=Decimal("1.000"), beta=Decimal("2.000"),
+            confidence=Decimal("0.600"),
+        )
+    )
+    await db_session.commit()
+
+    rows1 = await get_or_recompute_next_actions(
+        db_session, user_id=test_student.id, course_id=course.id
+    )
+    # Backdate created_at to simulate a 31-min-old cache.
+    for r in rows1:
+        r.created_at = datetime.now(timezone.utc) - _td(minutes=31)
+    await db_session.commit()
+
+    rows2 = await get_or_recompute_next_actions(
+        db_session, user_id=test_student.id, course_id=course.id
+    )
+    assert {r.id for r in rows1} != {r.id for r in rows2}
