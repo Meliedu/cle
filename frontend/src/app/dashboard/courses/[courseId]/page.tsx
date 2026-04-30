@@ -273,6 +273,28 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
         >
           Mastery
         </Link>
+        <Link
+          href={`/dashboard/courses/${courseId}/today`}
+          className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
+        >
+          Today
+        </Link>
+        {isInstructor && (
+          <>
+            <Link
+              href={`/dashboard/courses/${courseId}/alerts`}
+              className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
+            >
+              Alerts
+            </Link>
+            <Link
+              href={`/dashboard/courses/${courseId}/engine`}
+              className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
+            >
+              Engine
+            </Link>
+          </>
+        )}
       </nav>
 
       {/* Tab content — navigation is in the sidebar */}
