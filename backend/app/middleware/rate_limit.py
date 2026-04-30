@@ -38,9 +38,21 @@ _PUBLIC_PATH_PREFIXES = ("/health", "/docs", "/openapi.json", "/redoc")
 # must share the same per-user rate limits.
 _EXTRA_GENERATION_PATHS = ("/api/speech/generate-prompts",)
 
-# Fix 5: regex to match syllabus import trigger (course_id varies so prefix
-# match is insufficient; a POST to this path kicks off an LLM job).
-_RATE_LIMITED_REGEX = re.compile(r"^/api/courses/[^/]+/syllabus/imports$")
+# Regexes to match LLM-backed endpoints whose path contains a course_id
+# (so prefix-match is insufficient). Each POST to one of these kicks off
+# an OpenRouter-billing job.
+#
+# - syllabus/imports: parses a syllabus PDF via the LLM (Phase 1).
+# - concepts/extract:  samples chunks per document and asks the LLM for
+#   candidate concepts (Phase 2 adaptive engine).
+# - concepts/replay:   re-applies attempt evidence across a 90-day window;
+#   while it isn't a per-row LLM call, it is an expensive instructor-only
+#   batch job that must share the same per-user cap to prevent a single
+#   instructor from queueing concurrent replays across many courses.
+_RATE_LIMITED_REGEXES = (
+    re.compile(r"^/api/courses/[^/]+/syllabus/imports$"),
+    re.compile(r"^/api/courses/[^/]+/concepts/(?:extract|replay)$"),
+)
 
 
 def _is_public_path(path: str) -> bool:
@@ -52,7 +64,7 @@ def _is_rate_limited_path(path: str) -> bool:
         return True
     if path in _EXTRA_GENERATION_PATHS:
         return True
-    return bool(_RATE_LIMITED_REGEX.match(path))
+    return any(pattern.match(path) for pattern in _RATE_LIMITED_REGEXES)
 
 
 def _rate_limit_response(retry_after_seconds: int) -> dict:
