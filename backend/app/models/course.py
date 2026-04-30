@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, JSON, String, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, JSON, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,6 +23,9 @@ class Course(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         String(16), nullable=False, unique=True, index=True
     )
     settings: Mapped[dict] = mapped_column(JSON, default=dict)
+    adaptive_engine_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="on", server_default=text("'on'"),
+    )
 
     instructor: Mapped["User"] = relationship("User", lazy="selectin")
     enrollments: Mapped[list["Enrollment"]] = relationship(

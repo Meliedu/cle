@@ -43,6 +43,12 @@ from app.models.concept import (
     ConceptPrerequisite,
     ConceptTag,
 )
+from app.models.decision import (
+    ActionOutcome,
+    EngineOverride,
+    InstructorAlert,
+    NextAction,
+)
 
 __all__ = [
     "Base",
@@ -92,4 +98,8 @@ __all__ = [
     "ConceptTag",
     "ConceptMastery",
     "ConceptMasteryHistory",
+    "NextAction",
+    "ActionOutcome",
+    "InstructorAlert",
+    "EngineOverride",
 ]
