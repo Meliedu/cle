@@ -198,3 +198,33 @@ async def test_click_other_users_action_404(
 
     res = await async_client.post(f"/api/next-actions/{foreign.id}/click")
     assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_attempt_enqueue_is_deduped(
+    db_session, async_client: AsyncClient, test_instructor: User
+):
+    """Two consecutive submit_attempt calls produce at most one
+    materialize_next_actions task in the queue."""
+    from app.models import Task
+
+    # NOTE: the integration through quizzes/flashcards/revision is exercised
+    # in their own test files. Here we only assert the helper itself dedups.
+    from app.api._helpers import enqueue_next_actions_recompute
+
+    course_id = uuid.uuid4()
+    await enqueue_next_actions_recompute(
+        db_session, user_id=test_instructor.id, course_id=course_id
+    )
+    await db_session.commit()
+    await enqueue_next_actions_recompute(
+        db_session, user_id=test_instructor.id, course_id=course_id
+    )
+    await db_session.commit()
+
+    rows = (await db_session.execute(
+        __import__("sqlalchemy").select(Task).where(
+            Task.task_type == "materialize_next_actions"
+        )
+    )).scalars().all()
+    assert len(rows) == 1

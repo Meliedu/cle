@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 logger = logging.getLogger(__name__)
 
 from app.api._helpers import (
+    enqueue_next_actions_recompute,
     verify_enrollment as _verify_enrollment,
     verify_instructor_enrollment as _verify_instructor_enrollment,
 )
@@ -796,6 +797,9 @@ async def submit_attempt(
             course_id=quiz.course_id,
             answers=body.answers,
             questions_by_id=questions_by_id,
+        )
+        await enqueue_next_actions_recompute(
+            db, user_id=user.id, course_id=quiz.course_id
         )
         await db.commit()
     except Exception:  # noqa: BLE001 — non-fatal: attempt already persisted

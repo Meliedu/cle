@@ -12,7 +12,10 @@ from sqlalchemy.orm import selectinload
 
 logger = logging.getLogger(__name__)
 
-from app.api._helpers import verify_enrollment as _verify_enrollment
+from app.api._helpers import (
+    enqueue_next_actions_recompute,
+    verify_enrollment as _verify_enrollment,
+)
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.config import settings
 from app.models.flashcard import (
@@ -443,6 +446,9 @@ async def update_progress(
             course_id=fc_set.course_id,
             card_id=body.card_id,
             quality=body.quality,
+        )
+        await enqueue_next_actions_recompute(
+            db, user_id=user.id, course_id=fc_set.course_id
         )
         await db.commit()
     except Exception:  # noqa: BLE001 — non-fatal: progress already persisted

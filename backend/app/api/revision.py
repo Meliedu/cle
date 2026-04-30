@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-from app.api._helpers import verify_enrollment
+from app.api._helpers import enqueue_next_actions_recompute, verify_enrollment
 from app.api.deps import get_current_user, get_db, require_student
 from app.models.revision import (
     BanditModel,
@@ -489,6 +489,9 @@ async def submit_answer(
             course_id=session.course_id,
             pool_item_id=pool_item.id,
             score=score,
+        )
+        await enqueue_next_actions_recompute(
+            db, user_id=user.id, course_id=session.course_id
         )
         await db.commit()
     except Exception:  # noqa: BLE001 — non-fatal: attempt already persisted

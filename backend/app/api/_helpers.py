@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.course import Course, Enrollment
+from app.models.task import Task
 
 
 async def verify_enrollment(
@@ -61,3 +62,37 @@ async def verify_instructor_enrollment(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enrolled as an instructor in this course",
         )
+
+
+async def enqueue_next_actions_recompute(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    course_id: uuid.UUID,
+) -> None:
+    """Best-effort enqueue. Caller commits.
+
+    Dedupe: if a pending/running materialize_next_actions task already exists
+    for this (user, course), skip. The Task.payload column is JSON (not JSONB)
+    so we use ``op('->>')`` for value extraction — see Phase 2 Task 16.
+    """
+    existing = (
+        await db.execute(
+            select(Task.id).where(
+                Task.task_type == "materialize_next_actions",
+                Task.status.in_(("pending", "running")),
+                Task.payload.op("->>")("user_id") == str(user_id),
+                Task.payload.op("->>")("course_id") == str(course_id),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return
+    db.add(
+        Task(
+            task_type="materialize_next_actions",
+            payload={"user_id": str(user_id), "course_id": str(course_id)},
+            status="pending",
+        )
+    )
