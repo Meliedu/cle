@@ -331,13 +331,13 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
         result = await run_parse_syllabus(session, task.payload)
         return result
     elif task.task_type == "extract_concept_candidates":
-        from app.services.jobs import run_extract_concept_candidates
+        from app.services.adaptive_jobs import run_extract_concept_candidates
         return await run_extract_concept_candidates(session, task.payload)
     elif task.task_type == "tag_artifact_concepts":
-        from app.services.jobs import run_tag_artifact_concepts
+        from app.services.adaptive_jobs import run_tag_artifact_concepts
         return await run_tag_artifact_concepts(session, task.payload)
     elif task.task_type == "update_concept_mastery":
-        from app.services.jobs import run_update_concept_mastery
+        from app.services.adaptive_jobs import run_update_concept_mastery
         # Inject the task's enqueue time so the handler can dedupe on retry
         # (see I-1 fix). Use a ``_`` prefix to mark the key as system-injected
         # rather than caller-provided. If a stuck-task reset re-runs this
@@ -352,19 +352,19 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
         # mastery. Intentionally *not* watermark-idempotent — operators
         # wipe ConceptMastery first if they want a clean slate. Handler
         # commits internally, mirroring the other concept-job handlers.
-        from app.services.jobs import run_replay_attempt_history
+        from app.services.adaptive_jobs import run_replay_attempt_history
         return await run_replay_attempt_history(session, task.payload)
     elif task.task_type == "materialize_next_actions":
-        from app.services.jobs import run_materialize_next_actions
+        from app.services.adaptive_jobs import run_materialize_next_actions
         return await run_materialize_next_actions(session, task.payload)
     elif task.task_type == "record_action_outcome":
-        from app.services.jobs import run_record_action_outcome
+        from app.services.adaptive_jobs import run_record_action_outcome
         return await run_record_action_outcome(session, task.payload)
     elif task.task_type == "evaluate_instructor_alerts":
-        from app.services.jobs import run_evaluate_instructor_alerts
+        from app.services.adaptive_jobs import run_evaluate_instructor_alerts
         return await run_evaluate_instructor_alerts(session, task.payload)
     elif task.task_type == "tune_action_coefficients":
-        from app.services.jobs import run_tune_action_coefficients
+        from app.services.adaptive_jobs import run_tune_action_coefficients
         return await run_tune_action_coefficients(session, task.payload)
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
