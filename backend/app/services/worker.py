@@ -370,6 +370,54 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
         raise ValueError(f"Unknown task type: {task.task_type}")
 
 
+async def horizon_scan_recompute(session: AsyncSession) -> int:
+    """Daily cron: find courses with deadlines/meetings in the next 24h and
+    enqueue a materialize_next_actions task for every enrolled student.
+
+    Returns the number of courses scanned.
+    """
+    from datetime import timedelta as _td
+
+    from app.api._helpers import enqueue_next_actions_recompute
+    from app.models import Assignment, CourseMeeting, Enrollment
+
+    now = _utcnow()
+    horizon = now + _td(hours=24)
+
+    asn_courses = (
+        await session.execute(
+            select(Assignment.course_id).where(
+                Assignment.due_at.between(now, horizon),
+                Assignment.deleted_at.is_(None),
+            ).distinct()
+        )
+    ).scalars().all()
+    meeting_courses = (
+        await session.execute(
+            select(CourseMeeting.course_id).where(
+                CourseMeeting.scheduled_at.between(now, horizon),
+                CourseMeeting.deleted_at.is_(None),
+            ).distinct()
+        )
+    ).scalars().all()
+    course_ids = set(asn_courses) | set(meeting_courses)
+    for cid in course_ids:
+        student_ids = (
+            await session.execute(
+                select(Enrollment.user_id).where(
+                    Enrollment.course_id == cid,
+                    Enrollment.role == "student",
+                )
+            )
+        ).scalars().all()
+        for uid in student_ids:
+            await enqueue_next_actions_recompute(
+                session, user_id=uid, course_id=cid
+            )
+    await session.commit()
+    return len(course_ids)
+
+
 async def worker_loop(shutdown_event: asyncio.Event) -> None:
     logger.info("Task worker started")
     last_stuck_reset = _utcnow() - timedelta(hours=1)
@@ -382,6 +430,8 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
     # Seed so the first HLR-style mastery decay sweep runs ~24 h after startup
     # rather than at boot, mirroring the overdue-submissions cadence above.
     last_decay_run = _utcnow()
+    # Seed so the first horizon scan runs ~24 h after startup rather than at boot.
+    last_horizon_run = _utcnow()
     # Seed Phase 3 cron watermarks so first ticks fire after the cadence
     # interval rather than immediately at boot.
     last_alert_run = _utcnow()
@@ -429,6 +479,15 @@ async def worker_loop(shutdown_event: asyncio.Event) -> None:
                 except Exception:  # noqa: BLE001
                     logger.exception("decay_due_mastery_rows job failed")
                 last_decay_run = _utcnow()
+
+            # Daily: enqueue recompute for any course with deadlines/meetings entering 24h.
+            if _utcnow() - last_horizon_run > timedelta(hours=24):
+                try:
+                    async with async_session_factory() as horizon_session:
+                        await horizon_scan_recompute(horizon_session)
+                except Exception:  # noqa: BLE001
+                    logger.exception("horizon_scan_recompute failed")
+                last_horizon_run = _utcnow()
 
             # Hourly: re-evaluate alert rules across all courses (one task per course).
             if _utcnow() - last_alert_run > timedelta(hours=1):
