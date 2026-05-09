@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, UniqueConstraint, func
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,12 +11,24 @@ from app.models.base import Base, UUIDPrimaryKeyMixin
 
 class PronunciationScore(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "pronunciation_scores"
+    __table_args__ = (
+        Index(
+            "ix_pronunciation_scores_user_item",
+            "user_id",
+            "pronunciation_item_id",
+        ),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     course_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("courses.id"), nullable=False
+    )
+    pronunciation_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("pronunciation_items.id", ondelete="SET NULL"),
+        nullable=True,
     )
     language: Mapped[str] = mapped_column(String(20), nullable=False)
     target_text: Mapped[str] = mapped_column(String, nullable=False)

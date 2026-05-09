@@ -84,6 +84,7 @@ export function PronunciationPlayer({
           referenceText: current.text,
           courseId,
           language: pronSet.language,
+          pronunciationItemId: current.id,
         });
         setScoresByItem((prev) => ({ ...prev, [current.id]: result }));
         queryClient.invalidateQueries({

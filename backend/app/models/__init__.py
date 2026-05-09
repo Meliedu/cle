@@ -14,6 +14,12 @@ from app.models.flashcard import (
 )
 from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument, QuizFolder
 from app.models.scheduler import SchedulerModel
+from app.models.pronunciation import (
+    PronunciationFolder,
+    PronunciationItem,
+    PronunciationSet,
+    PronunciationSetDocument,
+)
 from app.models.score import PronunciationScore, StudentProgress
 from app.models.live_answer import LiveAnswer
 from app.models.session import LiveSession, SessionSummary
@@ -69,6 +75,10 @@ __all__ = [
     "FlashcardProgress",
     "SchedulerModel",
     "PronunciationScore",
+    "PronunciationFolder",
+    "PronunciationSet",
+    "PronunciationSetDocument",
+    "PronunciationItem",
     "StudentProgress",
     "SessionSummary",
     "CourseSummary",
