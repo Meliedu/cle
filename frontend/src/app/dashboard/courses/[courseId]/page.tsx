@@ -27,6 +27,7 @@ import { Leaderboard } from "@/components/gamification/leaderboard";
 import { BadgeDisplay } from "@/components/gamification/badge-display";
 import { SummaryCard } from "@/components/summary/summary-card";
 import { EnrollCodeCard } from "@/components/course/enroll-code-card";
+import { CourseDescriptionCard } from "@/components/course/course-description-card";
 import { CanvasTab } from "@/components/canvas/canvas-tab";
 import { CANVAS_ENABLED } from "@/lib/features";
 import { CourseAnalytics } from "@/components/analytics/course-analytics";
@@ -339,16 +340,11 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
           </div>
 
           {/* Description */}
-          <Card>
-            <CardHeader>
-              <CardTitle>About this course</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="leading-relaxed text-[var(--color-text-secondary)]">
-                {course.description ?? "No description provided."}
-              </p>
-            </CardContent>
-          </Card>
+          <CourseDescriptionCard
+            courseId={courseId}
+            description={course.description}
+            canEdit={isInstructor}
+          />
 
           {/* Enrollment code — instructors only */}
           {isInstructor && <EnrollCodeCard enrollCode={course.enroll_code} />}
