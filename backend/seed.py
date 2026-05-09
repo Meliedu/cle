@@ -32,8 +32,6 @@ async def seed():
             semester="2026-fall",
             instructor_id=instructor.id,
             enroll_code="DEMO2345",
-            # Phase 3 ship criterion: exercise the A/B-split adaptive path end-to-end in dev seed.
-            adaptive_engine_mode="random_50",
         )
         session.add(course)
         await session.flush()
