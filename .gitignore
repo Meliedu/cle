@@ -59,3 +59,4 @@ prompt/
 
 # Superpowers planning docs — local-only, not part of the shipped repo
 docs/superpowers/
+docs/adaptive_engine/
