@@ -172,8 +172,9 @@ The document processing pipeline is the core of Meli. When an instructor uploads
 ```
  Upload                Parse                 Chunk                  Embed                Store
 +------+  R2 store   +------+  Markdown    +------+  ~500 tok    +------+  vector     +------+
-| File | ----------> |Docling| ----------> |Chunker| ----------> |OpenAI| ----------> |pgvec |
-|      |             |Whisper|             |       |  overlap     |      |  1536 dim   | tor  |
+| File | ----------> |Docling| ----------> |Chunker| ----------> |OpenRtr| ---------> |pgvec |
+|      |             |Whisper|             |       |  overlap     | text- |  1536 dim   | tor  |
+|      |             |       |             |       |              |  3-lg |             |      |
 +------+             +------+             +------+              +------+             +------+
                          |                     |
                     PDF/DOCX/PPTX        Sentence-aligned
@@ -184,7 +185,7 @@ The document processing pipeline is the core of Meli. When an instructor uploads
 |-------|---------|---------|
 | **Parse** | [parser.py](backend/app/services/parser.py) | Docling for PDF/DOCX/PPTX with page-level extraction. Whisper for MP3/MP4. |
 | **Chunk** | [chunker.py](backend/app/services/chunker.py) | Sentence-aligned splitting at ~500 tokens with 50-token overlap. Page numbers preserved. |
-| **Embed** | [embedder.py](backend/app/services/embedder.py) | OpenAI `text-embedding-3-large` (1536 dims). Batched in groups of 100. |
+| **Embed** | [embedder.py](backend/app/services/embedder.py) | `openai/text-embedding-3-large` via OpenRouter, reduced to 1536 dims for chunk vectors. Batched in groups of 100. (Concept embeddings in Phase 2 use the native 3072 dim.) |
 | **Retrieve** | [retriever.py](backend/app/services/retriever.py) | Three modes: vector (pgvector cosine), full-text (tsvector + GIN), or hybrid (Reciprocal Rank Fusion). |
 | **Generate** | [generator.py](backend/app/services/generator.py) | OpenRouter LLM with automatic fallback. Primary model tried first; on JSON parse failure, secondary model retried. |
 
@@ -414,7 +415,7 @@ The concept layer adds the *meaning* axis on top of the existing evidence layer.
 | Tag inspection (read-only, polymorphic) | `/api/concept-tags/{target_kind}/{target_id}` ([concept_tags.py](backend/app/api/concept_tags.py)) |
 | Personal mastery + cohort view | `/api/users/me/courses/{id}/mastery`, `/api/courses/{id}/mastery` ([mastery.py](backend/app/api/mastery.py)) |
 | LLM extraction + 90-day replay | `POST /concepts/extract`, `POST /concepts/replay` (instructor-triggered, 409 if in-flight) |
-| Background jobs | `extract_concept_candidates`, `cluster_concept_candidates`, `tag_artifact_concepts`, `update_concept_mastery`, `decay_concept_mastery`, `replay_attempt_history` |
+| Background jobs | `extract_concept_candidates` (clustering runs inline within this handler), `tag_artifact_concepts`, `update_concept_mastery`, `replay_attempt_history`. Mastery decay runs as an in-worker cron block invoking `decay_due_mastery_rows` (gated by a `last_decay_run` watermark) — not a separate Task row. |
 
 **Mastery math.** Each attempt-recording endpoint enqueues `update_concept_mastery` after committing the user's attempt (try/except so attempt durability survives an enqueue failure). The handler joins `concept_tags` for the target, runs `α += w·outcome, β += w·(1−outcome)` for every tagged concept (chunk-inherited tags carry `weight × 0.7`), recomputes confidence, and appends a history row. A nightly cron applies HLR-style forgetting decay. Concept embeddings are stored on `concepts.embedding` for similarity search; HNSW is intentionally absent — pgvector caps HNSW at 2000 dims for `vector` and clustering runs in-process.
 
