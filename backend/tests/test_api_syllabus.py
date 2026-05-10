@@ -95,6 +95,105 @@ async def test_apply_only_works_on_parsed_status(
 
 
 @pytest.mark.asyncio
+async def test_concurrent_parsed_to_applying_transition_serializes(
+    db_session: AsyncSession,
+    own_course: Course,
+    logged_in_user: User,
+):
+    """Two concurrent attempts to flip parsed → applying must produce
+    exactly one winner. Tests the conditional UPDATE that backs
+    ``apply_import`` directly to avoid deadlocking on a shared
+    test-client AsyncSession.
+
+    Regression: apply_import previously did SELECT-status-then-update
+    without a row lock, so concurrent requests both passed the parsed
+    check and would run the applier twice.
+    """
+    import asyncio
+
+    from sqlalchemy import update
+    from tests.conftest import test_session_factory
+
+    imp = SyllabusImport(
+        course_id=own_course.id,
+        raw_text="x",
+        parsed_payload={"schema_version": "v1"},
+        status="parsed",
+        created_by=logged_in_user.id,
+    )
+    db_session.add(imp)
+    await db_session.commit()
+    await db_session.refresh(imp)
+    import_id, course_id = imp.id, own_course.id
+
+    async def try_transition() -> bool:
+        async with test_session_factory() as s:
+            row = (
+                await s.execute(
+                    update(SyllabusImport)
+                    .where(
+                        SyllabusImport.id == import_id,
+                        SyllabusImport.course_id == course_id,
+                        SyllabusImport.status == "parsed",
+                    )
+                    .values(status="applying")
+                    .returning(SyllabusImport.id)
+                )
+            ).scalar_one_or_none()
+            await s.commit()
+            return row is not None
+
+    results = await asyncio.gather(try_transition(), try_transition())
+    # Exactly one transition wins.
+    assert sum(1 for r in results if r) == 1
+
+
+@pytest.mark.asyncio
+async def test_apply_failure_marks_import_failed(
+    async_client: AsyncClient,
+    db_session: AsyncSession,
+    own_course: Course,
+    logged_in_user: User,
+    monkeypatch,
+):
+    """If apply_syllabus_payload raises, the import row must end up as
+    'failed' rather than stuck in 'applying'. The new flow rolls back
+    and explicitly stamps 'failed' so the UI can re-trigger."""
+    from app.api import syllabus as syllabus_api
+    from sqlalchemy import select
+
+    imp = SyllabusImport(
+        course_id=own_course.id,
+        raw_text="x",
+        parsed_payload={"schema_version": "v1"},
+        status="parsed",
+        created_by=logged_in_user.id,
+    )
+    db_session.add(imp)
+    await db_session.commit()
+    await db_session.refresh(imp)
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("simulated applier failure")
+
+    monkeypatch.setattr(syllabus_api, "apply_syllabus_payload", boom)
+
+    r = await async_client.post(
+        f"/api/courses/{own_course.id}/syllabus/imports/{imp.id}/apply",
+        json={"parsed_payload": {"schema_version": "v1"}},
+    )
+    assert r.status_code == 500
+
+    await db_session.rollback()
+    refreshed = (
+        await db_session.execute(
+            select(SyllabusImport).where(SyllabusImport.id == imp.id)
+        )
+    ).scalar_one()
+    assert refreshed.status == "failed"
+
+
+@pytest.mark.asyncio
 async def test_apply_creates_entities(
     async_client: AsyncClient,
     db_session: AsyncSession,

@@ -1,10 +1,13 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.api.deps import get_db, get_owned_course
 from app.models import Document, SyllabusImport, Task
@@ -95,45 +98,92 @@ async def apply_import(
     db: AsyncSession = Depends(get_db),
     course: Course = Depends(get_owned_course),
 ):
-    imp = (
+    # Atomic state transition: parsed → applying. The conditional UPDATE
+    # is the actual lock — only one concurrent request flips the row.
+    # Without it, two requests both pass a SELECT status='parsed' check
+    # and both run apply_syllabus_payload, duplicating curriculum because
+    # the applier dedupes by select-then-insert with no DB-level uniqueness.
+    transitioned = (
         await db.execute(
-            select(SyllabusImport).where(
+            update(SyllabusImport)
+            .where(
                 SyllabusImport.id == import_id,
                 SyllabusImport.course_id == course.id,
+                SyllabusImport.status == "parsed",
             )
+            .values(status="applying")
+            .returning(SyllabusImport.id)
         )
     ).scalar_one_or_none()
-    if not imp:
-        raise HTTPException(status_code=404, detail="import not found")
-    if imp.status != "parsed":
+    if transitioned is None:
+        # Either the row doesn't exist, doesn't belong to this course, or
+        # isn't in 'parsed' state. Probe to give the right error code.
+        existing = (
+            await db.execute(
+                select(SyllabusImport.status).where(
+                    SyllabusImport.id == import_id,
+                    SyllabusImport.course_id == course.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is None:
+            raise HTTPException(status_code=404, detail="import not found")
         raise HTTPException(
             status_code=409,
-            detail=f"only 'parsed' imports can be applied (current: {imp.status})",
+            detail=f"only 'parsed' imports can be applied (current: {existing})",
         )
-    await apply_syllabus_payload(
-        db,
-        course_id=course.id,
-        payload=body.parsed_payload,
-        applied_by=course.instructor_id,
-    )
-    imp.parsed_payload = body.parsed_payload
-    imp.status = "applied"
-    imp.applied_at = datetime.now(timezone.utc)
-    imp.applied_by = course.instructor_id
-
-    # supersede earlier applied imports for the same course
-    earlier = (
-        await db.execute(
-            select(SyllabusImport).where(
-                SyllabusImport.course_id == course.id,
-                SyllabusImport.id != imp.id,
-                SyllabusImport.status == "applied",
-            )
-        )
-    ).scalars().all()
-    for e in earlier:
-        e.status = "superseded"
-
+    # Commit the transition immediately so concurrent requests see
+    # 'applying' and bail at the conditional UPDATE.
     await db.commit()
-    await db.refresh(imp)
+
+    try:
+        await apply_syllabus_payload(
+            db,
+            course_id=course.id,
+            payload=body.parsed_payload,
+            applied_by=course.instructor_id,
+        )
+    except Exception:
+        # Roll back to 'failed' so the import doesn't get stuck in
+        # 'applying' forever and so the UI can surface the failure.
+        logger.exception("apply_syllabus_payload failed for %s", import_id)
+        await db.rollback()
+        await db.execute(
+            update(SyllabusImport)
+            .where(SyllabusImport.id == import_id)
+            .values(status="failed")
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=500, detail="syllabus apply failed"
+        )
+
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        update(SyllabusImport)
+        .where(SyllabusImport.id == import_id)
+        .values(
+            parsed_payload=body.parsed_payload,
+            status="applied",
+            applied_at=now,
+            applied_by=course.instructor_id,
+        )
+    )
+    # supersede earlier applied imports for the same course
+    await db.execute(
+        update(SyllabusImport)
+        .where(
+            SyllabusImport.course_id == course.id,
+            SyllabusImport.id != import_id,
+            SyllabusImport.status == "applied",
+        )
+        .values(status="superseded")
+    )
+    await db.commit()
+
+    imp = (
+        await db.execute(
+            select(SyllabusImport).where(SyllabusImport.id == import_id)
+        )
+    ).scalar_one()
     return APIResponse(success=True, data=SyllabusImportResponse.model_validate(imp))

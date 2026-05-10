@@ -153,7 +153,7 @@ class SyllabusImport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "syllabus_imports"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending','parsed','applied','failed','superseded')",
+            "status IN ('pending','parsed','applying','applied','failed','superseded')",
             name="ck_syllabus_imports_status_valid",
         ),
     )
