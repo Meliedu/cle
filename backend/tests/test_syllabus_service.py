@@ -13,7 +13,11 @@ from app.models import (
     SyllabusImport,
 )
 from app.models.course import Course
-from app.services.syllabus import apply_syllabus_payload, parse_syllabus_text
+from app.services.syllabus import (
+    SyllabusValidationError,
+    apply_syllabus_payload,
+    parse_syllabus_text,
+)
 
 
 @pytest.mark.asyncio
@@ -48,6 +52,76 @@ async def test_parse_syllabus_text_returns_payload(monkeypatch):
     payload = await parse_syllabus_text("Course X. Week 1: Intro...")
     assert payload["schema_version"] == "v1"
     assert len(payload["modules"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_parse_syllabus_text_rejects_unknown_bloom_level(monkeypatch):
+    """Out-of-enum values must fail strict validation rather than reach
+    the database."""
+    bad = {
+        "modules": [],
+        "meetings": [],
+        "objectives": [
+            {
+                "scope": "course",
+                "statement": "Do thing",
+                "bloom_level": "transcend",  # not a valid enum value
+            }
+        ],
+        "assignments": [],
+    }
+
+    async def fake_llm(text: str) -> dict:
+        return bad
+
+    monkeypatch.setattr("app.services.syllabus._llm_extract", fake_llm)
+    with pytest.raises(SyllabusValidationError):
+        await parse_syllabus_text("anything")
+
+
+@pytest.mark.asyncio
+async def test_parse_syllabus_text_rejects_oversized_lists(monkeypatch):
+    """A prompt-injected payload with hundreds of fictional assignments
+    must be capped at validation, not persisted as-is."""
+    bad = {
+        "modules": [],
+        "meetings": [],
+        "objectives": [],
+        "assignments": [
+            {
+                "title": f"Junk {i}",
+                "kind": "essay",
+                "due_at": "2026-09-01T10:00:00Z",
+            }
+            for i in range(500)
+        ],
+    }
+
+    async def fake_llm(text: str) -> dict:
+        return bad
+
+    monkeypatch.setattr("app.services.syllabus._llm_extract", fake_llm)
+    with pytest.raises(SyllabusValidationError):
+        await parse_syllabus_text("anything")
+
+
+@pytest.mark.asyncio
+async def test_parse_syllabus_text_rejects_oversize_string(monkeypatch):
+    """Strings beyond column-safe lengths must be rejected so apply can't
+    fail mid-transaction with a string-too-long DB error."""
+    bad = {
+        "modules": [{"name": "A" * 5_000, "order_index": 1}],
+        "meetings": [],
+        "objectives": [],
+        "assignments": [],
+    }
+
+    async def fake_llm(text: str) -> dict:
+        return bad
+
+    monkeypatch.setattr("app.services.syllabus._llm_extract", fake_llm)
+    with pytest.raises(SyllabusValidationError):
+        await parse_syllabus_text("anything")
 
 
 @pytest.mark.asyncio
