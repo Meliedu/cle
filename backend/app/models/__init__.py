@@ -1,5 +1,6 @@
 from app.models.api_usage import ApiUsage
 from app.models.base import Base
+from app.models.cron_run import CronRun
 from app.models.canvas import CanvasSyncEvent, CanvasUserCredential, PendingEnrollment
 from app.models.integration import CanvasIntegration
 from app.models.chunk import Chunk
@@ -86,6 +87,7 @@ __all__ = [
     "LiveSession",
     "Task",
     "ApiUsage",
+    "CronRun",
     "CanvasIntegration",
     "CanvasSyncEvent",
     "CanvasUserCredential",

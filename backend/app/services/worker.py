@@ -1,15 +1,19 @@
 import asyncio
+import hashlib
 import logging
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Awaitable, Callable
 
 import sqlalchemy as sa
 from sqlalchemy import select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_factory
 from app.models.api_usage import ApiUsage
+from app.models.cron_run import CronRun
 from app.models.task import Task
 from app.services.storage import delete_file_safe
 
@@ -418,132 +422,142 @@ async def horizon_scan_recompute(session: AsyncSession) -> int:
     return len(course_ids)
 
 
-async def _tick_stuck_reset(
-    now: datetime, last_run: datetime
-) -> tuple[bool, datetime]:
-    """Every 5 min: reset stuck tasks + reconcile orphaned documents."""
-    if now - last_run <= timedelta(minutes=5):
-        return False, last_run
-    try:
-        async with async_session_factory() as reset_session:
-            await _reset_stuck_tasks(reset_session)
-            await _reconcile_orphaned_documents(reset_session)
-    except Exception:  # noqa: BLE001
-        logger.exception("Failed to run reconciliation")
-    return True, _utcnow()
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+# How long before a stale ``last_success_at`` reading allows a kick-off
+# even with cadence still nominally not elapsed. Unused — semantics rely on
+# cadence comparison alone — kept for documentation symmetry.
 
 
-async def _tick_hourly_prune(
-    now: datetime, last_run: datetime
-) -> tuple[bool, datetime]:
-    """Hourly: prune api_usage + expired OAuth nonces."""
-    if now - last_run <= timedelta(hours=1):
-        return False, last_run
-    # ``prune_nonces_and_usage`` already wraps its body in try/except so a
-    # transient DB error can't crash the worker loop.
-    await prune_nonces_and_usage()
-    return True, _utcnow()
+def _cron_lock_key(name: str) -> int:
+    """Stable 63-bit advisory-lock key for a cron-name. Salted so it can't
+    collide with course/concept advisory locks elsewhere in the codebase."""
+    h = hashlib.blake2b(digest_size=8)
+    h.update(name.encode("utf-8"))
+    h.update(b"cron_run")
+    return int.from_bytes(h.digest(), "big") & 0x7FFFFFFFFFFFFFFF
 
 
-async def _tick_daily_overdue(
-    now: datetime, last_run: datetime
-) -> tuple[bool, datetime]:
-    """Daily: flip overdue not_started/in_progress submissions to late."""
-    if now - last_run <= timedelta(hours=24):
-        return False, last_run
-    try:
-        async with async_session_factory() as overdue_session:
-            await mark_overdue_submissions(overdue_session)
-    except Exception:  # noqa: BLE001
-        logger.exception("mark_overdue_submissions job failed")
-    return True, _utcnow()
+async def _claim_and_run_cron(
+    name: str,
+    cadence: timedelta,
+    body: Callable[[], Awaitable[None]],
+) -> None:
+    """Run ``body()`` if the cron is due; advance ``last_success_at`` only
+    after the body returns successfully.
 
-
-async def _tick_daily_decay(
-    now: datetime, last_run: datetime
-) -> tuple[bool, datetime]:
-    """Daily HLR-style mastery decay sweep.
-
-    Runs after the overdue tick so the canonical ordering is:
-        stuck-reset → prune → overdue → decay
-    Decay is idempotent within a 24 h window (rows whose ``last_decay_at``
-    is already > cutoff are excluded), so a missed tick or an extra retry
-    is safe.
+    Acquires a per-name transaction-scoped advisory lock that is held across
+    the cadence check, the body run, and the watermark advance. Concurrent
+    workers calling the same cron either skip immediately
+    (``pg_try_advisory_xact_lock`` returns false) or — once the holder
+    commits — see the freshly-bumped watermark and skip on cadence. A
+    failure in ``body`` raises through, the surrounding rollback releases
+    the lock, and ``last_success_at`` stays where it was so the next tick
+    retries instead of waiting a full cadence interval.
     """
-    if now - last_run <= timedelta(hours=24):
-        return False, last_run
-    try:
-        async with async_session_factory() as decay_session:
-            from app.services.mastery import decay_due_mastery_rows
-            n = await decay_due_mastery_rows(decay_session)
-            logger.info("HLR decay touched %d mastery rows", n)
-    except Exception:  # noqa: BLE001
-        logger.exception("decay_due_mastery_rows job failed")
-    return True, _utcnow()
+    lock_key = _cron_lock_key(name)
+    # Lazy seed in its own transaction so a body failure later doesn't
+    # roll the seed row back. Subsequent boots see the persisted row.
+    async with async_session_factory() as seed_session:
+        await seed_session.execute(
+            pg_insert(CronRun)
+            .values(name=name, last_success_at=_EPOCH)
+            .on_conflict_do_nothing(index_elements=["name"])
+        )
+        await seed_session.commit()
+
+    async with async_session_factory() as s:
+        held = (
+            await s.execute(
+                text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": lock_key}
+            )
+        ).scalar_one()
+        if not held:
+            return
+
+        last = (
+            await s.execute(
+                select(CronRun.last_success_at).where(CronRun.name == name)
+            )
+        ).scalar_one()
+        now = _utcnow()
+        if now - last < cadence:
+            await s.commit()  # release lock, nothing to do
+            return
+
+        body_ok = False
+        try:
+            await body()
+            body_ok = True
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Cron %s body failed; watermark NOT advanced", name
+            )
+
+        if body_ok:
+            await s.execute(
+                update(CronRun)
+                .where(CronRun.name == name)
+                .values(last_success_at=now)
+            )
+        # Commit either way to release the advisory lock without thrashing
+        # the seed row. ``last_success_at`` only moves on success.
+        await s.commit()
 
 
-async def _tick_daily_horizon_scan(
-    now: datetime, last_run: datetime
-) -> tuple[bool, datetime]:
-    """Daily: enqueue recompute for courses with deadlines/meetings entering 24h."""
-    if now - last_run <= timedelta(hours=24):
-        return False, last_run
-    try:
-        async with async_session_factory() as horizon_session:
-            await horizon_scan_recompute(horizon_session)
-    except Exception:  # noqa: BLE001
-        logger.exception("horizon_scan_recompute failed")
-    return True, _utcnow()
+async def _body_stuck_reset() -> None:
+    async with async_session_factory() as session:
+        await _reset_stuck_tasks(session)
+        await _reconcile_orphaned_documents(session)
 
 
-async def _tick_hourly_alerts(
-    now: datetime, last_run: datetime
-) -> tuple[bool, datetime]:
-    """Hourly: enqueue an evaluate_instructor_alerts task per active course."""
-    if now - last_run <= timedelta(hours=1):
-        return False, last_run
-    try:
-        async with async_session_factory() as alert_session:
-            from app.models import Course
-
-            ids = (
-                await alert_session.execute(
-                    select(Course.id).where(Course.deleted_at.is_(None))
-                )
-            ).scalars().all()
-            for cid in ids:
-                alert_session.add(
-                    Task(
-                        task_type="evaluate_instructor_alerts",
-                        payload={"course_id": str(cid)},
-                        status="pending",
-                    )
-                )
-            await alert_session.commit()
-    except Exception:  # noqa: BLE001
-        logger.exception("alert enqueue failed")
-    return True, _utcnow()
+async def _body_overdue() -> None:
+    async with async_session_factory() as session:
+        await mark_overdue_submissions(session)
 
 
-async def _tick_quarterly_retune(
-    now: datetime, last_run: datetime
-) -> tuple[bool, datetime]:
-    """Quarterly: retune action coefficients from action_outcomes telemetry."""
-    if now - last_run <= timedelta(days=90):
-        return False, last_run
-    try:
-        async with async_session_factory() as tune_session:
-            tune_session.add(
+async def _body_decay() -> None:
+    from app.services.mastery import decay_due_mastery_rows
+
+    async with async_session_factory() as session:
+        n = await decay_due_mastery_rows(session)
+        logger.info("HLR decay touched %d mastery rows", n)
+
+
+async def _body_horizon_scan() -> None:
+    async with async_session_factory() as session:
+        await horizon_scan_recompute(session)
+
+
+async def _body_alerts_enqueue() -> None:
+    from app.models import Course
+
+    async with async_session_factory() as session:
+        ids = (
+            await session.execute(
+                select(Course.id).where(Course.deleted_at.is_(None))
+            )
+        ).scalars().all()
+        for cid in ids:
+            session.add(
                 Task(
-                    task_type="tune_action_coefficients",
-                    payload={"window_days": 90},
+                    task_type="evaluate_instructor_alerts",
+                    payload={"course_id": str(cid)},
                     status="pending",
                 )
             )
-            await tune_session.commit()
-    except Exception:  # noqa: BLE001
-        logger.exception("retune enqueue failed")
-    return True, _utcnow()
+        await session.commit()
+
+
+async def _body_retune_enqueue() -> None:
+    async with async_session_factory() as session:
+        session.add(
+            Task(
+                task_type="tune_action_coefficients",
+                payload={"window_days": 90},
+                status="pending",
+            )
+        )
+        await session.commit()
 
 
 async def _process_claimed_task(task: Task) -> None:
@@ -584,50 +598,25 @@ async def _process_claimed_task(task: Task) -> None:
             logger.exception("fail_task itself failed for %s", task_id)
 
 
-async def _run_cron_ticks(
-    now: datetime, watermarks: dict[str, datetime]
-) -> None:
-    """Run all timed cron ticks in canonical order, mutating watermarks
-    in place. Each ``_tick_*`` helper updates its own watermark
-    unconditionally so transient failures don't thrash."""
-    _, watermarks["stuck_reset"] = await _tick_stuck_reset(
-        now, watermarks["stuck_reset"]
-    )
-    _, watermarks["prune"] = await _tick_hourly_prune(now, watermarks["prune"])
-    _, watermarks["overdue"] = await _tick_daily_overdue(now, watermarks["overdue"])
-    _, watermarks["decay"] = await _tick_daily_decay(now, watermarks["decay"])
-    _, watermarks["horizon"] = await _tick_daily_horizon_scan(
-        now, watermarks["horizon"]
-    )
-    _, watermarks["alert"] = await _tick_hourly_alerts(now, watermarks["alert"])
-    _, watermarks["retune"] = await _tick_quarterly_retune(
-        now, watermarks["retune"]
-    )
-
-
-def _initial_watermarks() -> dict[str, datetime]:
-    """Seed cron watermarks so daily/hourly ticks fire after their cadence
-    interval rather than immediately at boot. ``stuck_reset`` is seeded
-    one hour in the past so the very first iteration triggers a
-    reconciliation pass — useful when a worker restarts mid-shift."""
-    now = _utcnow()
-    return {
-        "stuck_reset": now - timedelta(hours=1),
-        "prune": now,
-        "overdue": now,
-        "decay": now,
-        "horizon": now,
-        "alert": now,
-        "retune": now,
-    }
+async def _run_cron_ticks() -> None:
+    """Run all due cron ticks in canonical order. Each call goes through
+    ``_claim_and_run_cron`` which checks ``cron_runs.last_success_at``,
+    serializes via advisory lock, and only advances the watermark on
+    success. Any single failure is logged but doesn't abort the rest."""
+    await _claim_and_run_cron("stuck_reset", timedelta(minutes=5), _body_stuck_reset)
+    await _claim_and_run_cron("prune", timedelta(hours=1), prune_nonces_and_usage)
+    await _claim_and_run_cron("overdue", timedelta(hours=24), _body_overdue)
+    await _claim_and_run_cron("decay", timedelta(hours=24), _body_decay)
+    await _claim_and_run_cron("horizon", timedelta(hours=24), _body_horizon_scan)
+    await _claim_and_run_cron("alert", timedelta(hours=1), _body_alerts_enqueue)
+    await _claim_and_run_cron("retune", timedelta(days=90), _body_retune_enqueue)
 
 
 async def worker_loop(shutdown_event: asyncio.Event) -> None:
     logger.info("Task worker started")
-    watermarks = _initial_watermarks()
     while not shutdown_event.is_set():
         try:
-            await _run_cron_ticks(_utcnow(), watermarks)
+            await _run_cron_ticks()
             # Short-lived claim session so we don't hold a DB connection
             # open during the full processing pipeline.
             async with async_session_factory() as claim_session:
