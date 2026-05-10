@@ -3,6 +3,7 @@ from datetime import datetime, timezone, timedelta
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -191,6 +192,115 @@ async def test_list_submissions_cross_course_idor_blocked(
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_submit_after_due_is_recorded_late(
+    db_session: AsyncSession, test_student: User, logged_in_user: User,
+):
+    """Posting status='submitted' after the deadline must be persisted as
+    'late' regardless of what the client sent.
+
+    Regression: client status was trusted, so a late submitter could be
+    graded as on-time and adaptive signals (missed_deadline alerts,
+    student_falling_behind) silently misclassified them.
+    """
+    course = Course(
+        name="LateTest", language="english",
+        instructor_id=logged_in_user.id, enroll_code="LATE-1",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    db_session.add(Enrollment(course_id=course.id, user_id=test_student.id, role="student"))
+    a = Assignment(
+        course_id=course.id, title="Past due", kind="essay",
+        due_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        is_published=True, created_by=logged_in_user.id,
+    )
+    db_session.add(a)
+    await db_session.commit()
+    await db_session.refresh(a)
+
+    async def override_db():
+        yield db_session
+
+    async def override_user():
+        return test_student
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test",
+            headers={"Authorization": "Bearer x"},
+        ) as ac:
+            r = await ac.post(
+                f"/api/courses/{course.id}/assignments/{a.id}/submission",
+                json={"status": "submitted"},
+            )
+            assert r.status_code == 200
+            assert r.json()["data"]["status"] == "late"
+            assert r.json()["data"]["submitted_at"] is not None
+    finally:
+        app.dependency_overrides.clear()
+
+    sub = (
+        await db_session.execute(
+            select(AssignmentSubmission).where(
+                AssignmentSubmission.assignment_id == a.id,
+                AssignmentSubmission.user_id == test_student.id,
+            )
+        )
+    ).scalar_one()
+    assert sub.status == "late"
+
+
+@pytest.mark.asyncio
+async def test_submit_within_grace_window_is_on_time(
+    db_session: AsyncSession, test_student: User, logged_in_user: User,
+):
+    """A submission landing within the 5-minute grace window is on-time.
+
+    Absorbs client/server clock skew without misclassifying borderline
+    submissions as late.
+    """
+    course = Course(
+        name="Grace", language="english",
+        instructor_id=logged_in_user.id, enroll_code="GRACE-1",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    db_session.add(Enrollment(course_id=course.id, user_id=test_student.id, role="student"))
+    a = Assignment(
+        course_id=course.id, title="Just past", kind="essay",
+        due_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+        is_published=True, created_by=logged_in_user.id,
+    )
+    db_session.add(a)
+    await db_session.commit()
+    await db_session.refresh(a)
+
+    async def override_db():
+        yield db_session
+
+    async def override_user():
+        return test_student
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test",
+            headers={"Authorization": "Bearer x"},
+        ) as ac:
+            r = await ac.post(
+                f"/api/courses/{course.id}/assignments/{a.id}/submission",
+                json={"status": "submitted"},
+            )
+            assert r.status_code == 200
+            assert r.json()["data"]["status"] == "submitted"
+    finally:
+        app.dependency_overrides.clear()
+
+
 async def test_grade_submission_cross_course_idor_blocked(
     db_session: AsyncSession,
     two_courses_with_assignments: tuple,

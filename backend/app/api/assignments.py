@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -17,6 +17,25 @@ from app.schemas.curriculum import (
 )
 
 router = APIRouter(prefix="/courses/{course_id}/assignments", tags=["curriculum"])
+
+# Slack to absorb clock skew between client and server. Submissions that
+# land within this window after due_at are still treated as on-time.
+LATE_GRACE = timedelta(minutes=5)
+
+
+def _resolve_submission_status(
+    requested: str, due_at: datetime | None, now: datetime
+) -> str:
+    """Server-side derivation of submission state.
+
+    A client-supplied ``submitted`` is downgraded to ``late`` when ``now``
+    is past ``due_at + LATE_GRACE``. Without this, a student can POST
+    ``status='submitted'`` after the deadline and the row stays on-time —
+    the overdue cron only flips ``not_started``/``in_progress`` rows.
+    """
+    if requested != "submitted" or due_at is None:
+        return requested
+    return "late" if now > due_at + LATE_GRACE else "submitted"
 
 
 async def _enrolled(course_id: uuid.UUID, user: User, db: AsyncSession) -> Course:
@@ -150,16 +169,18 @@ async def upsert_my_submission(
     )
     sub = res.scalar_one_or_none()
     now = datetime.now(timezone.utc)
+    effective_status = _resolve_submission_status(body.status, asn.due_at, now)
+    is_terminal_submit = effective_status in ("submitted", "late")
     if sub is None:
         sub = AssignmentSubmission(
-            assignment_id=assignment_id, user_id=user.id, status=body.status,
-            submitted_at=now if body.status == "submitted" else None,
+            assignment_id=assignment_id, user_id=user.id, status=effective_status,
+            submitted_at=now if is_terminal_submit else None,
             submission_payload=body.submission_payload,
         )
         db.add(sub)
     else:
-        sub.status = body.status
-        if body.status == "submitted" and sub.submitted_at is None:
+        sub.status = effective_status
+        if is_terminal_submit and sub.submitted_at is None:
             sub.submitted_at = now
         if body.submission_payload is not None:
             sub.submission_payload = body.submission_payload
@@ -176,8 +197,8 @@ async def upsert_my_submission(
             )
         )
         sub = res.scalar_one()
-        sub.status = body.status
-        if body.status == "submitted" and sub.submitted_at is None:
+        sub.status = effective_status
+        if is_terminal_submit and sub.submitted_at is None:
             sub.submitted_at = now
         if body.submission_payload is not None:
             sub.submission_payload = body.submission_payload
