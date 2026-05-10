@@ -201,6 +201,65 @@ async def test_click_other_users_action_404(
 
 
 @pytest.mark.asyncio
+async def test_serve_telemetry_idempotent_under_repeated_polls(
+    db_session, async_client: AsyncClient, logged_in_user: User
+):
+    """Two GETs back-to-back must not insert two action_outcomes rows
+    per served NextAction.
+
+    Regression: ``action_outcomes.next_action_id`` had no unique constraint,
+    so concurrent Today-page hits inserted duplicates and inflated A/B
+    served/clicked/completed counts.
+    """
+    course = Course(
+        name="Idempotent serve",
+        language="en",
+        instructor_id=logged_in_user.id,
+        enroll_code="API-IDS",
+        adaptive_engine_mode="on",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    c = Concept(course_id=course.id, name="x", status="approved")
+    db_session.add(c)
+    await db_session.flush()
+    db_session.add(
+        ConceptMastery(
+            user_id=logged_in_user.id, concept_id=c.id, course_id=course.id,
+            alpha=Decimal("1.000"), beta=Decimal("2.000"),
+            confidence=Decimal("0.600"),
+        )
+    )
+    await db_session.commit()
+
+    # First poll materializes + records telemetry.
+    res1 = await async_client.get(f"/api/users/me/courses/{course.id}/next-actions")
+    assert res1.status_code == 200
+    # Second poll within the lazy-refresh window must reuse existing rows
+    # and skip telemetry insert via ON CONFLICT DO NOTHING.
+    res2 = await async_client.get(f"/api/users/me/courses/{course.id}/next-actions")
+    assert res2.status_code == 200
+    await db_session.rollback()
+
+    served = (await db_session.execute(
+        __import__("sqlalchemy").select(NextAction).where(
+            NextAction.user_id == logged_in_user.id, NextAction.course_id == course.id
+        )
+    )).scalars().all()
+    outcomes = (await db_session.execute(
+        __import__("sqlalchemy").select(ActionOutcome).where(
+            ActionOutcome.user_id == logged_in_user.id,
+            ActionOutcome.course_id == course.id,
+            ActionOutcome.next_action_id.is_not(None),
+        )
+    )).scalars().all()
+    # One outcome per served action — never doubled by repeat polling.
+    assert len(outcomes) == len(served)
+    next_action_ids = [o.next_action_id for o in outcomes]
+    assert len(next_action_ids) == len(set(next_action_ids))
+
+
+@pytest.mark.asyncio
 async def test_attempt_enqueue_is_deduped(
     db_session, async_client: AsyncClient, test_instructor: User
 ):

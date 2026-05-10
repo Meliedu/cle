@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -61,33 +62,30 @@ async def list_next_actions(
     served = await record_serve(db, [r.id for r in rows])
 
     # Telemetry: one observational action_outcomes row per served row.
-    # Idempotent at session level — if a row already exists with this
-    # next_action_id we skip (handles repeat polling within the same minute).
+    # Race-idempotent via the partial unique index
+    # ``uq_action_outcomes_next_action_id`` (WHERE next_action_id IS NOT NULL).
+    # The previous SELECT-then-INSERT could let two concurrent Today-page
+    # requests both observe "no row exists" and both insert, inflating
+    # served/clicked/completed counts in A/B summaries.
     if served:
-        existing = (
-            await db.execute(
-                select(ActionOutcome.next_action_id).where(
-                    ActionOutcome.next_action_id.in_([r.id for r in served])
-                )
-            )
-        ).scalars().all()
-        skip_ids = set(existing)
-        new_outcomes = [
-            ActionOutcome(
-                next_action_id=r.id,
-                user_id=r.user_id,
-                course_id=r.course_id,
-                action_type=r.action_type,
-                target_kind=r.target_kind,
-                target_id=r.target_id,
-                engine_variant=r.engine_variant,
-                served_at=r.served_at,
-            )
-            for r in served if r.id not in skip_ids
-        ]
-        if new_outcomes:
-            db.add_all(new_outcomes)
-            await db.commit()
+        stmt = pg_insert(ActionOutcome).values([
+            {
+                "next_action_id": r.id,
+                "user_id": r.user_id,
+                "course_id": r.course_id,
+                "action_type": r.action_type,
+                "target_kind": r.target_kind,
+                "target_id": r.target_id,
+                "engine_variant": r.engine_variant,
+                "served_at": r.served_at,
+            }
+            for r in served
+        ]).on_conflict_do_nothing(
+            index_elements=["next_action_id"],
+            index_where=text("next_action_id IS NOT NULL"),
+        )
+        await db.execute(stmt)
+        await db.commit()
 
     # If mode resolved to 'off' the list is empty; record a single off-arm
     # observational row so the A/B query has data on both sides. Cap to one

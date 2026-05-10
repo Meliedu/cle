@@ -110,6 +110,16 @@ class ActionOutcome(UUIDPrimaryKeyMixin, Base):
             "course_id",
             "action_type",
         ),
+        # Partial unique on next_action_id so concurrent serve telemetry
+        # writes collide on ON CONFLICT DO NOTHING instead of inserting
+        # duplicate observational rows. Off-arm sentinel rows leave
+        # next_action_id NULL and are skipped by the partial predicate.
+        Index(
+            "uq_action_outcomes_next_action_id",
+            "next_action_id",
+            unique=True,
+            postgresql_where=text("next_action_id IS NOT NULL"),
+        ),
     )
 
     next_action_id: Mapped[uuid.UUID | None] = mapped_column(
