@@ -68,6 +68,71 @@ async def _seed_active_integration(
 
 
 @pytest.mark.asyncio
+async def test_claim_due_integration_skips_locked_rows(db_session):
+    """A second ``_claim_due_integration`` call in another session
+    must skip the row that the first session already holds a FOR UPDATE
+    lock on, falling through to the next due integration.
+
+    Regression: the old ``_due_integrations`` query had no row locking,
+    so concurrent workers could both pick the same integration before
+    either finished syncing, producing duplicate sync events and
+    enrollment unique-constraint races.
+    """
+    from tests.conftest import test_session_factory
+
+    _, _, integration_a = await _seed_active_integration(
+        db_session, canvas_course_id="111"
+    )
+    instructor_b = User(
+        better_auth_id="dev_sync_inst_b",
+        email="sync-b@ust.hk",
+        full_name="B",
+        role="instructor",
+    )
+    db_session.add(instructor_b)
+    await db_session.flush()
+    course_b = Course(
+        name="Sync B",
+        language="english",
+        instructor_id=instructor_b.id,
+        enroll_code="SYNC-B",
+    )
+    db_session.add(course_b)
+    await db_session.flush()
+    integration_b = CanvasIntegration(
+        course_id=course_b.id,
+        connected_by_user_id=instructor_b.id,
+        canvas_course_id="222",
+        canvas_base_url="https://canvas.ust.hk",
+        sync_status="active",
+    )
+    db_session.add(integration_b)
+    await db_session.commit()
+
+    # Hold a FOR UPDATE lock on integration_a in session A, then call
+    # _claim_due_integration in a fresh session B. SKIP LOCKED must hop
+    # past the locked row and return integration_b.
+    async with test_session_factory() as session_a:
+        first_claim = await canvas_sync._claim_due_integration(session_a)
+        assert first_claim is not None
+        a_id = first_claim.id
+
+        async with test_session_factory() as session_b:
+            second_claim = await canvas_sync._claim_due_integration(session_b)
+
+        assert second_claim is not None
+        assert second_claim.id != a_id
+
+    # And the in-memory ``exclude`` set must keep us from re-claiming an
+    # already-processed integration in the same scheduler pass.
+    async with test_session_factory() as session_c:
+        excluded = await canvas_sync._claim_due_integration(
+            session_c, exclude={integration_a.id, integration_b.id}
+        )
+    assert excluded is None
+
+
+@pytest.mark.asyncio
 async def test_sync_writes_roster_diff_and_file_scan_events(
     db_session, monkeypatch
 ):

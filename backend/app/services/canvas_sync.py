@@ -148,20 +148,40 @@ async def sync_integration(db, integration: CanvasIntegration) -> None:
         await db.commit()
 
 
-async def _due_integrations(db) -> list[CanvasIntegration]:
+async def _claim_due_integration(
+    db, exclude: set | None = None
+) -> CanvasIntegration | None:
+    """Atomically claim one due integration.
+
+    ``SELECT ... FOR UPDATE SKIP LOCKED`` ensures concurrent workers (or
+    concurrent scheduler iterations within one worker) process disjoint
+    sets — a row already locked elsewhere is invisible to the next caller.
+
+    The ``exclude`` set tracks integrations the caller has already
+    processed in the current scheduler pass. Without it, a sync that
+    errors out — and therefore doesn't advance ``last_roster_sync_at`` —
+    would be re-claimed on the next iteration of the same pass and
+    retried in a tight loop. Tracking processed IDs in memory preserves
+    the original retry-on-error semantics: failures retry every
+    ``SCHEDULER_POLL_SECONDS`` (5 min), not every cadence interval (24 h).
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=SYNC_INTERVAL_HOURS)
-    rows = (
-        await db.execute(
-            select(CanvasIntegration).where(
-                CanvasIntegration.sync_status == "active",
-                or_(
-                    CanvasIntegration.last_roster_sync_at.is_(None),
-                    CanvasIntegration.last_roster_sync_at < cutoff,
-                ),
-            )
+    stmt = (
+        select(CanvasIntegration)
+        .where(
+            CanvasIntegration.sync_status == "active",
+            or_(
+                CanvasIntegration.last_roster_sync_at.is_(None),
+                CanvasIntegration.last_roster_sync_at < cutoff,
+            ),
         )
-    ).scalars().all()
-    return list(rows)
+        .with_for_update(skip_locked=True)
+        .limit(1)
+    )
+    if exclude:
+        stmt = stmt.where(CanvasIntegration.id.notin_(exclude))
+    row = (await db.execute(stmt)).scalar_one_or_none()
+    return row
 
 
 async def run_scheduler(shutdown_event: asyncio.Event | None = None) -> None:
@@ -170,8 +190,18 @@ async def run_scheduler(shutdown_event: asyncio.Event | None = None) -> None:
     while True:
         try:
             async with async_session_factory() as session:
-                due = await _due_integrations(session)
-                for integration in due:
+                # Per-pass processed set so an erroring sync (which doesn't
+                # bump last_roster_sync_at) isn't re-claimed within the
+                # same pass. Cleared at the next pass — failures retry on
+                # the next 5-minute scheduler poll.
+                processed: set = set()
+                while True:
+                    integration = await _claim_due_integration(
+                        session, exclude=processed
+                    )
+                    if integration is None:
+                        break
+                    processed.add(integration.id)
                     try:
                         await sync_integration(session, integration)
                     except Exception:  # noqa: BLE001
