@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,29 +54,16 @@ def compute_confidence(alpha: Decimal, beta: Decimal) -> Decimal:
     return Decimal(f"{val:.3f}")
 
 
-async def _get_or_create_mastery(
+async def _ensure_mastery_row(
     db: AsyncSession,
     *,
     user_id: uuid.UUID,
     concept_id: uuid.UUID,
     course_id: uuid.UUID,
-) -> ConceptMastery:
-    # Try existing first — fastest path for most attempts.
-    row = (
-        await db.execute(
-            select(ConceptMastery).where(
-                ConceptMastery.user_id == user_id,
-                ConceptMastery.concept_id == concept_id,
-            )
-        )
-    ).scalar_one_or_none()
-    if row is not None:
-        return row
-
+) -> None:
+    """Ensure a ``ConceptMastery`` row exists for (user, concept). No-op if
+    it already does. Race-safe via ``ON CONFLICT DO NOTHING``."""
     now = datetime.now(timezone.utc)
-    # Race-safe upsert: concurrent first-attempt inserts both pass the SELECT
-    # above; ON CONFLICT DO NOTHING collapses the duplicate, then we re-SELECT
-    # to get the winning row. Avoids IntegrityError aborting the whole txn.
     stmt = (
         pg_insert(ConceptMastery)
         .values(
@@ -93,17 +80,6 @@ async def _get_or_create_mastery(
         .on_conflict_do_nothing(index_elements=["user_id", "concept_id"])
     )
     await db.execute(stmt)
-    await db.flush()
-
-    row = (
-        await db.execute(
-            select(ConceptMastery).where(
-                ConceptMastery.user_id == user_id,
-                ConceptMastery.concept_id == concept_id,
-            )
-        )
-    ).scalar_one()
-    return row
 
 
 async def apply_attempt_evidence(
@@ -146,7 +122,7 @@ async def apply_attempt_evidence(
         weight = float(tag.weight)
         if weight <= 0:
             continue
-        row = await _get_or_create_mastery(
+        await _ensure_mastery_row(
             db,
             user_id=user_id,
             concept_id=concept.id,
@@ -154,24 +130,52 @@ async def apply_attempt_evidence(
         )
         delta_a = Decimal(f"{weight * outcome:.3f}")
         delta_b = Decimal(f"{weight * (1.0 - outcome):.3f}")
-        row.alpha = (row.alpha + delta_a).quantize(Decimal("0.001"))
-        row.beta = (row.beta + delta_b).quantize(Decimal("0.001"))
-        row.confidence = compute_confidence(row.alpha, row.beta)
-        row.attempt_count += 1
-        row.last_attempt_at = now
+
+        # Atomic increment + confidence recompute in one statement.
+        # PG row-level locks during UPDATE serialize concurrent
+        # attempt-evidence updates against the same (user, concept) row,
+        # so two workers can't both read the same alpha/beta and clobber
+        # each other's increment. Each SET expression references the OLD
+        # column values, so the formula is self-consistent without us
+        # having to lock + read in Python.
+        new_a = ConceptMastery.alpha + delta_a
+        new_b = ConceptMastery.beta + delta_b
+        sum_ab = new_a + new_b
+        # confidence = 1 − sqrt(α·β / ((α+β)²·(α+β+1)))
+        confidence_expr = 1 - func.sqrt(
+            (new_a * new_b) / (sum_ab * sum_ab * (sum_ab + 1))
+        )
+        update_values: dict = {
+            "alpha": new_a,
+            "beta": new_b,
+            "confidence": confidence_expr,
+            "attempt_count": ConceptMastery.attempt_count + 1,
+            "last_attempt_at": now,
+            "updated_at": now,
+        }
         if outcome >= 0.5:
-            row.last_correct_at = now
+            update_values["last_correct_at"] = now
         if last_seen_meeting_id is not None:
-            row.last_seen_meeting_id = last_seen_meeting_id
-        row.updated_at = now
+            update_values["last_seen_meeting_id"] = last_seen_meeting_id
+
+        result = await db.execute(
+            update(ConceptMastery)
+            .where(
+                ConceptMastery.user_id == user_id,
+                ConceptMastery.concept_id == concept.id,
+            )
+            .values(**update_values)
+            .returning(ConceptMastery.alpha, ConceptMastery.beta)
+        )
+        new_alpha, new_beta = result.one()
 
         db.add(
             ConceptMasteryHistory(
                 user_id=user_id,
                 concept_id=concept.id,
                 course_id=course_id,
-                alpha=row.alpha,
-                beta=row.beta,
+                alpha=new_alpha,
+                beta=new_beta,
                 event_type="attempt",
                 source_kind=attempt_kind.value,
                 source_id=target_id,
@@ -181,9 +185,14 @@ async def apply_attempt_evidence(
         )
         touched += 1
 
-    # Close any open action_outcomes row pointing at this exact target.
+    # Close open action_outcomes — both the exact-target row AND any
+    # concept-level recommendations that map to a concept this attempt
+    # touched. The materializer emits ``practice_weakness`` actions with
+    # ``target_kind='concept'``, so without the second pass the dominant
+    # adaptive recommendation never resolves to ``completed=True`` and
+    # A/B telemetry / coefficient retune undercount successful nudges.
     if touched:
-        from sqlalchemy import update as _update
+        from sqlalchemy import or_ as _or
         from app.models import ActionOutcome
 
         metric_by_kind = {
@@ -192,13 +201,24 @@ async def apply_attempt_evidence(
             "revision": "quiz_score",
             "pronunciation": "completion",
         }
+        concept_ids = [
+            concept.id for tag, concept in tags if float(tag.weight) > 0
+        ]
         await db.execute(
-            _update(ActionOutcome)
+            update(ActionOutcome)
             .where(
                 ActionOutcome.user_id == user_id,
-                ActionOutcome.target_kind == target_kind,
-                ActionOutcome.target_id == target_id,
                 ActionOutcome.completed.is_(False),
+                _or(
+                    and_(
+                        ActionOutcome.target_kind == target_kind,
+                        ActionOutcome.target_id == target_id,
+                    ),
+                    and_(
+                        ActionOutcome.target_kind == "concept",
+                        ActionOutcome.target_id.in_(concept_ids),
+                    ),
+                ),
             )
             .values(
                 completed=True,
