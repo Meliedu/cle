@@ -2,7 +2,7 @@ import uuid
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -138,6 +138,29 @@ async def decide_cluster(
         # Pick the longest-named member as canonical (matches list_clusters
         # suggestion). Mark remaining members as merged with canonical_id.
         canon = sorted(rows, key=lambda m: -len(m.name))[0]
+        # Defense-in-depth pre-flight: surface name conflicts as a 409
+        # before we mutate any rows. The (course_id, lower(name)) unique
+        # index still backstops via IntegrityError below, but explicit
+        # check stops the cluster from being half-mutated if the index
+        # is ever rebuilt without the partial filter or a sibling row's
+        # name happens to differ only by case.
+        existing = (
+            await db.execute(
+                select(Concept).where(
+                    Concept.course_id == course.id,
+                    Concept.deleted_at.is_(None),
+                    Concept.canonical_id.is_(None),
+                    Concept.status == "approved",
+                    Concept.id != canon.id,
+                    func.lower(Concept.name) == body.final_name.strip().lower(),
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="concept name conflicts with existing approved concept",
+            )
         canon.name = body.final_name
         if body.final_description is not None:
             canon.description = body.final_description

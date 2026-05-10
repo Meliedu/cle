@@ -517,7 +517,12 @@ async def run_parse_syllabus(
         )
         try:
             imp.status = "failed"
-            imp.error_message = f"{type(exc).__name__}: {str(exc)[:500]}"
+            # Reuse the worker's URL-redacting sanitiser so transient errors
+            # that surface a Cloudflare R2 signed URL or asyncpg
+            # ``postgres://user:pass@host`` connection string don't land in
+            # an instructor-visible state field.
+            from app.services.worker import _sanitize_error_message
+            imp.error_message = _sanitize_error_message(exc)
             await session.commit()
         except Exception:
             logger.exception(

@@ -61,13 +61,19 @@ async def _llm_extract_concepts(text: str) -> list[dict[str, Any]]:
         items = parsed
     else:
         items = []
+    # Cap fields up-front. The Concept table has a CHECK constraint on
+    # name length (migration b2e9c4f7a1d3); without this slice a
+    # hallucinated multi-KB name would bubble up as IntegrityError mid-
+    # batch and abort the surrounding transaction, losing the rest of
+    # this chunk's candidates plus any siblings batched with it. The
+    # slice is also defense-in-depth against prompt-injected payloads.
     return [
         {
-            "name": str(it.get("name", "")).strip(),
+            "name": str(it.get("name", "")).strip()[:255],
             "description": (str(it.get("description") or "")[:2000] or None),
         }
         for it in items
-        if isinstance(it, dict) and it.get("name")
+        if isinstance(it, dict) and str(it.get("name", "")).strip()
     ]
 
 
