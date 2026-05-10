@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -19,6 +20,19 @@ router = APIRouter(
     prefix="/courses/{course_id}/concept-prerequisites",
     tags=["concepts"],
 )
+
+
+def _course_graph_lock_key(course_id: uuid.UUID) -> int:
+    """Stable 63-bit advisory-lock key for a course's prerequisite graph.
+
+    Salted with the literal ``concept_prereq_graph`` so this lock can't
+    collide with other advisory locks the codebase keys on the same UUID
+    (next_actions materializer, alert dedupe, etc.).
+    """
+    h = hashlib.blake2b(digest_size=8)
+    h.update(course_id.bytes)
+    h.update(b"concept_prereq_graph")
+    return int.from_bytes(h.digest(), "big") & 0x7FFFFFFFFFFFFFFF
 
 
 _CYCLE_CHECK_SQL = text(
@@ -71,6 +85,15 @@ async def create_prerequisite(
             status_code=400,
             detail="both concepts must belong to the same course",
         )
+
+    # Serialize concurrent edge writes for this course's graph. Without the
+    # lock, two reciprocal POSTs can each pass _CYCLE_CHECK_SQL before either
+    # insert is visible to the other and both commit, leaving an actual cycle
+    # despite the API invariant. The lock auto-releases at transaction end.
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:k)"),
+        {"k": _course_graph_lock_key(course.id)},
+    )
 
     # Cycle detection: would adding (prereq → dependent) create a path
     # dependent → ... → prereq?

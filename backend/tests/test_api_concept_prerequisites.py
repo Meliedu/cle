@@ -47,6 +47,93 @@ async def test_create_prerequisite_and_reject_cycle(client, db_session, test_ins
 
 
 @pytest.mark.asyncio
+async def test_concurrent_reciprocal_prereqs_dont_form_cycle(
+    db_session, test_instructor
+):
+    """Two reciprocal edges submitted in concurrent sessions must produce
+    exactly one success + one cycle rejection — never two successes that
+    together form a cycle.
+
+    Regression: the cycle check ran before any lock, so concurrent POSTs
+    each saw "no cycle" and both committed.
+    """
+    import asyncio
+    from decimal import Decimal
+
+    from sqlalchemy import or_, select, text
+    from sqlalchemy.exc import IntegrityError
+
+    from app.api.concept_prerequisites import (
+        _CYCLE_CHECK_SQL,
+        _course_graph_lock_key,
+    )
+    from app.models import Concept, ConceptPrerequisite, Course
+    from tests.conftest import test_session_factory
+
+    course = Course(
+        instructor_id=test_instructor.id,
+        name="Race",
+        language="english",
+        enroll_code="C0099",
+    )
+    db_session.add(course)
+    await db_session.commit()
+    a = Concept(course_id=course.id, name="A", status="approved", instructor_curated=True)
+    b = Concept(course_id=course.id, name="B", status="approved", instructor_curated=True)
+    db_session.add_all([a, b])
+    await db_session.commit()
+    a_id, b_id, course_id = a.id, b.id, course.id
+    lock_key = _course_graph_lock_key(course_id)
+
+    async def try_add_edge(prereq_id, dependent_id) -> str:
+        async with test_session_factory() as s:
+            await s.execute(
+                text("SELECT pg_advisory_xact_lock(:k)"), {"k": lock_key}
+            )
+            cycle = (
+                await s.execute(
+                    _CYCLE_CHECK_SQL,
+                    {"new_dependent": dependent_id, "new_prereq": prereq_id},
+                )
+            ).first()
+            if cycle is not None:
+                return "cycle"
+            s.add(
+                ConceptPrerequisite(
+                    prereq_concept_id=prereq_id,
+                    dependent_concept_id=dependent_id,
+                    strength=Decimal("1.0"),
+                    instructor_verified=True,
+                )
+            )
+            try:
+                await s.commit()
+                return "inserted"
+            except IntegrityError:
+                await s.rollback()
+                return "duplicate"
+
+    results = await asyncio.gather(
+        try_add_edge(a_id, b_id),
+        try_add_edge(b_id, a_id),
+    )
+    assert sorted(results) == ["cycle", "inserted"]
+
+    await db_session.rollback()
+    rows = (
+        await db_session.execute(
+            select(ConceptPrerequisite).where(
+                or_(
+                    ConceptPrerequisite.prereq_concept_id == a_id,
+                    ConceptPrerequisite.prereq_concept_id == b_id,
+                )
+            )
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
 async def test_prerequisite_must_be_same_course(client, db_session, test_instructor):
     from app.models import Concept, Course
     a_course = Course(
