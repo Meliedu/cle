@@ -1,10 +1,16 @@
 """Instructor alert evaluator.
 
-Each rule queries existing data and tries to insert one open InstructorAlert
-row per dedupe key (course_id, alert_type, target_user_id). The partial
-unique index ``uq_instructor_alerts_open_idempotent`` enforces at-most-one
-open row per key; we catch IntegrityError on conflict — codebase precedent
-in concept_clusters.py and 6 sibling sites.
+Each rule queries existing data and inserts at most one open InstructorAlert
+row per dedupe key ``(course_id, alert_type, target_user_id, dedupe_key)``.
+The partial unique index ``uq_instructor_alerts_open_idempotent`` enforces
+this with ``NULLS NOT DISTINCT`` so cohort rows (target_user_id IS NULL)
+also collide on identical dedupe keys. We catch ``IntegrityError`` on
+conflict — codebase precedent in ``concept_clusters.py`` and 6 sibling sites.
+
+Cohort rules pass an explicit ``dedupe_key`` that names the affected object
+(e.g. ``concept:<uuid>``, ``quiz:<uuid>``, ``assignment:<uuid>``) so multiple
+weak concepts / orphan content / overdue assignments each surface their own
+alert instead of being collapsed under one type-level row.
 
 The orchestrator ``evaluate_alerts_for_course`` delegates each rule to a
 private helper. Per-student rules use a single aggregating query (one
@@ -12,13 +18,12 @@ SELECT per rule) instead of N+1 SELECT-per-student.
 """
 from __future__ import annotations
 
-import hashlib
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, distinct, func, select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -49,38 +54,24 @@ async def _try_insert(
     severity: str,
     title: str,
     reason: dict,
+    dedupe_key: str = "",
 ) -> bool:
-    # Cohort alerts (target_user_id IS NULL) are NOT deduped by the partial
-    # unique index — Postgres treats NULLs as distinct, so ON CONFLICT can't
-    # serialize concurrent inserts. Acquire a per-(course_id, alert_type)
-    # transaction-scoped advisory lock to make the SELECT-then-INSERT atomic
-    # against concurrent workers; the lock auto-releases on commit/rollback.
-    if target_user_id is None:
-        h = hashlib.blake2b(digest_size=8)
-        h.update(course_id.bytes)
-        h.update(alert_type.encode("utf-8"))
-        # bigint range: mask top bit so the value fits a signed bigint.
-        lock_key = int.from_bytes(h.digest(), "big") & 0x7FFFFFFFFFFFFFFF
-        await db.execute(
-            text("SELECT pg_advisory_xact_lock(:k)"), {"k": lock_key}
-        )
+    """Insert one open alert row; return True if inserted, False on conflict.
 
-        existing = (
-            await db.execute(
-                select(InstructorAlert.id).where(
-                    InstructorAlert.course_id == course_id,
-                    InstructorAlert.alert_type == alert_type,
-                    InstructorAlert.target_user_id.is_(None),
-                    InstructorAlert.status == "open",
-                )
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            return False
+    Race-safe via the partial unique index ``uq_instructor_alerts_open_idempotent``
+    over ``(course_id, alert_type, target_user_id, dedupe_key) WHERE status='open'``
+    with ``NULLS NOT DISTINCT`` so cohort rows (``target_user_id IS NULL``)
+    also collide on identical dedupe keys.
 
-    db.add(
-        InstructorAlert(
+    Uses ``ON CONFLICT DO NOTHING ... RETURNING id`` so a duplicate is a no-op
+    at the SQL layer — no Python-side ``IntegrityError`` and no rollback. The
+    rollback path was the wrong tool here: it expires every ORM object in the
+    session, and the orchestrator's loop accesses ``course.id`` / ``course.name``
+    on subsequent rules; a refresh in that path raises ``MissingGreenlet``.
+    """
+    stmt = (
+        pg_insert(InstructorAlert)
+        .values(
             course_id=course_id,
             instructor_id=instructor_id,
             target_user_id=target_user_id,
@@ -88,17 +79,19 @@ async def _try_insert(
             severity=severity,
             title=title,
             reason=reason,
+            dedupe_key=dedupe_key,
         )
+        .on_conflict_do_nothing(
+            index_elements=[
+                "course_id", "alert_type", "target_user_id", "dedupe_key",
+            ],
+            index_where=text("status = 'open'"),
+        )
+        .returning(InstructorAlert.id)
     )
-    try:
-        await db.commit()
-        return True
-    except IntegrityError:
-        # Per-student alerts hit the partial unique index → roll back and
-        # treat as no-op. Cohort alerts can't reach this branch (we returned
-        # False above), but keep the catch for safety against races.
-        await db.rollback()
-        return False
+    inserted = (await db.execute(stmt)).scalar_one_or_none()
+    await db.commit()
+    return inserted is not None
 
 
 async def _rule_cohort_concept_weakness(
@@ -147,6 +140,7 @@ async def _rule_cohort_concept_weakness(
                 "avg_mastery": float(avg_value),
                 "weak_students": int(n_weak),
             },
+            dedupe_key=f"concept:{cid}",
         ):
             created += 1
     return created
@@ -184,6 +178,7 @@ async def _rule_content_gap(
             severity="info",
             title=f"No content tags reference {cname}",
             reason={"concept_id": str(cid), "concept_name": cname},
+            dedupe_key=f"concept:{cid}",
         ):
             created += 1
     return created
@@ -387,6 +382,7 @@ async def _rule_prereq_gap_for_upcoming_meeting(
                     "weak_n": int(weak),
                     "enrolled": enrolled_count,
                 },
+                dedupe_key=f"meeting:{meeting.id}:prereq:{prereq_id}",
             ):
                 created += 1
     return created
@@ -436,6 +432,7 @@ async def _rule_low_quiz_participation(
                 "attempters": int(n),
                 "enrolled": enrolled_count,
             },
+            dedupe_key=f"quiz:{qid}",
         ):
             created += 1
     return created
@@ -493,6 +490,7 @@ async def _rule_missed_deadline(
                 "submitted": int(n),
                 "enrolled": enrolled_count,
             },
+            dedupe_key=f"assignment:{aid}",
         ):
             created += 1
     return created

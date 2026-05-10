@@ -161,8 +161,10 @@ class InstructorAlert(UUIDPrimaryKeyMixin, Base):
             "course_id",
             "alert_type",
             "target_user_id",
+            "dedupe_key",
             unique=True,
             postgresql_where=text("status = 'open'"),
+            postgresql_nulls_not_distinct=True,
         ),
         Index(
             "idx_instructor_alerts_open",
@@ -186,6 +188,9 @@ class InstructorAlert(UUIDPrimaryKeyMixin, Base):
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     reason: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(
+        String(120), nullable=False, default="", server_default=text("''"),
+    )
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="open", server_default=text("'open'"),
     )

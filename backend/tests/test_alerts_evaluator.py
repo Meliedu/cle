@@ -144,6 +144,77 @@ async def test_content_gap_alert(db_session, test_instructor: User):
 
 
 @pytest.mark.asyncio
+async def test_cohort_alerts_distinct_per_object(
+    db_session, test_instructor: User
+):
+    """Three orphan concepts must produce three content_gap alerts, not one.
+
+    Regression: cohort alerts shared ``(course_id, alert_type, NULL)`` and
+    were collapsed under a single open row.
+    """
+    course = Course(
+        name="Multi gap",
+        language="en",
+        instructor_id=test_instructor.id,
+        enroll_code="ALR-MGP",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    for i in range(3):
+        db_session.add(
+            Concept(course_id=course.id, name=f"orphan-{i}", status="approved")
+        )
+    await db_session.commit()
+
+    await evaluate_alerts_for_course(db_session, course_id=course.id)
+
+    rows = (await db_session.execute(
+        __import__("sqlalchemy").select(InstructorAlert).where(
+            InstructorAlert.alert_type == "content_gap",
+            InstructorAlert.course_id == course.id,
+        )
+    )).scalars().all()
+    assert len(rows) == 3
+    # Each row dedupes on a distinct concept-id key.
+    keys = {r.dedupe_key for r in rows}
+    assert len(keys) == 3
+    assert all(k.startswith("concept:") for k in keys)
+
+
+@pytest.mark.asyncio
+async def test_cohort_alerts_same_object_deduped_across_runs(
+    db_session, test_instructor: User
+):
+    """Re-running the evaluator must not duplicate alerts even when each
+    object now has its own dedupe key."""
+    course = Course(
+        name="Dedupe multi",
+        language="en",
+        instructor_id=test_instructor.id,
+        enroll_code="ALR-DM",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    for i in range(2):
+        db_session.add(
+            Concept(course_id=course.id, name=f"orphan-{i}", status="approved")
+        )
+    await db_session.commit()
+
+    await evaluate_alerts_for_course(db_session, course_id=course.id)
+    await evaluate_alerts_for_course(db_session, course_id=course.id)
+
+    rows = (await db_session.execute(
+        __import__("sqlalchemy").select(InstructorAlert).where(
+            InstructorAlert.alert_type == "content_gap",
+            InstructorAlert.course_id == course.id,
+            InstructorAlert.status == "open",
+        )
+    )).scalars().all()
+    assert len(rows) == 2
+
+
+@pytest.mark.asyncio
 async def test_student_falling_behind_alert(
     db_session, test_instructor: User
 ):
