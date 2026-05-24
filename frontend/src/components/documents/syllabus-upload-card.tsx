@@ -102,7 +102,7 @@ export function SyllabusUploadCard({ courseId }: Props) {
       try {
         await triggerImport.mutateAsync(documentId);
         await queryClient.invalidateQueries({
-          queryKey: ["syllabus-imports", courseId],
+          queryKey: ["documents", courseId],
         });
         setUploadState({ kind: "done" });
         setSelectedFile(null);
@@ -141,7 +141,8 @@ export function SyllabusUploadCard({ courseId }: Props) {
               disabled={isLoading}
             />
             <p className="text-xs text-[var(--color-text-muted)]">
-              Accepted: PDF, DOCX
+              Accepted: PDF, DOCX. We&apos;ll parse the syllabus in the
+              background.
             </p>
           </div>
 
@@ -155,8 +156,7 @@ export function SyllabusUploadCard({ courseId }: Props) {
           {uploadState.kind === "done" && (
             <div className="flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-success)] bg-[var(--color-success-light)] px-3 py-2 text-sm text-[var(--color-success)]">
               <CheckCircle className="size-4 shrink-0" />
-              Syllabus uploaded and import triggered. Check the list below for
-              status.
+              Syllabus uploaded. Background import started.
             </div>
           )}
 

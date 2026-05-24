@@ -33,7 +33,6 @@ import {
 import { apiFetch } from "@/lib/api";
 import { DifficultyBadge } from "@/components/ui/difficulty-badge";
 import { QuizQuestionEditor } from "./quiz-question-editor";
-import { ConceptTagList } from "@/components/concepts/concept-tag-pill";
 
 interface PreviewQuestion {
   readonly id: string;
@@ -403,10 +402,6 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
                     {question.question_text}
                   </p>
                   <DifficultyBadge value={question.difficulty} size="sm" />
-                </div>
-
-                <div className="ml-10">
-                  <ConceptTagList targetKind="question" targetId={question.id} />
                 </div>
 
                 <div className="ml-10 space-y-2">

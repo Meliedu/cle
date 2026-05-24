@@ -29,7 +29,6 @@ import {
   useUpdateFlashcardCard,
 } from "@/hooks/use-flashcard-sets";
 import { FlashcardCardEditor } from "./flashcard-card-editor";
-import { ConceptTagList } from "@/components/concepts/concept-tag-pill";
 
 interface FlashcardCard {
   readonly id: string;
@@ -236,10 +235,6 @@ export function FlashcardPreview({ setId, courseId }: FlashcardPreviewProps) {
                         {card.back}
                       </p>
                     </div>
-                    <ConceptTagList
-                      targetKind="flashcard_card"
-                      targetId={card.id}
-                    />
                   </div>
                 </div>
 

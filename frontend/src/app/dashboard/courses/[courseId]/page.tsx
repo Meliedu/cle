@@ -31,8 +31,8 @@ import { CourseDescriptionCard } from "@/components/course/course-description-ca
 import { CanvasTab } from "@/components/canvas/canvas-tab";
 import { CANVAS_ENABLED } from "@/lib/features";
 import { CourseAnalytics } from "@/components/analytics/course-analytics";
-import { RecalibrationOverview } from "@/components/recalibration/overview";
 import { LiveSessionsPanel } from "@/components/live-quiz/live-sessions-panel";
+import { SyllabusUploadCard } from "@/components/documents/syllabus-upload-card";
 import { useCourse } from "@/hooks/use-courses";
 import { useDocuments, useDeleteDocument, type DocumentResponse } from "@/hooks/use-documents";
 import { useProgress } from "@/hooks/use-progress";
@@ -97,7 +97,6 @@ const ALLOWED_TABS_STUDENT = [
 const ALLOWED_TABS_INSTRUCTOR = [
   ...ALLOWED_TABS_STUDENT,
   "students",
-  "recalibration",
   ...(CANVAS_ENABLED ? (["canvas"] as const) : []),
 ] as const;
 type AllowedTab =
@@ -209,95 +208,6 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
         </div>
       </section>
 
-      {/* Curriculum editor links — TODO(task-15): integrate into proper sidebar nav */}
-      {isInstructor && (
-        <nav
-          aria-label="Curriculum"
-          className="flex flex-wrap gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2"
-        >
-          <span className="self-center text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide mr-2">
-            Curriculum:
-          </span>
-          {(
-            [
-              { label: "Modules", slug: "modules" },
-              { label: "Meetings", slug: "meetings" },
-              { label: "Objectives", slug: "objectives" },
-              { label: "Assignments", slug: "assignments" },
-              { label: "Syllabus", slug: "syllabus" },
-            ] as const
-          ).map(({ label, slug }) => (
-            <Link
-              key={slug}
-              href={`/dashboard/courses/${courseId}/${slug}`}
-              className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
-      )}
-
-      {/* Adaptive engine links */}
-      <nav
-        aria-label="Adaptive engine"
-        className="flex flex-wrap gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2"
-      >
-        <span className="self-center text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide mr-2">
-          Adaptive engine:
-        </span>
-        {isInstructor && (
-          <>
-            <Link
-              href={`/dashboard/courses/${courseId}/concepts`}
-              className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
-            >
-              Concepts
-            </Link>
-            <Link
-              href={`/dashboard/courses/${courseId}/concept-curation`}
-              className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
-            >
-              Concept Curation
-            </Link>
-            <Link
-              href={`/dashboard/courses/${courseId}/prerequisites`}
-              className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
-            >
-              Prerequisites
-            </Link>
-          </>
-        )}
-        <Link
-          href={`/dashboard/courses/${courseId}/mastery`}
-          className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
-        >
-          Mastery
-        </Link>
-        <Link
-          href={`/dashboard/courses/${courseId}/today`}
-          className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
-        >
-          Today
-        </Link>
-        {isInstructor && (
-          <>
-            <Link
-              href={`/dashboard/courses/${courseId}/alerts`}
-              className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
-            >
-              Alerts
-            </Link>
-            <Link
-              href={`/dashboard/courses/${courseId}/engine`}
-              className="rounded-[var(--radius-md)] px-3 py-1 text-sm text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
-            >
-              Engine
-            </Link>
-          </>
-        )}
-      </nav>
-
       {/* Tab content — navigation is in the sidebar */}
       {activeTab === "overview" && (
         <div className="space-y-6">
@@ -357,17 +267,20 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
       {activeTab === "materials" && (
         <div className="space-y-6">
           {isInstructor && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <UploadIcon className="size-4" />
-                  Upload Materials
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <UploadZone courseId={courseId} />
-              </CardContent>
-            </Card>
+            <>
+              <SyllabusUploadCard courseId={courseId} />
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <UploadIcon className="size-4" />
+                    Upload Materials
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <UploadZone courseId={courseId} />
+                </CardContent>
+              </Card>
+            </>
           )}
 
           {/* Document list */}
@@ -513,10 +426,6 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
 
       {activeTab === "students" && (
         <CourseAnalytics courseId={courseId} />
-      )}
-
-      {activeTab === "recalibration" && isInstructor && (
-        <RecalibrationOverview courseId={courseId} />
       )}
 
       {CANVAS_ENABLED && activeTab === "canvas" && isInstructor && (
