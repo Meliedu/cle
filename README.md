@@ -704,26 +704,42 @@ cd frontend && npm run e2e
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | PostgreSQL async connection string |
-| `CLERK_SECRET_KEY` | Clerk backend API key |
-| `CLERK_JWKS_URL` | Clerk JWKS endpoint for JWT verification |
+| `DATABASE_URL` | PostgreSQL async connection string (use the `meli_app` role in prod so RLS is enforced) |
+| `ENVIRONMENT` | `development` or `production` — production gates several required vars |
+| `BETTER_AUTH_JWKS_URL` | Better Auth JWKS endpoint (e.g. `http://localhost:3000/api/auth/jwks`) |
+| `BETTER_AUTH_ISSUER` | Expected JWT `iss` claim (e.g. `http://localhost:3000`) |
+| `BETTER_AUTH_AUDIENCE` | Expected JWT `aud` claim (e.g. `meli-backend`) |
+| `BETTER_AUTH_INTERNAL_SECRET` | Shared secret for Next.js signup hook → `POST /api/internal/users/link` |
+| `RESEND_API_KEY` | Resend API key (verification + password-reset email) |
+| `RESEND_FROM_EMAIL` | From-address for transactional email (default: `Meli <noreply@meli.app>`) |
 | `R2_ACCOUNT_ID` | Cloudflare account ID |
 | `R2_ACCESS_KEY_ID` | R2 access key |
 | `R2_SECRET_ACCESS_KEY` | R2 secret key |
 | `R2_BUCKET_NAME` | R2 bucket name |
 | `R2_ENDPOINT_URL` | R2 S3-compatible endpoint |
-| `OPENAI_API_KEY` | For embeddings + Whisper |
-| `OPENROUTER_API_KEY` | For LLM generation |
-| `OPENROUTER_PRIMARY_MODEL` | Primary model (default: `qwen/qwen3.6-plus:free`) |
-| `OPENROUTER_FALLBACK_MODEL` | Fallback model (default: `google/gemini-2.5-flash-lite`) |
+| `OPENAI_API_KEY` | Whisper transcription (audio/video). Embeddings now route via OpenRouter — this stays optional unless you upload media. |
+| `OPENROUTER_API_KEY` | LLM generation + embeddings + VLM (single key for everything) |
+| `OPENROUTER_PRIMARY_MODEL` | Primary LLM (default: `deepseek/deepseek-v3.2`) |
+| `OPENROUTER_FALLBACK_MODEL` | Fallback LLM on JSON-parse failure (default: `google/gemini-2.5-flash-lite`) |
+| `VLM_MODEL` | Vision-LLM for figure captions / low-text page rescue (default: `google/gemini-2.5-flash`) |
+| `ENABLE_FIGURE_CAPTIONS` | Toggle Docling+VLM caption pass (default: `true`; turn `false` in dev to save spend) |
+| `ENABLE_PAGE_RESCUE` | Toggle VLM transcription for scan/image-only PDF pages (default: `true`) |
 | `ALLOWED_EMAIL_DOMAINS` | Comma-separated (e.g., `connect.ust.hk,ust.hk`) |
 | `STUDENT_RATE_LIMIT` | AI requests per hour for students (default: 10) |
 | `INSTRUCTOR_RATE_LIMIT` | AI requests per hour for instructors (default: 50) |
-| `AZURE_SPEECH_KEY` | Azure Speech Services key (pronunciation grading) |
-| `AZURE_SPEECH_REGION` | Azure Speech region |
+| `MAX_UPLOAD_SIZE_MB` | Hard upload cap (default: 100) |
+| `RUN_WORKER_IN_API` | Run document worker + Canvas scheduler in-process (default: `true`; set `false` on prod API container if running a separate worker service) |
+| `AZURE_SPEECH_KEY` | Azure Speech Services key (English pronunciation grading) |
+| `AZURE_SPEECH_REGION` | Azure Speech region (default: `eastasia`) |
 | `IFLYTEK_APP_ID` | iFlytek app ID (Chinese pronunciation) |
 | `IFLYTEK_API_KEY` | iFlytek API key |
 | `IFLYTEK_API_SECRET` | iFlytek API secret |
+| `INTEGRATIONS_ENCRYPTION_KEY` | Fernet key for encrypting third-party tokens at rest (Canvas, etc.). Required in prod. |
+| `CANVAS_ALLOWED_HOSTS` | Comma-separated allowlist of Canvas hostnames (SSRF defense) |
+| `CANVAS_CLIENT_ID` / `CANVAS_CLIENT_SECRET` | HKUST Canvas Developer Key (OAuth 2.0) |
+| `CANVAS_BASE_URL` | Canvas tenant base URL (default: `https://canvas.ust.hk`) |
+| `CANVAS_REDIRECT_URI` | OAuth callback (default: `http://localhost:8000/api/canvas/oauth/callback`) |
+| `CANVAS_STATE_SECRET` | Signing key for OAuth state JWT (32+ random bytes) |
 
 </details>
 
@@ -732,11 +748,14 @@ cd frontend && npm run e2e
 
 | Variable | Description |
 |----------|-------------|
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
-| `CLERK_SECRET_KEY` | Clerk secret key |
 | `NEXT_PUBLIC_API_URL` | Backend API URL (default: `http://localhost:8000/api`) |
-| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Sign-in route (default: `/sign-in`) |
-| `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Sign-up route (default: `/sign-up`) |
+| `NEXT_PUBLIC_CANVAS_ENABLED` | Show the Canvas LMS connect UI in the dashboard |
+| `NEXT_PUBLIC_MICROSOFT_SSO_ENABLED` | Show the Microsoft SSO option on the sign-in page |
+| `BETTER_AUTH_SECRET` | Better Auth signing secret (used by the Next.js `auth` handler) |
+| `BETTER_AUTH_URL` | Public origin for Better Auth (e.g. `http://localhost:3000`) |
+| `BETTER_AUTH_INTERNAL_SECRET` | Must match the backend value — used by the signup hook posting to the backend |
+| `DATABASE_URL` | Same Postgres as the backend — Better Auth tables live in the `auth` schema |
+| `RESEND_API_KEY` | Resend key for verification + password-reset email |
 
 </details>
 
@@ -748,7 +767,7 @@ cd frontend && npm run e2e
 
 ## API Reference
 
-All endpoints are prefixed with `/api` and require `Authorization: Bearer <clerk_jwt>` except `/health`.
+All endpoints are prefixed with `/api` and require `Authorization: Bearer <better_auth_jwt>` except `/health`. The token is fetched by the frontend `useApiToken` hook via `authClient.token()` and verified server-side against the Better Auth JWKS (`BETTER_AUTH_JWKS_URL`).
 
 Response envelope:
 
@@ -972,51 +991,83 @@ Rate limited: students 10/hr, instructors 50/hr (configurable).
 meli/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI app + lifespan (worker startup)
+│   │   ├── main.py              # FastAPI app + lifespan (worker + Canvas scheduler)
 │   │   ├── config.py            # pydantic-settings from .env
 │   │   ├── database.py          # SQLAlchemy async engine
 │   │   ├── api/                 # Route handlers
-│   │   │   ├── deps.py          #   get_current_user, require_instructor
+│   │   │   ├── deps.py          #   get_current_user, require_instructor, get_owned_course
+│   │   │   ├── internal.py      #   Better Auth signup hook → users link/delete
 │   │   │   ├── rag.py           #   RAG query + generation endpoints
-│   │   │   ├── courses.py       #   Course CRUD
-│   │   │   ├── documents.py     #   Upload + file management
-│   │   │   ├── quizzes.py       #   Quiz CRUD + attempts + grading
-│   │   │   ├── flashcards.py    #   Flashcard sets + SM-2 progress
-│   │   │   ├── revision.py      #   Adaptive revision sessions
+│   │   │   ├── courses.py, documents.py, quizzes.py, flashcards.py
+│   │   │   ├── revision.py      #   Adaptive revision sessions (bandit)
+│   │   │   ├── recalibration.py #   Difficulty recalibration (Dirichlet/HMM)
 │   │   │   ├── live.py          #   Live quiz (WebSocket + REST)
-│   │   │   ├── speech.py        #   Pronunciation grading
-│   │   │   ├── analytics.py     #   Instructor analytics
-│   │   │   ├── progress.py      #   Gamification (XP, badges, leaderboard)
-│   │   │   └── canvas.py        #   Canvas LMS integration
+│   │   │   ├── speech.py, pronunciation.py   # Pronunciation grading + sets
+│   │   │   ├── analytics.py, progress.py     # Instructor analytics + gamification
+│   │   │   ├── canvas.py, canvas_oauth.py    # Canvas LMS + per-user OAuth
+│   │   │   │
+│   │   │   │ ── Adaptive Engine — Phase 1 (curriculum spine)
+│   │   │   ├── modules.py, meetings.py, objectives.py, assignments.py
+│   │   │   ├── syllabus.py      #   LLM parse → review → transactional apply
+│   │   │   │
+│   │   │   │ ── Adaptive Engine — Phase 2 (concepts + mastery)
+│   │   │   ├── concepts.py, concept_prerequisites.py
+│   │   │   ├── concept_clusters.py, concept_tags.py
+│   │   │   ├── mastery.py       #   Personal + cohort mastery views
+│   │   │   │
+│   │   │   │ ── Adaptive Engine — Phase 3 (decision layer)
+│   │   │   ├── next_actions.py        # Today: top-10 ranked actions + clicks
+│   │   │   ├── instructor_alerts.py   # Alerts centre (dismiss / resolve)
+│   │   │   └── engine_settings.py     # Mode + per-user overrides (A/B)
 │   │   ├── models/              # SQLAlchemy 2.0 models
 │   │   │   ├── base.py          #   UUID PK, timestamps, soft delete mixins
 │   │   │   ├── user.py          #   User, Course, Enrollment
-│   │   │   ├── document.py      #   Document, Chunk (+ tsvector)
-│   │   │   ├── quiz.py          #   Quiz, Question, QuizAttempt, QuizDocument
-│   │   │   ├── flashcard.py     #   FlashcardSet, FlashcardCard, FlashcardProgress
-│   │   │   ├── revision.py      #   RevisionSession, RevisionPoolItem, RevisionAttempt, BanditModel
-│   │   │   ├── live.py          #   LiveSession, LiveAnswer
-│   │   │   ├── gamification.py  #   StudentProgress, PronunciationScore
-│   │   │   └── task.py          #   Task, ApiUsage, CanvasIntegration
+│   │   │   ├── document.py, chunk.py    #   Document + Chunk (vector + tsvector)
+│   │   │   ├── quiz.py, flashcard.py, revision.py, recalibration.py
+│   │   │   ├── live_answer.py, session.py, summary.py
+│   │   │   ├── score.py, pronunciation.py   # Gamification + pronunciation
+│   │   │   ├── task.py, cron_run.py, api_usage.py, oauth_nonce.py
+│   │   │   ├── integration.py, canvas.py    # Canvas integration + creds
+│   │   │   ├── scheduler.py     #   FSRS scheduler state
+│   │   │   ├── curriculum.py    #   Phase 1: modules, meetings, objectives, assignments, syllabus_imports
+│   │   │   ├── concept.py       #   Phase 2: concepts, prereqs, tags, mastery (+history)
+│   │   │   └── decision.py      #   Phase 3: next_actions, action_outcomes, instructor_alerts, engine_overrides
 │   │   ├── schemas/             # Pydantic v2 request/response models
 │   │   ├── services/            # Business logic
-│   │   │   ├── pipeline.py      #   Orchestrates download → parse → chunk → embed → store
-│   │   │   ├── worker.py        #   PostgreSQL task queue consumer
+│   │   │   ├── pipeline.py      #   download → parse → chunk → embed → store
+│   │   │   ├── worker.py        #   PostgreSQL task-queue consumer + cron blocks
+│   │   │   ├── jobs.py          #   Task dispatch + watermarks
 │   │   │   ├── parser.py        #   Docling + Whisper dispatch
-│   │   │   ├── chunker.py       #   Sentence-aligned ~500-token chunks
-│   │   │   ├── embedder.py      #   OpenAI text-embedding-3-large
-│   │   │   ├── retriever.py     #   Hybrid search (vector + fulltext + RRF)
-│   │   │   ├── generator.py     #   OpenRouter LLM with fallback strategy
-│   │   │   ├── bandit.py        #   REINFORCE contextual bandit for difficulty adaptation
-│   │   │   ├── live_quiz.py     #   WebSocket manager + session state machine
-│   │   │   ├── gamification.py  #   XP awards, streaks, badges, leaderboard
-│   │   │   ├── speech.py        #   Azure Speech + iFlytek pronunciation grading
+│   │   │   ├── vlm.py           #   Vision-LLM captions + low-text page rescue
+│   │   │   ├── chunker.py, embedder.py, retriever.py, generator.py
+│   │   │   ├── bandit.py        #   REINFORCE contextual bandit
+│   │   │   ├── pool.py, recalibrator.py     # Revision pool + Dirichlet recalibrator
+│   │   │   ├── live_quiz.py, gamification.py, speech.py
 │   │   │   ├── storage.py       #   Cloudflare R2 via boto3
-│   │   │   ├── auth.py          #   Clerk JWT verification + role detection
-│   │   │   └── canvas.py        #   Canvas LMS client
+│   │   │   ├── auth.py          #   Better Auth JWT verification + role detection
+│   │   │   ├── crypto.py, url_safety.py     # Fernet token encryption + SSRF guard
+│   │   │   ├── canvas_client.py, canvas_oauth.py, canvas_files.py
+│   │   │   ├── canvas_roster.py, canvas_sync.py    # Daily scheduler + roster diff
+│   │   │   ├── scheduler.py     #   FSRS-5 scheduler
+│   │   │   │
+│   │   │   │ ── Adaptive Engine — Phase 1
+│   │   │   ├── syllabus.py, syllabus_grounding.py
+│   │   │   │
+│   │   │   │ ── Adaptive Engine — Phase 2
+│   │   │   ├── concept_extraction.py, concept_clustering.py, concept_tagger.py
+│   │   │   ├── mastery.py       #   Beta-Binomial update + HLR decay
+│   │   │   │
+│   │   │   │ ── Adaptive Engine — Phase 3
+│   │   │   ├── outer_fringe.py  #   KST candidate filter (CTE)
+│   │   │   ├── scoring.py, action_coeffs.py    # Per-action-type scoring + tunable coeffs
+│   │   │   ├── next_actions.py  #   Materialiser + lazy/event-driven recompute
+│   │   │   ├── alerts.py        #   7-rule evaluator
+│   │   │   ├── engine_mode.py   #   on/off/random_50 resolver (blake2b A/B)
+│   │   │   └── adaptive_jobs.py #   Phase 3 task handlers
 │   │   └── middleware/          # ASGI middleware
-│   │       ├── auth.py          #   Early Bearer token gate
-│   │       └── rate_limit.py    #   Per-user hourly limits on /api/rag/*
+│   │       ├── auth.py          #   Bearer token gate on /api/*
+│   │       ├── rate_limit.py    #   Per-user hourly limits on /api/rag/*
+│   │       └── security_headers.py
 │   ├── alembic/                 # Database migrations (async)
 │   ├── tests/                   # pytest + pytest-asyncio
 │   ├── seed.py                  # Demo data seeder
@@ -1027,48 +1078,43 @@ meli/
 ├── frontend/
 │   ├── src/
 │   │   ├── app/                 # Next.js 16 App Router
-│   │   │   ├── dashboard/       #   Authenticated views
-│   │   │   │   ├── courses/     #     Course list + detail
-│   │   │   │   │   └── [courseId]/
-│   │   │   │   │       ├── quizzes/          # Quiz player
-│   │   │   │   │       ├── flashcards/       # Flashcard player
-│   │   │   │   │       ├── revision/         # Adaptive revision
-│   │   │   │   │       ├── pronunciation/    # Speech grading
-│   │   │   │   │       └── live/             # Live quiz host/join
-│   │   │   ├── sign-in/         #   Clerk sign-in
-│   │   │   └── sign-up/         #   Clerk sign-up
+│   │   │   ├── dashboard/courses/[courseId]/
+│   │   │   │   ├── quizzes/, flashcards/, revision/, pronunciation/, live/
+│   │   │   │   ├── modules/, meetings/, objectives/, assignments/, syllabus/   # Phase 1
+│   │   │   │   ├── concepts/, concept-curation/, prerequisites/, mastery/       # Phase 2
+│   │   │   │   └── today/, alerts/, engine/                                     # Phase 3
+│   │   │   ├── sign-in/, sign-up/   # Better Auth screens (custom components)
+│   │   │   └── api/auth/[...all]/   # Better Auth handler (JWKS, sessions, hooks)
 │   │   ├── components/          # Feature-organized
-│   │   │   ├── course/          #   Create course dialog
-│   │   │   ├── documents/       #   Upload zone, document selector
-│   │   │   ├── quiz/            #   Player, list, preview, results, generate dialog
-│   │   │   ├── flashcard/       #   Player, list, preview, generate dialog
-│   │   │   ├── revision/        #   Player, quiz/flashcard items, stats bar, summary
-│   │   │   ├── live-quiz/       #   Lobby, host panel, player view, podium
-│   │   │   ├── pronunciation/   #   Recorder, score display, history chart
-│   │   │   ├── gamification/    #   XP toast, badge display, leaderboard, progress card
-│   │   │   ├── analytics/       #   Course analytics dashboard
-│   │   │   ├── summary/         #   Generate summary dialog
-│   │   │   ├── layout/          #   Navbar, sidebar, dashboard shell, language toggle
-│   │   │   └── ui/              #   shadcn/ui primitives
-│   │   ├── hooks/               # Custom hooks
-│   │   │   ├── use-api-token.ts
-│   │   │   ├── use-courses.ts
-│   │   │   ├── use-quizzes.ts
-│   │   │   ├── use-flashcard-sets.ts
-│   │   │   ├── use-documents.ts
-│   │   │   ├── use-revision.ts
-│   │   │   ├── use-live-quiz.ts
-│   │   │   ├── use-pronunciation.ts
-│   │   │   ├── use-progress.ts
-│   │   │   ├── use-analytics.ts
-│   │   │   └── use-role.ts
-│   │   ├── lib/api.ts           # Typed fetch wrapper with Clerk Bearer token
+│   │   │   ├── auth/            #   Sign-in / sign-up forms
+│   │   │   ├── course/, documents/, quiz/, flashcard/, folders/, generation/
+│   │   │   ├── revision/, live-quiz/, pronunciation/, summary/
+│   │   │   ├── analytics/, gamification/, recalibration/
+│   │   │   ├── curriculum/      #   Phase 1: modules/meetings/objectives/assignments/syllabus
+│   │   │   ├── concepts/        #   Phase 2: concept CRUD, clusters, prereq DAG, mastery
+│   │   │   ├── decision/        #   Phase 3: today, alerts centre, engine settings
+│   │   │   ├── canvas/, dashboard/, providers/, layout/, ui/
+│   │   ├── hooks/               # Custom hooks (TanStack Query wrappers)
+│   │   │   ├── use-api-token.ts, use-auth.ts, use-role.ts
+│   │   │   ├── use-courses.ts, use-documents.ts, use-quizzes.ts, use-flashcard-sets.ts
+│   │   │   ├── use-revision.ts, use-recalibration.ts, use-live-quiz.ts
+│   │   │   ├── use-pronunciation*.ts, use-canvas.ts, use-progress.ts, use-analytics.ts
+│   │   │   ├── use-modules.ts, use-meetings.ts, use-objectives.ts, use-assignments.ts
+│   │   │   ├── use-assignment-submissions.ts, use-calendar-events.ts, use-syllabus.ts
+│   │   │   ├── use-concepts.ts, use-concept-prerequisites.ts, use-concept-clusters.ts
+│   │   │   ├── use-concept-tags.ts, use-mastery.ts
+│   │   │   └── use-next-actions.ts, use-todos.ts, use-instructor-alerts.ts, use-engine-settings.ts
+│   │   ├── lib/api.ts           # Typed fetch wrapper with Better Auth Bearer token
+│   │   ├── lib/auth-client.ts   # Better Auth client (token, session, sign-in/out)
 │   │   ├── proxy.ts             # Next.js 16 proxy (replaces middleware.ts)
 │   │   └── styles/tokens.css    # Design tokens (oklch, "Honey & Salt" palette)
 │   ├── e2e/                     # Playwright tests
 │   └── package.json
 │
-├── docs/superpowers/            # Design specs + implementation plans
+├── docs/
+│   ├── superpowers/             # Design specs + implementation plans (Phase 1/2/3)
+│   ├── migrations/              # Migration playbooks (Clerk → Better Auth)
+│   └── compliance/
 ├── docker-compose.yml           # PostgreSQL 17 + pgvector local dev
 └── .env.example                 # Environment variable template
 ```
@@ -1118,10 +1164,10 @@ PostgreSQL 17 with pgvector and tsvector extensions. Key design decisions:
 ### Schema Diagram
 
 ```
-                                    +-------------+
-                                    |    users    |
-                                    |   (Clerk)   |
-                                    +------+------+
+                                    +---------------+
+                                    |     users     |
+                                    | (Better Auth) |
+                                    +-------+-------+
                                            |
                     +----------------------+---------------------+
                     |                      |                     |
@@ -1189,7 +1235,7 @@ PostgreSQL 17 with pgvector and tsvector extensions. Key design decisions:
 
 | Table | Columns | Notes |
 |-------|---------|-------|
-| **users** | `id` (uuid PK), `clerk_id` (unique), `email` (unique), `full_name`, `role`, `avatar_url`, `created_at`, `updated_at` | Auto-created on first Clerk JWT. Role derived from email domain. |
+| **users** | `id` (uuid PK), `better_auth_id` (unique), `email` (unique), `full_name`, `role`, `avatar_url`, `created_at`, `updated_at` | Auto-created on first Better Auth JWT (or via the `POST /api/internal/users/link` signup hook). Role derived from email domain. |
 | **courses** | `id`, `name`, `code`, `description`, `language`, `semester`, `instructor_id` (FK users), `settings` (JSON), timestamps, `deleted_at` | Soft delete. Settings stores per-course config. |
 | **enrollments** | `id`, `course_id` (FK), `user_id` (FK), `role`, `enrolled_at` | Unique(`course_id`, `user_id`). Cascades on course/user delete. |
 
@@ -1309,12 +1355,16 @@ alembic downgrade -1
 
 ## Auth & Authorization
 
-Authentication is handled by **Clerk**. The frontend wraps the app in `<ClerkProvider>` and uses `proxy.ts` to protect routes. The backend verifies JWTs independently:
+Authentication is handled by **self-hosted Better Auth** running inside the Next.js app. Better Auth's tables (`user`, `session`, `account`, `verification`, `jwks`) live in the `auth` schema of the same Postgres as the backend; the JWT plugin issues EdDSA (Ed25519) tokens signed by keys it rotates itself and publishes a JWKS at `/api/auth/jwks`.
 
-1. **Middleware** ([`middleware/auth.py`](backend/app/middleware/auth.py)) - cheap Bearer token presence check on `/api/*` paths
-2. **Dependency** ([`api/deps.py`](backend/app/api/deps.py)) - full JWT signature verification via JWKS, user lookup/auto-creation
-3. **Role detection** - email domain determines role: `ust.hk` = instructor, `connect.ust.hk` = student
-4. **Enforcement** - `require_instructor` dependency blocks students from admin endpoints
+1. **Frontend session + token fetch** — `frontend/src/lib/auth-client.ts` wraps the Better Auth client; the `useApiToken` hook calls `authClient.token()` to mint a fresh JWT for each backend request. Route protection lives in `frontend/src/proxy.ts` (Next.js 16's replacement for `middleware.ts`).
+2. **Middleware** ([`middleware/auth.py`](backend/app/middleware/auth.py)) — cheap Bearer-token presence check on `/api/*` paths.
+3. **Dependency** ([`api/deps.py`](backend/app/api/deps.py)) — `get_current_user` verifies the JWT against `BETTER_AUTH_JWKS_URL` via `PyJWKClient`, checks issuer / audience, then upserts a row in `public.users` keyed on `better_auth_id`.
+4. **Signup hook** — Better Auth's `databaseHooks.user.create.after` fires `POST /api/internal/users/link` (guarded by `BETTER_AUTH_INTERNAL_SECRET`) so the local `users` row is created atomically with the auth-schema row.
+5. **Role detection** — email domain determines role: `ust.hk` = instructor, `connect.ust.hk` = student (configurable via `ALLOWED_EMAIL_DOMAINS`).
+6. **Enforcement** — `require_instructor` dependency blocks students from admin endpoints; per-course ownership checks (`get_owned_course`) gate cross-course access.
+
+The full migration history (Clerk → Better Auth) lives at [`docs/migrations/clerk-to-better-auth.md`](docs/migrations/clerk-to-better-auth.md).
 
 <br/>
 
