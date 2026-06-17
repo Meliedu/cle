@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Meli — Work History &amp; Forward Roadmap (2026-03-30 → 2026-08-31)</title>
+<style>
+  @page {
+    size: A4 landscape;
+    margin: 14mm 14mm 16mm 14mm;
+    @bottom-center {
+      content: counter(page) " / " counter(pages);
+      font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+      font-size: 9pt;
+      color: #6b6b6b;
+    }
+  }
+
+  :root {
+    --ink: #1a1a1a;
+    --muted: #5e5e5e;
+    --rule: #d8d4cd;
+    --rule-strong: #2a2a2a;
+    --surface: #ffffff;
+    --surface-alt: #faf7f1;
+    --surface-head: #2a2018;
+    --surface-head-text: #f5efe4;
+    --accent: #8a5a2b;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--surface);
+    color: var(--ink);
+    font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.45;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  header.doc-head {
+    border-bottom: 1.5px solid var(--rule-strong);
+    padding-bottom: 8mm;
+    margin-bottom: 8mm;
+  }
+
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 8pt;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 4mm;
+  }
+
+  h1 {
+    font-family: "Source Serif Pro", "Georgia", serif;
+    font-size: 24pt;
+    font-weight: 600;
+    margin: 0 0 3mm 0;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+
+  h1 .period {
+    font-weight: 400;
+    color: var(--muted);
+    font-size: 14pt;
+    letter-spacing: 0;
+  }
+
+  .lede {
+    font-size: 10pt;
+    color: var(--muted);
+    max-width: 240mm;
+    margin: 0;
+  }
+
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: "Source Serif Pro", "Georgia", serif;
+    font-size: 13pt;
+    font-weight: 600;
+    margin: 6mm 0 3mm 0;
+    color: var(--ink);
+  }
+
+  table.weekly {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 8.8pt;
+  }
+
+  table.weekly thead th {
+    background: var(--surface-head);
+    color: var(--surface-head-text);
+    text-align: left;
+    padding: 3.5mm 3mm;
+    font-weight: 600;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border: none;
+  }
+
+  table.weekly tbody td {
+    padding: 3.5mm 3mm;
+    vertical-align: top;
+    border-bottom: 0.5px solid var(--rule);
+  }
+
+  table.weekly tbody tr:nth-child(even) td {
+    background: var(--surface-alt);
+  }
+
+  table.weekly tbody tr.research td {
+    background: #f3ede0;
+    font-style: italic;
+  }
+  table.weekly tbody tr.research td.col-impl {
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* Column widths */
+  .col-week  { width: 5%; }
+  .col-dates { width: 9%; }
+  .col-theme { width: 16%; }
+  .col-impl  { width: 38%; }
+  .col-plan  { width: 32%; }
+
+  td.col-week {
+    font-family: "Source Serif Pro", "Georgia", serif;
+    font-size: 14pt;
+    font-weight: 600;
+    color: var(--accent);
+    text-align: center;
+    line-height: 1;
+    padding-top: 4mm;
+  }
+
+  td.col-dates {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  td.col-theme {
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  ul.cell {
+    margin: 0;
+    padding-left: 4mm;
+  }
+  ul.cell li {
+    margin-bottom: 1.2mm;
+    line-height: 1.4;
+  }
+  ul.cell li:last-child { margin-bottom: 0; }
+  ul.cell strong { color: var(--ink); }
+  ul.cell .em { color: var(--accent); font-weight: 600; }
+
+  section.notes {
+    margin-top: 6mm;
+    padding-top: 4mm;
+    border-top: 0.5px solid var(--rule);
+  }
+
+  section.notes ul {
+    margin: 0;
+    padding-left: 5mm;
+    color: var(--muted);
+    font-size: 8.5pt;
+  }
+  section.notes ul li { margin-bottom: 1mm; }
+  section.notes code {
+    font-family: "JetBrains Mono", "Menlo", monospace;
+    font-size: 8pt;
+    background: var(--surface-alt);
+    padding: 0.4mm 1.2mm;
+    border-radius: 1.5mm;
+    color: var(--ink);
+  }
+
+  /* Avoid awkward row splits across pages */
+  table.weekly tr { page-break-inside: avoid; }
+  table.weekly thead { display: table-header-group; }
+
+  /* Forward Roadmap table — reuses .weekly with sprint-specific column widths */
+  table.roadmap .col-week  { width: 6%; }
+  table.roadmap .col-dates { width: 10%; }
+  table.roadmap .col-theme { width: 18%; }
+  table.roadmap .col-impl  { width: 40%; }
+  table.roadmap .col-plan  { width: 26%; }
+  table.roadmap td.col-week {
+    font-family: "Source Serif Pro", "Georgia", serif;
+    font-size: 13pt;
+    letter-spacing: -0.01em;
+  }
+  table.roadmap td.col-plan {
+    color: var(--muted);
+    font-size: 8.5pt;
+  }
+
+  /* Dev Budget table */
+  table.budget {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 8.8pt;
+  }
+  table.budget thead th {
+    background: var(--surface-head);
+    color: var(--surface-head-text);
+    text-align: left;
+    padding: 3.5mm 3mm;
+    font-weight: 600;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border: none;
+  }
+  table.budget thead th.num,
+  table.budget tbody td.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  table.budget tbody td {
+    padding: 2.8mm 3mm;
+    vertical-align: top;
+    border-bottom: 0.5px solid var(--rule);
+  }
+  table.budget tbody tr:nth-child(even) td {
+    background: var(--surface-alt);
+  }
+  table.budget tbody tr.total td {
+    background: #2a2018;
+    color: var(--surface-head-text);
+    font-weight: 600;
+    border-bottom: none;
+  }
+  table.budget tbody tr.total td .muted {
+    color: #c9bfa9;
+    font-weight: 400;
+  }
+  table.budget .col-item    { width: 28%; }
+  table.budget .col-mo-low  { width: 10%; }
+  table.budget .col-mo-high { width: 10%; }
+  table.budget .col-period  { width: 16%; }
+  table.budget .col-notes   { width: 36%; color: var(--muted); }
+
+  table.roadmap tr,
+  table.budget tr { page-break-inside: avoid; }
+
+  .deferred {
+    margin-top: 4mm;
+    padding: 3mm 4mm;
+    background: var(--surface-alt);
+    border-left: 2px solid var(--accent);
+    font-size: 8.5pt;
+    color: var(--muted);
+  }
+  .deferred strong { color: var(--ink); }
+
+  .levers ul {
+    margin: 1mm 0 0 0;
+    padding-left: 5mm;
+    color: var(--muted);
+    font-size: 8.5pt;
+  }
+  .levers ul li { margin-bottom: 0.8mm; }
+  .levers code {
+    font-family: "JetBrains Mono", "Menlo", monospace;
+    font-size: 8pt;
+    background: var(--surface);
+    padding: 0.4mm 1.2mm;
+    border: 0.5px solid var(--rule);
+    border-radius: 1.5mm;
+    color: var(--ink);
+  }
+
+  h2 + p.section-lede {
+    font-size: 9pt;
+    color: var(--muted);
+    margin: 0 0 4mm 0;
+    max-width: 240mm;
+  }
+  h2 + p.section-lede strong { color: var(--ink); }
+
+  /* Force the Forward Roadmap and Budget onto fresh pages so the past summary stands alone */
+  h2.page-break {
+    page-break-before: always;
+  }
+
+  footer.signoff {
+    margin-top: 8mm;
+    font-size: 8pt;
+    color: var(--muted);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+</head>
+<body>
+
+<header class="doc-head">
+  <div class="eyebrow">Meli · HKUST Language Learning Platform</div>
+  <h1>Work History &amp; Forward Roadmap <span class="period">· 30 Mar – 31 Aug 2026</span></h1>
+  <p class="lede">
+    Design and engineering record for <strong>Meli</strong>, an AI-powered language learning platform for HKUST built on FastAPI, Next.js 16, pgvector and Cloudflare R2. The document covers three sections: (1) <strong>Weekly Summary</strong> of work shipped 30 Mar – 9 May 2026, (2) <strong>Forward Roadmap</strong> of eight 2-week sprints planned 11 May – 31 Aug 2026, and (3) a <strong>Dev Budget Estimate</strong> for the same forward period. A separate launch budget will be authored for September. Period total to date: ~346 non-merge commits.
+  </p>
+</header>
+
+<h2>Weekly Summary</h2>
+
+<table class="weekly">
+  <thead>
+    <tr>
+      <th class="col-week">Week</th>
+      <th class="col-dates">Dates</th>
+      <th class="col-theme">Theme</th>
+      <th class="col-impl">Implemented</th>
+      <th class="col-plan">Planned</th>
+    </tr>
+  </thead>
+  <tbody>
+
+    <tr class="research">
+      <td class="col-week">1</td>
+      <td class="col-dates">30 Mar – 5 Apr</td>
+      <td class="col-theme">Research &amp; brainstorm</td>
+      <td class="col-impl">— No commits (design phase)</td>
+      <td class="col-plan">
+        <ul class="cell">
+          <li>Phase 1a foundation plan</li>
+          <li>Platform design spec</li>
+          <li>Stack selection: FastAPI + Next.js 16 + pgvector + R2</li>
+        </ul>
+      </td>
+    </tr>
+
+    <tr>
+      <td class="col-week">2</td>
+      <td class="col-dates">6 Apr – 12 Apr</td>
+      <td class="col-theme">Scaffolding &amp; foundation</td>
+      <td class="col-impl">
+        <ul class="cell">
+          <li>FastAPI skeleton, async Postgres, Alembic migrations</li>
+          <li>Core schema: users, courses, documents, flashcards, quizzes, tasks</li>
+          <li>Clerk JWT auth + role detection (<code>ust.hk</code> vs <code>connect.ust.hk</code>)</li>
+          <li>Cloudflare R2 storage adapter</li>
+          <li>Next.js 16 shell, dashboard, auth pages, quiz / flashcard players</li>
+          <li>Docker Compose, pytest, Playwright E2E scaffolding</li>
+        </ul>
+      </td>
+      <td class="col-plan">
+        <ul class="cell">
+          <li>Phase 1b RAG pipeline plan</li>
+          <li>Phase 1c frontend / deploy plan</li>
+          <li>Difficulty adapter spec</li>
+        </ul>
+      </td>
+    </tr>
+
+    <tr>
+      <td class="col-week">3</td>
+      <td class="col-dates">13 Apr – 19 Apr</td>
+      <td class="col-theme">RAG + security + Canvas OAuth foundation</td>
+      <td class="col-impl">
+        <ul class="cell">
+          <li>End-to-end RAG: parse → chunk → embed → retrieve → generate</li>
+          <li>Hybrid search + RRF, FlashRank reranker</li>
+          <li>FSRS-5 flashcard scheduler + Bayesian difficulty recalibration</li>
+          <li>Live quiz + speech grading (Azure / iFlytek)</li>
+          <li>Gamification: XP, streaks, badges</li>
+          <li>Revision practice with REINFORCE bandit</li>
+          <li><code>next-intl</code> i18n + language toggle</li>
+          <li>Canvas OAuth phase 1 (state JWT, models, migration)</li>
+          <li>Postgres RLS, rate limiting, input validation</li>
+        </ul>
+      </td>
+      <td class="col-plan">
+        <ul class="cell">
+          <li>FSRS-5 + recalibration spec (11/4)</li>
+          <li>Neural spaced-repetition design (11/4)</li>
+          <li>Canvas integration design (14/4)</li>
+          <li>Security hardening plan (16/4)</li>
+          <li>Image-coverage / VLM ingestion roadmap (16/4)</li>
+        </ul>
+      </td>
+    </tr>
+
+    <tr>
+      <td class="col-week">4</td>
+      <td class="col-dates">20 Apr – 26 Apr</td>
+      <td class="col-theme">Canvas (P2) + folders + dashboard redesign</td>
+      <td class="col-impl">
+        <ul class="cell">
+          <li>Canvas full flow: OAuth → roster → file sync → enqueue processing</li>
+          <li>Quiz / flashcard folder hierarchies + browser UI + cycle-safe move</li>
+          <li>Dashboard redesign: warm cream surfaces, dark bronze rail, Inter type system</li>
+          <li>Hero + to-do + mini-calendar home, dedicated calendar route</li>
+          <li>Live-quiz bank browser, sessions panel, post-review experience</li>
+          <li>Parser migration: Docling → PyMuPDF / python-docx / python-pptx + VLM rescue captions</li>
+        </ul>
+      </td>
+      <td class="col-plan">
+        <ul class="cell">
+          <li>Mobile app design spec (26/4)</li>
+          <li>Mobile plan A — Capacitor foundation (26/4)</li>
+          <li>Mobile plan B — Backend notifications (26/4)</li>
+          <li>Mobile plan C — Frontend notification UX (26/4)</li>
+          <li>Mobile plan D — Native pronunciation (26/4)</li>
+          <li>Mobile plan E — Native flashcards (26/4)</li>
+        </ul>
+      </td>
+    </tr>
+
+    <tr>
+      <td class="col-week">5</td>
+      <td class="col-dates">27 Apr – 3 May</td>
+      <td class="col-theme">Adaptive engine (P1+P2) + Better Auth migration</td>
+      <td class="col-impl">
+        <ul class="cell">
+          <li><span class="em">Adaptive Engine Phase 1:</span> curriculum tables (modules, meetings, objectives, assignments), calendar feed, syllabus parser + applier, assignment submission flow</li>
+          <li><span class="em">Adaptive Engine Phase 2:</span> concept extraction (LLM + embeddings), clustering, prerequisite DAG, mastery (Beta-Binomial + HLR decay), tagging pipeline</li>
+          <li>Clerk → <strong>Better Auth</strong> migration: backend verifier, frontend wiring, settings page, ~30-component codemod</li>
+          <li>Pronunciation: instructor sets, async generator, grading service, student practice UI</li>
+          <li>Per-item editor for quizzes / flashcards (add / edit / delete / regenerate)</li>
+        </ul>
+      </td>
+      <td class="col-plan">
+        <ul class="cell">
+          <li>Adaptive engine design doc (28/4)</li>
+          <li>Adaptive engine Phase 1 plan (28/4)</li>
+          <li>Adaptive engine Phase 2 plan (28/4)</li>
+          <li>Adaptive engine Phase 3 plan (30/4)</li>
+        </ul>
+      </td>
+    </tr>
+
+    <tr>
+      <td class="col-week">6</td>
+      <td class="col-dates">4 May – 9 May</td>
+      <td class="col-theme">Adaptive engine (P3) + correctness &amp; polish</td>
+      <td class="col-impl">
+        <ul class="cell">
+          <li><span class="em">Adaptive Engine Phase 3:</span> <code>next_actions</code> materialization (outer-fringe SQL), 7 instructor alert rules, engine settings (mode + per-user overrides), action-outcome telemetry, daily horizon-scan cron, quarterly coefficient retune, event-driven recompute</li>
+          <li>Student "Today" page (top-10 next actions), instructor alerts center, course landing nav (Today / Alerts / Engine)</li>
+          <li>Instructor inline-edit for course description</li>
+          <li>Correctness &amp; performance: off-arm dedupe, cohort race lock via <code>pg_advisory_xact_lock</code>, CTE rewrites, <code>deleted_at</code> filters, NaN guard, blake2b lock key, covering index on <code>concept_mastery</code></li>
+        </ul>
+      </td>
+      <td class="col-plan">
+        <ul class="cell">
+          <li>Phase 3 hardening continuation (race conditions, replay split)</li>
+          <li>Mobile app implementation kick-off (plans queued from W4)</li>
+        </ul>
+      </td>
+    </tr>
+
+  </tbody>
+</table>
+
+<section class="notes">
+  <ul>
+    <li>"Planned" entries map to files under <code>docs/superpowers/plans/</code> and <code>docs/superpowers/specs/</code>; filenames are date-prefixed (e.g. <code>2026-04-30-adaptive-engine-phase3-plan.md</code>).</li>
+    <li>Commit volume varied across weeks (W3 ≈ 96, W5 ≈ 118; W2 ≈ 49, W4 ≈ 51, W6 ≈ 32 partial). The table emphasizes shipped feature surfaces rather than commit count.</li>
+    <li>Adaptive Engine work spans W5 (P1+P2) and W6 (P3); the Better Auth migration overlaps W5 alongside curriculum / mastery delivery.</li>
+  </ul>
+</section>
+
+<h2 class="page-break">Forward Roadmap <span style="font-weight:400;color:var(--muted);font-size:11pt;">· 11 May – 31 Aug 2026</span></h2>
+<p class="section-lede">
+  The next ~16 weeks are organized into <strong>eight 2-week sprints</strong>, executed at a realistic solo-dev pace (~1 major theme per sprint plus polish). Mobile, production observability, and outbound email / SMS delivery infrastructure are explicitly <strong>deferred to the post-Aug launch budget</strong>, not silently dropped. Continuous tracks (research, dependency upkeep, Canvas sync robustness, cost monitoring) run in parallel.
+</p>
+
+<table class="weekly roadmap">
+  <thead>
+    <tr>
+      <th class="col-week">Sprint</th>
+      <th class="col-dates">Dates</th>
+      <th class="col-theme">Theme</th>
+      <th class="col-impl">Planned deliverables</th>
+      <th class="col-plan">Notes / risks</th>
+    </tr>
+  </thead>
+  <tbody>
+
+    <tr>
+      <td class="col-week">S1</td>
+      <td class="col-dates">11 May – 24 May</td>
+      <td class="col-theme">Stabilization + UI/UX pass 1</td>
+      <td class="col-impl">
+        <ul class="cell">
+          <li>Adaptive Engine P3 race / replay hardening (carryover from W6)</li>
+          <li>Design review of Today / Alerts / Engine surfaces</li>
+          <li>Empty / loading / error state polish on shipped pages</li>
+          <li>Bug bash from W3–W6 surfaces</li>
+        </ul>
+      </td>
+      <td class="col-plan">Pays down debt before new feature work; highest-leverage starting sprint.</td>
+    </tr>
+
+    <tr>
+      <td class="col-week">S2</td>
+      <td class="col-dates">25 May – 7 Jun</td>
+      <td class="col-theme">AI Resource Agent (instructor)</td>
+      <td class="col-impl">
+        <ul class="cell">
+          <li>Spec + safety policy for 3rd-party content discovery</li>
+          <li>Backend agent loop: web + YouTube search, citation extraction, quality / safety filter</li>
+          <li>Frontend "Discover" tab in course; instructor approval queue</li>
+          <li>Ingestion of accepted items into supplementary chunk store with <code>source_kind=external</code> tag</li>
+        </ul>
+      </td>
+      <td class="col-plan">Tool-calling + search workload will spike OpenRouter spend this sprint.</td>
+    </tr>
+
+    <tr>
+      <td class="col-week">S3</td>
+      <td class="col-dates">8 Jun – 21 Jun</td>
+      <td class="col-theme">Pronunciation upgrade</td>
+      <td class="col-impl">
+        <ul class="cell">
+          <li>Add <code>pronunciation_scores.pronunciation_item_id</code> FK + backfill</li>
+          <li>Wire pronunciation attempts into mastery (closes schema gap noted in <code>CLAUDE.md</code>)</li>
+          <li>Multi-language phoneme + IPA hints</li>
+          <li>Practice modes: shadowing / repetition / free-speak</li>
+          <li>Conversation practice prototype (TTS + ASR loop)</li>
+        </ul>
+      </td>
+      <td class="col-plan">TTS / ASR free tiers cover dev usage; no extra cost expected.</td>
+    </tr>
+
+    <tr>
+      <td class="col-week">S4</td>
+      <td class="col-dates">22 Jun – 5 Jul</td>
+      <td class="col-theme">Revision mode upgrade</td>
+      <td class="col-impl">
+        <ul class="cell">
+          <li>REINFORCE bandit reward refinement</li>
+          <li>New session formats: weak-spot drill, mixed-modality, timed sprint</li>
+          <li>Per-session debrief: concept mastery delta panel</li>
+          <li>Difficulty calibration smoothing</li>
+        </ul>
+      </td>
+      <td class="col-plan">Builds on W3 revision foundation; mostly UX + tuning.</td>
+    </tr>
+
+    <tr>
+      <td class="col-week">S5</td>
+      <td class="col-dates">6 Jul – 19 Jul</td>
+      <td class="col-theme">DB upgrade + perf</td>
+      <td class="col-impl">
+        <ul class="cell">
+          <li>pgvector tuning; HNSW where dim ≤ 2000</li>
+          <li>Index / FK / <code>deleted_at</code>-filter audit</li>
+          <li>Connection-pool review</li>
+          <li>Backup / restore drill</li>
+          <li>Query-plan audit on Today / Alerts hot paths</li>
+        </ul>
+      </td>
+      <td class="col-plan">Enables larger user base in Sept; no schema-breaking changes planned.</td>
+    </tr>
+
+    <tr>
+      <td class="col-week">S6</td>
+      <td class="col-dates">20 Jul – 2 Aug</td>
+      <td class="col-theme">Instructor Alert Agent</td>
+      <td class="col-impl">
+        <ul class="cell">
+          <li>Daily morning brief: at-risk students, struggling concepts</li>
+          <li>Prioritized to-do list with severity (P0 / P1 / P2)</li>
+          <li>Email digest — log-only during dev (no transactional email service wired yet)</li>
+          <li>Suggested actions sourced from existing 7-rule alert system</li>
+        </ul>
+      </td>
+      <td class="col-plan">Wiring an actual email/SMS sender is deferred to the launch budget; dev uses a log-only digest.</td>
+    </tr>
+
+    <tr>
+      <td class="col-week">S7</td>
+      <td class="col-dates">3 Aug – 16 Aug</td>
+      <td class="col-theme">Student analytics dashboard</td>
+      <td class="col-impl">
+        <ul class="cell">
+          <li>Concept mastery heatmap (module / objective)</li>
+          <li>Learning velocity + retention curves</li>
+          <li>Anonymized cohort percentile</li>
+          <li>Instructor cohort view (at-risk list, mastery distribution)</li>
+          <li>CSV / PDF export</li>
+        </ul>
+      </td>
+      <td class="col-plan">Read-only — no new write paths; lower risk.</td>
+    </tr>
+
+    <tr>
+      <td class="col-week">S8</td>
+      <td class="col-dates">17 Aug – 31 Aug</td>
+      <td class="col-theme">UI/UX pass 2 + beta-readiness</td>
+      <td class="col-impl">
+        <ul class="cell">
+          <li>Onboarding flow polish (instructor + student)</li>
+          <li>Empty / error / loading state audit</li>
+          <li>Accessibility audit (WCAG AA)</li>
+          <li>E2E coverage on critical flows (signup → upload → quiz / flashcard)</li>
+          <li>Instructor &amp; student guide docs, API reference</li>
+        </ul>
+      </td>
+      <td class="col-plan">Aimed at "ready to invite first real cohort" by 1 Sept.</td>
+    </tr>
+
+  </tbody>
+</table>
+
+<div class="deferred">
+  <strong>Continuous tracks (parallel to sprints):</strong> new-feature research log · dependency / security patches · Canvas sync robustness · cost monitoring &amp; prompt-cache tuning.<br>
+  <strong>Explicitly deferred to post-Aug launch budget:</strong> Mobile app (Capacitor + native pronunciation / flashcards) · production observability (Sentry, structured logs, uptime) · outbound email / SMS delivery infrastructure. Meli itself remains free for HKUST users — none of these are user-facing premium features.
+</div>
+
+<h2 class="page-break">Dev Budget Estimate <span style="font-weight:400;color:var(--muted);font-size:11pt;">· 11 May – 31 Aug 2026</span></h2>
+<p class="section-lede">
+  Period: <strong>~3.7 months / 16 weeks of development only</strong>. A separate budget will be authored for the September launch (production hosting tier upgrades, observability, email / SMS delivery infrastructure, support tooling). The dominant variable cost during dev is OpenRouter API usage; everything else is fixed and small.
+</p>
+
+<table class="budget">
+  <thead>
+    <tr>
+      <th class="col-item">Item</th>
+      <th class="col-mo-low num">Monthly (low)</th>
+      <th class="col-mo-high num">Monthly (high)</th>
+      <th class="col-period num">Period total</th>
+      <th class="col-notes">Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="col-item">Railway Hobby (Postgres + backend host)</td>
+      <td class="num">$5</td>
+      <td class="num">$5</td>
+      <td class="num">$20</td>
+      <td class="col-notes">Already paying.</td>
+    </tr>
+    <tr>
+      <td class="col-item">OpenRouter — embeddings (<code>openai/text-embedding-3-large</code>)</td>
+      <td class="num">$1</td>
+      <td class="num">$5</td>
+      <td class="num">$4 – $19</td>
+      <td class="col-notes">Driven by re-ingestion test cycles.</td>
+    </tr>
+    <tr>
+      <td class="col-item">OpenRouter — generation (Sonnet 4.6 / Haiku 4.5 / Gemini Flash via gateway)</td>
+      <td class="num">$10</td>
+      <td class="num">$30</td>
+      <td class="num">$37 – $111</td>
+      <td class="col-notes">Quiz / flashcard / summary / concept extraction. Spikes during S2 (Resource Agent) and S6 (Alert Agent).</td>
+    </tr>
+    <tr>
+      <td class="col-item">OpenRouter — VLM captions (Gemini 2.5 Flash)</td>
+      <td class="num">$1</td>
+      <td class="num">$3</td>
+      <td class="num">$4 – $11</td>
+      <td class="col-notes">Figure / image captions during ingestion testing.</td>
+    </tr>
+    <tr>
+      <td class="col-item">OpenRouter — adaptive engine workloads</td>
+      <td class="num">$3</td>
+      <td class="num">$10</td>
+      <td class="num">$11 – $37</td>
+      <td class="col-notes">Concept extraction, mastery batch, tagging.</td>
+    </tr>
+    <tr>
+      <td class="col-item">Vercel — frontend (Hobby plan)</td>
+      <td class="num">$0</td>
+      <td class="num">$0</td>
+      <td class="num">$0</td>
+      <td class="col-notes">Free tier holds for dev / pre-beta.</td>
+    </tr>
+    <tr>
+      <td class="col-item">Cloudflare R2 — object storage</td>
+      <td class="num">$0</td>
+      <td class="num">$1</td>
+      <td class="num">$0 – $4</td>
+      <td class="col-notes">10 GB + 1M reads free; dev usage trivial.</td>
+    </tr>
+    <tr>
+      <td class="col-item">Azure / iFlytek speech APIs</td>
+      <td class="num">$0</td>
+      <td class="num">$5</td>
+      <td class="num">$0 – $19</td>
+      <td class="col-notes">Free / dev tiers.</td>
+    </tr>
+    <tr>
+      <td class="col-item">Domain (optional, if registered)</td>
+      <td class="num">$1</td>
+      <td class="num">$1</td>
+      <td class="num">$4</td>
+      <td class="col-notes">E.g. a <code>.com</code> for staging.</td>
+    </tr>
+    <tr>
+      <td class="col-item">Buffer (10–15%)</td>
+      <td class="num">$2</td>
+      <td class="num">$7</td>
+      <td class="num">$7 – $26</td>
+      <td class="col-notes">Unexpected spikes (failed regenerations, prompt iteration).</td>
+    </tr>
+    <tr class="total">
+      <td class="col-item">Total</td>
+      <td class="num">~$23</td>
+      <td class="num">~$67</td>
+      <td class="num">~$87 – $251</td>
+      <td class="col-notes"><span class="muted">Mid-point ≈ <strong style="color:#f5efe4;">$170</strong> over the dev period.</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="levers">
+  <p style="margin:4mm 0 0 0;color:var(--muted);font-size:8.8pt;"><strong style="color:var(--ink);">Currently incurred (8 Apr → 9 May, est.):</strong> Railway Hobby ≈ $5 + OpenRouter usage to date — actuals available from the OpenRouter / Railway dashboards.</p>
+</div>
+
+</body>
+</html>
