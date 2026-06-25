@@ -552,12 +552,10 @@ async def run_generation_job(
 # this module. The handlers themselves now live in
 # ``app.services.adaptive_jobs`` to keep this file under the 800-line cap.
 from app.services.adaptive_jobs import (  # noqa: E402, F401
+    run_draft_learning_notes,
     run_evaluate_instructor_alerts,
     run_extract_concept_candidates,
-    run_materialize_next_actions,
-    run_record_action_outcome,
     run_replay_attempt_history,
     run_tag_artifact_concepts,
-    run_tune_action_coefficients,
     run_update_concept_mastery,
 )

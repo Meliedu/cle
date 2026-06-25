@@ -64,35 +64,35 @@ async def verify_instructor_enrollment(
         )
 
 
-async def enqueue_next_actions_recompute(
+async def enqueue_note_drafting(
     db: AsyncSession,
     *,
-    user_id: uuid.UUID,
     course_id: uuid.UUID,
 ) -> None:
-    """Best-effort enqueue. Caller commits.
+    """Enqueue a ``draft_learning_notes`` task for a course, deduped.
 
-    Dedupe: if a pending/running materialize_next_actions task already exists
-    for this (user, course), skip. The Task.payload column is JSON (not JSONB)
-    so we use ``op('->>')`` for value extraction — see Phase 2 Task 16.
+    Note drafting is batch/periodic work — one pending task per course is
+    sufficient. If a ``draft_learning_notes`` task for this course is already
+    pending or running, skip the enqueue so a burst of attempts doesn't pile
+    up redundant draft passes. ``Task.payload`` is JSON, so the course filter
+    uses ``->>`` text extraction. The Task row is added to the caller's
+    session; the caller commits.
     """
     existing = (
         await db.execute(
             select(Task.id).where(
-                Task.task_type == "materialize_next_actions",
+                Task.task_type == "draft_learning_notes",
                 Task.status.in_(("pending", "running")),
-                Task.payload.op("->>")("user_id") == str(user_id),
                 Task.payload.op("->>")("course_id") == str(course_id),
             )
-            .limit(1)
         )
-    ).scalar_one_or_none()
+    ).first()
     if existing is not None:
         return
     db.add(
         Task(
-            task_type="materialize_next_actions",
-            payload={"user_id": str(user_id), "course_id": str(course_id)},
+            task_type="draft_learning_notes",
+            payload={"course_id": str(course_id)},
             status="pending",
         )
     )

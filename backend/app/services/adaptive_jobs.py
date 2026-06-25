@@ -1,8 +1,7 @@
-"""Adaptive-engine async job handlers.
+"""Evidence-engine async job handlers.
 
 Concept extraction, concept tagging, mastery updates, attempt-history
-replay, next-actions materialisation, action-outcome telemetry, instructor
-alerts, and quarterly coefficient retuning live here.
+replay, and instructor-alert evaluation live here.
 
 These were extracted from ``app.services.jobs`` to keep that module under
 the 800-line cap. ``jobs.py`` re-exports the handlers below for backward
@@ -12,12 +11,17 @@ continue to work unchanged.
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from typing import Any
 
+from openai import AsyncOpenAI
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -491,100 +495,236 @@ async def run_replay_attempt_history(
     return {"course_id": str(course_id), "counters": counters}
 
 
-async def run_materialize_next_actions(
-    session: AsyncSession, payload: dict[str, Any]
-) -> dict[str, Any]:
-    """Materialise top-10 next_actions for one (user, course)."""
-    from app.services.next_actions import materialize_next_actions
-
-    user_id = uuid.UUID(payload["user_id"])
-    course_id = uuid.UUID(payload["course_id"])
-    rows = await materialize_next_actions(
-        session, user_id=user_id, course_id=course_id
-    )
-    return {"count": len(rows), "user_id": str(user_id), "course_id": str(course_id)}
-
-
-async def run_record_action_outcome(
-    session: AsyncSession, payload: dict[str, Any]
-) -> dict[str, Any]:
-    """Persist a single action_outcomes row.
-
-    Used by both the click endpoint (clicked=True) and the post-attempt
-    observation hook (completed=True with outcome_metric+outcome_score).
-    """
-    from datetime import datetime
-    from decimal import Decimal
-
-    from app.models import ActionOutcome
-
-    # Bundle every payload-parsing failure into a single descriptive
-    # ValueError so a malformed task surfaces a useful ``error_message``
-    # rather than a bare KeyError / ValueError from deep inside the
-    # constructor.
-    try:
-        served_at = datetime.fromisoformat(payload["served_at"])
-        user_id = uuid.UUID(payload["user_id"])
-        action_type = payload["action_type"]
-        engine_variant = payload["engine_variant"]
-        next_action_id_raw = payload.get("next_action_id")
-        next_action_id = (
-            uuid.UUID(next_action_id_raw) if next_action_id_raw else None
-        )
-        course_id_raw = payload.get("course_id")
-        course_id = uuid.UUID(course_id_raw) if course_id_raw else None
-        target_id_raw = payload.get("target_id")
-        target_id = uuid.UUID(target_id_raw) if target_id_raw else None
-        outcome_score_raw = payload.get("outcome_score")
-        outcome_score = (
-            Decimal(f"{float(outcome_score_raw):.3f}")
-            if outcome_score_raw is not None else None
-        )
-        observed_at_raw = payload.get("observed_at")
-        observed_at = (
-            datetime.fromisoformat(observed_at_raw) if observed_at_raw else None
-        )
-    except (KeyError, ValueError, TypeError) as exc:
-        raise ValueError(
-            f"malformed record_action_outcome payload: {exc}"
-        ) from exc
-
-    row = ActionOutcome(
-        next_action_id=next_action_id,
-        user_id=user_id,
-        course_id=course_id,
-        action_type=action_type,
-        target_kind=payload.get("target_kind"),
-        target_id=target_id,
-        engine_variant=engine_variant,
-        served_at=served_at,
-        clicked=bool(payload.get("clicked", False)),
-        completed=bool(payload.get("completed", False)),
-        outcome_score=outcome_score,
-        outcome_metric=payload.get("outcome_metric"),
-        observed_at=observed_at,
-    )
-    session.add(row)
-    await session.commit()
-    return {"status": "recorded", "id": str(row.id)}
-
-
 async def run_evaluate_instructor_alerts(
     session: AsyncSession, payload: dict[str, Any]
 ) -> dict[str, Any]:
-    """Evaluate alert rules for one course (Task 15 fills the body)."""
+    """Evaluate alert rules for one course."""
     from app.services.alerts import evaluate_alerts_for_course
 
     course_id = uuid.UUID(payload["course_id"])
     return await evaluate_alerts_for_course(session, course_id=course_id)
 
 
-async def run_tune_action_coefficients(
+# ---------------------------------------------------------------------------
+# Learning-note drafting (OBJ-04) — AI drafts, instructor reviews.
+# ---------------------------------------------------------------------------
+
+# How recently an event must have occurred to seed a draft note, and the
+# upper bounds on how much we scan / reference per run. Kept small so a single
+# run is bounded and the draft cites a manageable slice of evidence.
+_NOTE_WINDOW_HOURS = 48
+_NOTE_EVENT_SCAN_CAP = 200
+_NOTE_EVENTS_PER_NOTE_CAP = 20
+
+# Below-this is a "struggle" signal worth drafting a note about. Scales differ
+# per source (quiz/pronunciation are 0–100, revision is 0–1, flashcard SM-2
+# quality is 0–5), so each kind is thresholded on its own scale.
+_QUIZ_PRON_STRUGGLE = 50.0
+_REVISION_STRUGGLE = 0.5
+_FLASHCARD_STRUGGLE = 3.0
+
+
+class _FollowUpV1(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    action_type: str = Field(..., max_length=40)
+    target_kind: str | None = Field(None, max_length=40)
+    target_id: str | None = Field(None, max_length=64)
+
+
+class _NoteDraftV1(BaseModel):
+    """Strict schema for the LLM's draft note. Caps bound a hallucinated or
+    prompt-injected payload before it lands in an instructor-facing row."""
+
+    model_config = ConfigDict(extra="ignore")
+    observed_signal: str = Field(..., max_length=2000)
+    draft_interpretation: str | None = Field(None, max_length=2000)
+    limitation_note: str | None = Field(None, max_length=2000)
+    suggested_follow_up: _FollowUpV1 | None = None
+
+
+_NOTE_SYSTEM_PROMPT = """You draft an instructor-facing learning note from a \
+single student's recent low-scoring attempts.
+Return ONLY a JSON object with these keys:
+{
+  "observed_signal": "one factual sentence describing what the evidence shows",
+  "draft_interpretation": "a tentative, hedged interpretation (string or null)",
+  "limitation_note": "what this evidence does NOT establish (string or null)",
+  "suggested_follow_up": {
+    "action_type": "short verb phrase",
+    "target_kind": "string or null",
+    "target_id": "string or null"
+  }
+}
+Be factual and concise. This is a DRAFT for human review — never assert an \
+interpretation as established fact."""
+
+
+def _event_is_struggle(value: dict[str, Any], source_kind: str) -> bool:
+    """True when an attempt's value indicates the student struggled.
+
+    Tolerant of missing/non-numeric values (returns False) so a malformed
+    event never seeds a note.
+    """
+    def _num(key: str) -> float | None:
+        raw = value.get(key)
+        try:
+            return float(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    if source_kind == "flashcard":
+        q = _num("quality")
+        return q is not None and q < _FLASHCARD_STRUGGLE
+    if source_kind == "pronunciation":
+        s = _num("overall_score")
+        return s is not None and s < _QUIZ_PRON_STRUGGLE
+    if source_kind == "quiz_attempt":
+        s = _num("score")
+        return s is not None and s < _QUIZ_PRON_STRUGGLE
+    if source_kind == "revision":
+        s = _num("score")
+        return s is not None and s < _REVISION_STRUGGLE
+    # Generic fallback: a normalized 0–1 score under threshold.
+    s = _num("score")
+    return s is not None and s < _REVISION_STRUGGLE
+
+
+def _summarize_events(events: list[Any]) -> str:
+    return "\n".join(
+        f"- source={ev.source_kind} value={json.dumps(ev.value or {})}"
+        for ev in events
+    )
+
+
+def _fallback_note(events: list[Any]) -> dict[str, Any]:
+    """Deterministic note built straight from event values — used when the
+    LLM call fails so a struggle signal is never silently dropped."""
+    kinds = "/".join(sorted({ev.source_kind for ev in events}))
+    return {
+        "observed_signal": (
+            f"{len(events)} recent low-scoring {kinds} attempt(s) "
+            f"in the last {_NOTE_WINDOW_HOURS}h."
+        ),
+        "draft_interpretation": None,
+        "limitation_note": (
+            "Auto-generated from attempt scores only; not yet interpreted "
+            "by an instructor."
+        ),
+        "suggested_follow_up": {
+            "action_type": "review_with_student",
+            "target_kind": None,
+            "target_id": None,
+        },
+    }
+
+
+async def _llm_draft_note(events: list[Any]) -> dict[str, Any] | None:
+    """Draft a note via the LLM. Never raises — returns None on any failure
+    so the caller falls back to a deterministic template."""
+    client = AsyncOpenAI(
+        api_key=settings.openrouter_api_key,
+        base_url=settings.openrouter_base_url,
+    )
+    try:
+        resp = await client.chat.completions.create(
+            model=settings.llm_primary_model,
+            messages=[
+                {"role": "system", "content": _NOTE_SYSTEM_PROMPT},
+                {"role": "user", "content": _summarize_events(events)[:6000]},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1,
+        )
+        parsed = json.loads(resp.choices[0].message.content or "{}")
+        return _NoteDraftV1.model_validate(parsed).model_dump(mode="json")
+    except Exception:  # noqa: BLE001 — never escape; fall back to template
+        logger.warning(
+            "draft_learning_notes LLM step failed; using fallback",
+            exc_info=True,
+        )
+        return None
+
+
+def _select_note_candidates(
+    events: list[Any], already_noted: set[str]
+) -> dict[uuid.UUID, list[Any]]:
+    """Group struggle events (not already referenced by a note) per user."""
+    per_user: dict[uuid.UUID, list[Any]] = {}
+    for ev in events:
+        if str(ev.id) in already_noted:
+            continue
+        if not _event_is_struggle(ev.value or {}, ev.source_kind):
+            continue
+        per_user.setdefault(ev.user_id, []).append(ev)
+    return per_user
+
+
+async def run_draft_learning_notes(
     session: AsyncSession, payload: dict[str, Any]
 ) -> dict[str, Any]:
-    """Quarterly coefficient retune (Task 17 fills the body)."""
-    from app.services.action_coeffs import retune_action_coefficients
+    """Draft ``LearningNote`` rows from recent struggle signals for a course.
 
-    # Clamp 1..365 days; defense-in-depth against poisoned payloads.
-    window_days = max(1, min(int(payload.get("window_days", 90)), 365))
-    return await retune_action_coefficients(session, window_days=window_days)
+    AI drafts; instructors review (Core §0.2). Scans the last
+    ``_NOTE_WINDOW_HOURS`` of ``learning_events`` for the course, skips events
+    already cited by an existing note, and drafts at most one ``review_status=
+    'draft'`` note per user per run. Each draft is produced by a non-raising
+    LLM step with a deterministic template fallback, so a struggle signal is
+    never silently dropped.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.evidence import LearningEvent, LearningNote
+
+    course_id = uuid.UUID(payload["course_id"])
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=_NOTE_WINDOW_HOURS)
+
+    events = (
+        await session.execute(
+            select(LearningEvent)
+            .where(
+                LearningEvent.course_id == course_id,
+                LearningEvent.occurred_at >= cutoff,
+            )
+            .order_by(LearningEvent.occurred_at.desc())
+            .limit(_NOTE_EVENT_SCAN_CAP)
+        )
+    ).scalars().all()
+    if not events:
+        return {"course_id": str(course_id), "drafted": 0}
+
+    # Event ids already cited by some note for this course — don't re-draft.
+    noted_lists = (
+        await session.execute(
+            select(LearningNote.source_event_ids).where(
+                LearningNote.course_id == course_id
+            )
+        )
+    ).scalars().all()
+    already_noted = {
+        str(eid) for lst in noted_lists for eid in (lst or [])
+    }
+
+    per_user = _select_note_candidates(events, already_noted)
+
+    drafted = 0
+    for user_id, user_events in per_user.items():
+        cited = user_events[:_NOTE_EVENTS_PER_NOTE_CAP]
+        draft = await _llm_draft_note(cited) or _fallback_note(cited)
+        session.add(
+            LearningNote(
+                course_id=course_id,
+                user_id=user_id,
+                source_event_ids=[str(ev.id) for ev in cited],
+                evidence_category="attempt_signal",
+                observed_signal=draft["observed_signal"],
+                draft_interpretation=draft.get("draft_interpretation"),
+                limitation_note=draft.get("limitation_note"),
+                suggested_follow_up=draft.get("suggested_follow_up"),
+                review_status="draft",
+            )
+        )
+        drafted += 1
+
+    if drafted:
+        await session.commit()
+    return {"course_id": str(course_id), "drafted": drafted}

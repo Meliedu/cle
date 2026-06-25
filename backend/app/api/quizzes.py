@@ -12,10 +12,11 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.services.learning_events import record_attempt_event
+
 logger = logging.getLogger(__name__)
 
 from app.api._helpers import (
-    enqueue_next_actions_recompute,
     verify_enrollment as _verify_enrollment,
     verify_instructor_enrollment as _verify_instructor_enrollment,
 )
@@ -798,8 +799,18 @@ async def submit_attempt(
             answers=body.answers,
             questions_by_id=questions_by_id,
         )
-        await enqueue_next_actions_recompute(
-            db, user_id=user.id, course_id=quiz.course_id
+        await record_attempt_event(
+            db,
+            course_id=quiz.course_id,
+            user_id=user.id,
+            source_kind="quiz_attempt",
+            source_id=attempt.id,
+            stage="after_class",
+            value={
+                "score": float(attempt.score),
+                "correct": attempt.correct_count,
+                "total": attempt.total_questions,
+            },
         )
         await db.commit()
     except Exception:  # noqa: BLE001 — non-fatal: attempt already persisted

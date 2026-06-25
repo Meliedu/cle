@@ -7,13 +7,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api._helpers import enqueue_next_actions_recompute, verify_enrollment
+from app.api._helpers import verify_enrollment
 from app.api.deps import get_current_user, get_db
 from app.models.course import Course
 from app.models.pronunciation import PronunciationItem, PronunciationSet
 from app.models.score import PronunciationScore
 from app.models.task import Task
 from app.schemas.common import APIResponse
+from app.services.learning_events import record_attempt_event
 
 logger = logging.getLogger(__name__)
 
@@ -211,8 +212,14 @@ async def grade(
                 pronunciation_item_id=item_uuid,
                 overall_score=float(result.overall_score),
             )
-            await enqueue_next_actions_recompute(
-                db, user_id=user.id, course_id=course_uuid
+            await record_attempt_event(
+                db,
+                course_id=course_uuid,
+                user_id=user.id,
+                source_kind="pronunciation",
+                source_id=score.id,
+                stage="after_class",
+                value={"overall_score": float(result.overall_score)},
             )
             await db.commit()
         except Exception:  # noqa: BLE001 — non-fatal: score already persisted

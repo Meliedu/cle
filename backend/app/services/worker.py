@@ -358,68 +358,14 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
         # commits internally, mirroring the other concept-job handlers.
         from app.services.adaptive_jobs import run_replay_attempt_history
         return await run_replay_attempt_history(session, task.payload)
-    elif task.task_type == "materialize_next_actions":
-        from app.services.adaptive_jobs import run_materialize_next_actions
-        return await run_materialize_next_actions(session, task.payload)
-    elif task.task_type == "record_action_outcome":
-        from app.services.adaptive_jobs import run_record_action_outcome
-        return await run_record_action_outcome(session, task.payload)
     elif task.task_type == "evaluate_instructor_alerts":
         from app.services.adaptive_jobs import run_evaluate_instructor_alerts
         return await run_evaluate_instructor_alerts(session, task.payload)
-    elif task.task_type == "tune_action_coefficients":
-        from app.services.adaptive_jobs import run_tune_action_coefficients
-        return await run_tune_action_coefficients(session, task.payload)
+    elif task.task_type == "draft_learning_notes":
+        from app.services.adaptive_jobs import run_draft_learning_notes
+        return await run_draft_learning_notes(session, task.payload)
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
-
-
-async def horizon_scan_recompute(session: AsyncSession) -> int:
-    """Daily cron: find courses with deadlines/meetings in the next 24h and
-    enqueue a materialize_next_actions task for every enrolled student.
-
-    Returns the number of courses scanned.
-    """
-    from datetime import timedelta as _td
-
-    from app.api._helpers import enqueue_next_actions_recompute
-    from app.models import Assignment, CourseMeeting, Enrollment
-
-    now = _utcnow()
-    horizon = now + _td(hours=24)
-
-    asn_courses = (
-        await session.execute(
-            select(Assignment.course_id).where(
-                Assignment.due_at.between(now, horizon),
-                Assignment.deleted_at.is_(None),
-            ).distinct()
-        )
-    ).scalars().all()
-    meeting_courses = (
-        await session.execute(
-            select(CourseMeeting.course_id).where(
-                CourseMeeting.scheduled_at.between(now, horizon),
-                CourseMeeting.deleted_at.is_(None),
-            ).distinct()
-        )
-    ).scalars().all()
-    course_ids = set(asn_courses) | set(meeting_courses)
-    for cid in course_ids:
-        student_ids = (
-            await session.execute(
-                select(Enrollment.user_id).where(
-                    Enrollment.course_id == cid,
-                    Enrollment.role == "student",
-                )
-            )
-        ).scalars().all()
-        for uid in student_ids:
-            await enqueue_next_actions_recompute(
-                session, user_id=uid, course_id=cid
-            )
-    await session.commit()
-    return len(course_ids)
 
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -523,11 +469,6 @@ async def _body_decay() -> None:
         logger.info("HLR decay touched %d mastery rows", n)
 
 
-async def _body_horizon_scan() -> None:
-    async with async_session_factory() as session:
-        await horizon_scan_recompute(session)
-
-
 async def _body_alerts_enqueue() -> None:
     from app.models import Course
 
@@ -545,18 +486,17 @@ async def _body_alerts_enqueue() -> None:
                     status="pending",
                 )
             )
-        await session.commit()
-
-
-async def _body_retune_enqueue() -> None:
-    async with async_session_factory() as session:
-        session.add(
-            Task(
-                task_type="tune_action_coefficients",
-                payload={"window_days": 90},
-                status="pending",
+            # Note drafting is batch/periodic (not per-attempt): the hourly
+            # alert cron also seeds a draft_learning_notes pass per course so
+            # AI drafts are produced off the request path for instructors to
+            # review.
+            session.add(
+                Task(
+                    task_type="draft_learning_notes",
+                    payload={"course_id": str(cid)},
+                    status="pending",
+                )
             )
-        )
         await session.commit()
 
 
@@ -607,9 +547,7 @@ async def _run_cron_ticks() -> None:
     await _claim_and_run_cron("prune", timedelta(hours=1), prune_nonces_and_usage)
     await _claim_and_run_cron("overdue", timedelta(hours=24), _body_overdue)
     await _claim_and_run_cron("decay", timedelta(hours=24), _body_decay)
-    await _claim_and_run_cron("horizon", timedelta(hours=24), _body_horizon_scan)
     await _claim_and_run_cron("alert", timedelta(hours=1), _body_alerts_enqueue)
-    await _claim_and_run_cron("retune", timedelta(days=90), _body_retune_enqueue)
 
 
 async def worker_loop(shutdown_event: asyncio.Event) -> None:

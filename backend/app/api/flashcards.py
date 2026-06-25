@@ -10,10 +10,11 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.services.learning_events import record_attempt_event
+
 logger = logging.getLogger(__name__)
 
 from app.api._helpers import (
-    enqueue_next_actions_recompute,
     verify_enrollment as _verify_enrollment,
 )
 from app.api.deps import get_current_user, get_db, require_instructor
@@ -447,8 +448,14 @@ async def update_progress(
             card_id=body.card_id,
             quality=body.quality,
         )
-        await enqueue_next_actions_recompute(
-            db, user_id=user.id, course_id=fc_set.course_id
+        await record_attempt_event(
+            db,
+            course_id=fc_set.course_id,
+            user_id=user.id,
+            source_kind="flashcard",
+            source_id=progress.id,
+            stage="review",
+            value={"quality": body.quality},
         )
         await db.commit()
     except Exception:  # noqa: BLE001 — non-fatal: progress already persisted

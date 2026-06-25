@@ -8,9 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.learning_events import record_attempt_event
+
 logger = logging.getLogger(__name__)
 
-from app.api._helpers import enqueue_next_actions_recompute, verify_enrollment
+from app.api._helpers import verify_enrollment
 from app.api.deps import get_current_user, get_db, require_student
 from app.models.revision import (
     BanditModel,
@@ -490,8 +492,14 @@ async def submit_answer(
             pool_item_id=pool_item.id,
             score=score,
         )
-        await enqueue_next_actions_recompute(
-            db, user_id=user.id, course_id=session.course_id
+        await record_attempt_event(
+            db,
+            course_id=session.course_id,
+            user_id=user.id,
+            source_kind="revision",
+            source_id=pool_item.id,
+            stage="review",
+            value={"score": score},
         )
         await db.commit()
     except Exception:  # noqa: BLE001 — non-fatal: attempt already persisted
