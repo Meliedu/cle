@@ -53,6 +53,9 @@ async def inherit_tags_from_chunk(
             target_kind=target_kind,
             target_id=target_id,
             weight=scaled,
+            # AI suggestion pending instructor review (CLE §5.4 review gate).
+            review_status="suggested",
+            suggestion_source="inheritance",
         ).on_conflict_do_nothing(
             index_elements=["concept_id", "target_kind", "target_id"]
         )
@@ -145,6 +148,9 @@ async def tag_chunk_via_llm(
             target_kind="chunk",
             target_id=chunk_id,
             weight=weight_decimal,
+            # AI suggestion pending instructor review (CLE §5.4 review gate).
+            review_status="suggested",
+            suggestion_source="llm",
         ).on_conflict_do_nothing(
             index_elements=["concept_id", "target_kind", "target_id"]
         )

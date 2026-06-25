@@ -22,7 +22,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, distinct, func, select, text
+from sqlalchemy import and_, distinct, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,6 +37,7 @@ from app.models import (
     CourseMeeting,
     Enrollment,
     InstructorAlert,
+    LearningNote,
     Quiz,
     QuizAttempt,
 )
@@ -55,8 +56,8 @@ async def _try_insert(
     title: str,
     reason: dict,
     dedupe_key: str = "",
-) -> bool:
-    """Insert one open alert row; return True if inserted, False on conflict.
+) -> uuid.UUID | None:
+    """Insert one open alert row; return the new id, or None on conflict.
 
     Race-safe via the partial unique index ``uq_instructor_alerts_open_idempotent``
     over ``(course_id, alert_type, target_user_id, dedupe_key) WHERE status='open'``
@@ -91,7 +92,49 @@ async def _try_insert(
     )
     inserted = (await db.execute(stmt)).scalar_one_or_none()
     await db.commit()
-    return inserted is not None
+    return inserted
+
+
+async def _draft_and_link_note(
+    db: AsyncSession,
+    *,
+    alert_id: uuid.UUID,
+    course_id: uuid.UUID,
+    target_user_id: uuid.UUID | None,
+    evidence_category: str,
+    observed_signal: str,
+    draft_interpretation: str,
+    context_anchor: dict | None = None,
+) -> None:
+    """Draft a Review Case ``LearningNote`` and link it to the alert (CLE §5.4).
+
+    Aggregate rules route a *draft* interpretation to the instructor. The note
+    stays ``review_status='draft'`` (and ``report_eligibility=False``) until an
+    instructor ReviewAction promotes it — AI drafts, the instructor decides.
+    """
+    note = LearningNote(
+        course_id=course_id,
+        user_id=target_user_id,
+        source_event_ids=[],
+        context_anchor=context_anchor,
+        evidence_category=evidence_category,
+        observed_signal=observed_signal,
+        draft_interpretation=draft_interpretation,
+        limitation_note=(
+            "Auto-drafted from aggregate signals; confirm against the "
+            "student's work."
+        ),
+        review_status="draft",
+        report_eligibility=False,
+    )
+    db.add(note)
+    await db.flush()
+    await db.execute(
+        update(InstructorAlert)
+        .where(InstructorAlert.id == alert_id)
+        .values(linked_note_id=note.id)
+    )
+    await db.commit()
 
 
 async def _rule_cohort_concept_weakness(
@@ -127,21 +170,36 @@ async def _rule_cohort_concept_weakness(
 
     created = 0
     for cid, cname, avg_value, n_weak in rows:
-        if await _try_insert(
+        title = f"Cohort weak on {cname}"
+        alert_id = await _try_insert(
             db,
             course_id=course.id,
             instructor_id=instructor_id,
             target_user_id=None,
             alert_type="cohort_concept_weakness",
             severity="warning",
-            title=f"Cohort weak on {cname}",
+            title=title,
             reason={
                 "concept_id": str(cid),
                 "avg_mastery": float(avg_value),
                 "weak_students": int(n_weak),
             },
             dedupe_key=f"concept:{cid}",
-        ):
+        )
+        if alert_id is not None:
+            await _draft_and_link_note(
+                db,
+                alert_id=alert_id,
+                course_id=course.id,
+                target_user_id=None,
+                evidence_category="concept_weakness",
+                observed_signal=title,
+                draft_interpretation=(
+                    f"{int(n_weak)} students show low mastery on {cname} "
+                    f"(avg {float(avg_value):.2f})."
+                ),
+                context_anchor={"concept_id": str(cid)},
+            )
             created += 1
     return created
 
@@ -292,16 +350,31 @@ async def _rule_student_falling_behind(
 
     created = 0
     for uid, n_late in rows:
-        if await _try_insert(
+        title = f"{int(n_late)} late submissions in 14d"
+        alert_id = await _try_insert(
             db,
             course_id=course.id,
             instructor_id=instructor_id,
             target_user_id=uid,
             alert_type="student_falling_behind",
             severity="warning",
-            title=f"{int(n_late)} late submissions in 14d",
+            title=title,
             reason={"late_count": int(n_late)},
-        ):
+        )
+        if alert_id is not None:
+            await _draft_and_link_note(
+                db,
+                alert_id=alert_id,
+                course_id=course.id,
+                target_user_id=uid,
+                evidence_category="falling_behind",
+                observed_signal=title,
+                draft_interpretation=(
+                    f"Student has {int(n_late)} late submissions in the last "
+                    f"14 days."
+                ),
+                context_anchor=None,
+            )
             created += 1
     return created
 

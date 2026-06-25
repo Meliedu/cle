@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +24,10 @@ from app.models import (
     ConceptMastery,
     ConceptMasteryHistory,
     ConceptTag,
+    CourseRecordItem,
+    FollowUpAction,
+    LearningNote,
+    OutcomeCheck,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,6 +84,101 @@ async def _ensure_mastery_row(
         .on_conflict_do_nothing(index_elements=["user_id", "concept_id"])
     )
     await db.execute(stmt)
+
+
+async def _close_follow_ups_for_attempt(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    course_id: uuid.UUID,
+    target_kind: str,
+    target_id: uuid.UUID,
+    concept_ids: list[uuid.UUID],
+    outcome: float,
+    now: datetime,
+) -> None:
+    """Close open follow-ups this attempt satisfies and record the outcome.
+
+    CLE §5.5: a later attempt that touches the same target (or one of its
+    tagged concepts) closes the open ``FollowUpAction`` and writes exactly
+    one ``OutcomeCheck``. When the follow-up's ``LearningNote`` has been
+    instructor-reviewed, the closed outcome also becomes durable course
+    memory via a ``CourseRecordItem`` (CLE §5.4 — reviewed evidence only).
+
+    Runs inside the caller's transaction; the handler commits.
+    """
+    match_clauses = [
+        and_(
+            FollowUpAction.target_kind == target_kind,
+            FollowUpAction.target_id == target_id,
+        )
+    ]
+    if concept_ids:
+        match_clauses.append(
+            and_(
+                FollowUpAction.target_kind == "concept",
+                FollowUpAction.target_id.in_(concept_ids),
+            )
+        )
+
+    open_fuas = (
+        await db.execute(
+            select(FollowUpAction).where(
+                FollowUpAction.user_id == user_id,
+                FollowUpAction.assignment_status.in_(("assigned", "viewed")),
+                or_(*match_clauses),
+            )
+        )
+    ).scalars().all()
+    if not open_fuas:
+        return
+
+    oc_status = "improved" if outcome >= 0.7 else "persistent"
+    for fua in open_fuas:
+        fua.assignment_status = "completed"
+        # Idempotent: uq_outcome_checks_followup permits one OutcomeCheck per
+        # follow-up. Pre-check so worker retries don't raise IntegrityError.
+        already = (
+            await db.execute(
+                select(OutcomeCheck.id).where(
+                    OutcomeCheck.follow_up_action_id == fua.id
+                )
+            )
+        ).scalar_one_or_none()
+        if already is not None:
+            continue
+        db.add(
+            OutcomeCheck(
+                course_id=course_id,
+                user_id=user_id,
+                learning_note_id=fua.learning_note_id,
+                follow_up_action_id=fua.id,
+                source_event_id=None,
+                status=oc_status,
+                observed_at=now,
+            )
+        )
+        if fua.learning_note_id is None:
+            continue
+        note_status = (
+            await db.execute(
+                select(LearningNote.review_status).where(
+                    LearningNote.id == fua.learning_note_id
+                )
+            )
+        ).scalar_one_or_none()
+        if note_status == "reviewed":
+            db.add(
+                CourseRecordItem(
+                    course_id=course_id,
+                    learning_note_id=fua.learning_note_id,
+                    outcome_summary={
+                        "status": oc_status,
+                        "outcome": round(outcome, 3),
+                    },
+                    carry_forward=(oc_status == "persistent"),
+                )
+            )
 
 
 async def apply_attempt_evidence(
@@ -185,47 +284,20 @@ async def apply_attempt_evidence(
         )
         touched += 1
 
-    # Close open action_outcomes — both the exact-target row AND any
-    # concept-level recommendations that map to a concept this attempt
-    # touched. The materializer emits ``practice_weakness`` actions with
-    # ``target_kind='concept'``, so without the second pass the dominant
-    # adaptive recommendation never resolves to ``completed=True`` and
-    # A/B telemetry / coefficient retune undercount successful nudges.
-    if touched:
-        from sqlalchemy import or_ as _or
-        from app.models import ActionOutcome
-
-        metric_by_kind = {
-            "quiz": "quiz_score",
-            "flashcard": "recall",
-            "revision": "quiz_score",
-            "pronunciation": "completion",
-        }
-        concept_ids = [
-            concept.id for tag, concept in tags if float(tag.weight) > 0
-        ]
-        await db.execute(
-            update(ActionOutcome)
-            .where(
-                ActionOutcome.user_id == user_id,
-                ActionOutcome.completed.is_(False),
-                _or(
-                    and_(
-                        ActionOutcome.target_kind == target_kind,
-                        ActionOutcome.target_id == target_id,
-                    ),
-                    and_(
-                        ActionOutcome.target_kind == "concept",
-                        ActionOutcome.target_id.in_(concept_ids),
-                    ),
-                ),
-            )
-            .values(
-                completed=True,
-                outcome_metric=metric_by_kind.get(attempt_kind.value, "completion"),
-                outcome_score=Decimal(f"{outcome:.3f}"),
-                observed_at=now,
-            )
+    # Outcome-Check closure (CLE §5.5): when this attempt produced evidence,
+    # close any open follow-up it satisfies and record the outcome. Replaces
+    # the legacy action_outcomes closure removed with the decision engine.
+    if touched > 0:
+        concept_ids = [c.id for tag, c in tags if float(tag.weight) > 0]
+        await _close_follow_ups_for_attempt(
+            db,
+            user_id=user_id,
+            course_id=course_id,
+            target_kind=target_kind,
+            target_id=target_id,
+            concept_ids=concept_ids,
+            outcome=outcome,
+            now=now,
         )
 
     return touched
