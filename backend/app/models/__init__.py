@@ -50,11 +50,14 @@ from app.models.concept import (
     ConceptPrerequisite,
     ConceptTag,
 )
-from app.models.decision import (
-    ActionOutcome,
-    EngineOverride,
-    InstructorAlert,
-    NextAction,
+from app.models.decision import InstructorAlert
+from app.models.evidence import (
+    CourseRecordItem,
+    FollowUpAction,
+    LearningEvent,
+    LearningNote,
+    OutcomeCheck,
+    ReviewAction,
 )
 
 __all__ = [
@@ -110,8 +113,11 @@ __all__ = [
     "ConceptTag",
     "ConceptMastery",
     "ConceptMasteryHistory",
-    "NextAction",
-    "ActionOutcome",
     "InstructorAlert",
-    "EngineOverride",
+    "LearningEvent",
+    "LearningNote",
+    "ReviewAction",
+    "FollowUpAction",
+    "OutcomeCheck",
+    "CourseRecordItem",
 ]

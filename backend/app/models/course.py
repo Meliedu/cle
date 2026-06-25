@@ -1,7 +1,16 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, JSON, String, UniqueConstraint, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    JSON,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,9 +20,11 @@ from app.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDPrimaryKe
 class Course(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "courses"
     __table_args__ = (
+        # Course Context Package approval gate (CLE §6.5): touchpoints / note
+        # drafting are released only once the context is ``approved``.
         CheckConstraint(
-            "adaptive_engine_mode IN ('on','off','random_50')",
-            name="ck_courses_engine_mode_valid",
+            "context_status IN ('draft','approved')",
+            name="ck_courses_context_status_valid",
         ),
     )
 
@@ -29,8 +40,11 @@ class Course(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         String(16), nullable=False, unique=True, index=True
     )
     settings: Mapped[dict] = mapped_column(JSON, default=dict)
-    adaptive_engine_mode: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="on", server_default=text("'on'"),
+    context_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="draft", server_default=text("'draft'")
+    )
+    context_approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
     )
 
     instructor: Mapped["User"] = relationship("User", lazy="selectin")

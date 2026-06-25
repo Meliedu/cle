@@ -118,6 +118,17 @@ class ConceptTag(Base):
             "role IN ('introduced','covered','reinforced'))",
             name="ck_concept_tags_role_for_meeting",
         ),
+        # Relationship Candidate review gate (CLE §5.4): a tag is a *suggestion*
+        # until an instructor confirms/edits it.
+        CheckConstraint(
+            "review_status IN ('suggested','reviewed','confirmed','edited','archived')",
+            name="ck_concept_tags_review_status_valid",
+        ),
+        CheckConstraint(
+            "suggestion_source IS NULL OR "
+            "suggestion_source IN ('llm','inheritance','instructor')",
+            name="ck_concept_tags_suggestion_source_valid",
+        ),
     )
 
     concept_id: Mapped[uuid.UUID] = mapped_column(
@@ -131,6 +142,23 @@ class ConceptTag(Base):
         Numeric(3, 2), nullable=False, default=Decimal("1.00")
     )
     role: Mapped[str | None] = mapped_column(String(20))
+    # ``weight`` above is the evidence_strength of the relationship — kept,
+    # not renamed. The fields below carry the CLE §5.4 review gate.
+    suggestion_source: Mapped[str | None] = mapped_column(String(20))
+    limitation: Mapped[str | None] = mapped_column(String)
+    review_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="suggested",
+        server_default=text("'suggested'"),
+    )
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id")
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    report_eligibility: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
