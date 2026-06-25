@@ -27,7 +27,7 @@ def _course_graph_lock_key(course_id: uuid.UUID) -> int:
 
     Salted with the literal ``concept_prereq_graph`` so this lock can't
     collide with other advisory locks the codebase keys on the same UUID
-    (next_actions materializer, alert dedupe, etc.).
+    (mastery materializer, alert dedupe, etc.).
     """
     h = hashlib.blake2b(digest_size=8)
     h.update(course_id.bytes)
