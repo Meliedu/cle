@@ -158,16 +158,16 @@ async def test_concurrent_attempts_dont_drop_evidence(
 async def test_apply_attempt_closes_concept_targeted_outcome(
     db_session, test_instructor
 ):
-    """A practice_weakness next_action targets a concept; an attempt against
-    a question tagged with that concept must close the open outcome row.
+    """A concept-targeted FollowUpAction is closed by an attempt against a
+    question tagged with that concept, and exactly one OutcomeCheck is written.
 
-    Regression: outcome closure used to match by exact (target_kind, target_id),
-    so concept-targeted recommendations never resolved completed=true and
-    A/B telemetry undercounted successful adaptive nudges.
+    Regression: outcome closure matches by exact (target_kind, target_id) OR by
+    target_kind='concept' over the attempt's tagged concept_ids, so a
+    concept-targeted follow-up still resolves when the student practices a
+    different artifact tagged with that concept.
     """
-    from datetime import datetime, timezone, timedelta
     from app.models import (
-        ActionOutcome, Concept, ConceptTag, Course, NextAction,
+        Concept, ConceptTag, Course, FollowUpAction, OutcomeCheck,
     )
 
     course = Course(
@@ -193,34 +193,15 @@ async def test_apply_attempt_closes_concept_targeted_outcome(
             weight=Decimal("1.00"),
         )
     )
-    now = datetime.now(timezone.utc)
-    na = NextAction(
-        user_id=test_instructor.id,
+    fua = FollowUpAction(
         course_id=course.id,
+        user_id=test_instructor.id,
         action_type="practice_weakness",
         target_kind="concept",
         target_id=concept.id,
-        priority_score=Decimal("1.500"),
-        candidate_source="outer_fringe",
-        reason={"concept_name": "weakness"},
-        expires_at=now + timedelta(hours=1),
-        served_at=now,
-        engine_variant="on",
+        assignment_status="assigned",
     )
-    db_session.add(na)
-    await db_session.commit()
-    db_session.add(
-        ActionOutcome(
-            next_action_id=na.id,
-            user_id=test_instructor.id,
-            course_id=course.id,
-            action_type="practice_weakness",
-            target_kind="concept",
-            target_id=concept.id,
-            engine_variant="on",
-            served_at=now,
-        )
-    )
+    db_session.add(fua)
     await db_session.commit()
 
     await apply_attempt_evidence(
@@ -234,14 +215,22 @@ async def test_apply_attempt_closes_concept_targeted_outcome(
     )
     await db_session.commit()
 
-    outcome = (
+    refreshed = (
         await db_session.execute(
-            select(ActionOutcome).where(ActionOutcome.next_action_id == na.id)
+            select(FollowUpAction).where(FollowUpAction.id == fua.id)
         )
     ).scalar_one()
-    assert outcome.completed is True
-    assert float(outcome.outcome_score) == pytest.approx(1.0)
-    assert outcome.outcome_metric == "quiz_score"
+    assert refreshed.assignment_status == "completed"
+
+    checks = (
+        await db_session.execute(
+            select(OutcomeCheck).where(
+                OutcomeCheck.follow_up_action_id == fua.id
+            )
+        )
+    ).scalars().all()
+    assert len(checks) == 1
+    assert checks[0].status == "improved"
 
 
 @pytest.mark.asyncio
