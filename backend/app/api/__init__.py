@@ -11,7 +11,6 @@ from app.api.concept_tags import router as concept_tags_router
 from app.api.concepts import router as concepts_router
 from app.api.courses import router as courses_router
 from app.api.documents import router as documents_router
-from app.api.engine_settings import router as engine_settings_router
 from app.api.flashcards import router as flashcards_router
 from app.api.instructor_alerts import router as instructor_alerts_router
 from app.api.internal import router as internal_router
@@ -19,13 +18,13 @@ from app.api.live import router as live_router
 from app.api.mastery import router as mastery_router
 from app.api.meetings import router as meetings_router
 from app.api.modules import router as modules_router
-from app.api.next_actions import router as next_actions_router
 from app.api.objectives import router as objectives_router
 from app.api.progress import router as progress_router
 from app.api.pronunciation import router as pronunciation_router
 from app.api.quizzes import router as quizzes_router
 from app.api.rag import router as rag_router
 from app.api.recalibration import router as recalibration_router
+from app.api.review import router as review_router
 from app.api.revision import router as revision_router
 from app.api.speech import router as speech_router
 from app.api.syllabus import router as syllabus_router
@@ -57,6 +56,5 @@ api_router.include_router(concept_clusters_router)
 api_router.include_router(concept_tags_router)
 api_router.include_router(internal_router)
 api_router.include_router(mastery_router)
-api_router.include_router(engine_settings_router)
 api_router.include_router(instructor_alerts_router)
-api_router.include_router(next_actions_router)
+api_router.include_router(review_router)

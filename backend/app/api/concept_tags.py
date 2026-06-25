@@ -1,11 +1,13 @@
 import uuid
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, require_instructor
 from app.models import Concept, ConceptTag, Enrollment
 from app.models.course import Course
 from app.models.user import User
@@ -13,6 +15,30 @@ from app.schemas.common import APIResponse
 from app.schemas.concept import ConceptResponse
 
 router = APIRouter(prefix="/concept-tags", tags=["concepts"])
+
+# Relationship Candidate review gate (CLE §5.4): an instructor confirms, edits,
+# or archives an AI-suggested concept tag. Only these target states are valid
+# review verdicts (the model also allows 'suggested'/'reviewed' for drafts).
+TagReviewStatus = Literal["confirmed", "edited", "archived"]
+
+
+class ConceptTagReviewUpdate(BaseModel):
+    review_status: TagReviewStatus
+    limitation: str | None = None
+
+
+class ConceptTagReviewResponse(BaseModel):
+    concept_id: uuid.UUID
+    target_kind: str
+    target_id: uuid.UUID
+    review_status: str
+    suggestion_source: str | None
+    limitation: str | None
+    reviewed_by: uuid.UUID | None
+    reviewed_at: datetime | None
+    report_eligibility: bool
+
+    model_config = {"from_attributes": True}
 
 TargetKind = Literal[
     "chunk",
@@ -89,4 +115,52 @@ async def list_tags_for_target(
 
     return APIResponse(
         success=True, data=[ConceptResponse.model_validate(c) for c in rows]
+    )
+
+
+@router.patch(
+    "/{concept_id}/{target_kind}/{target_id}/review",
+    response_model=APIResponse[ConceptTagReviewResponse],
+)
+async def review_concept_tag(
+    concept_id: uuid.UUID,
+    target_kind: TargetKind,
+    target_id: uuid.UUID,
+    body: ConceptTagReviewUpdate,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_instructor),
+) -> APIResponse[ConceptTagReviewResponse]:
+    """Confirm / edit / archive an AI-suggested Relationship Candidate.
+
+    The tag's concept must belong to a course the acting instructor owns; we
+    return 404 otherwise (masking existence of out-of-scope tags).
+    """
+    row = (
+        await db.execute(
+            select(ConceptTag)
+            .join(Concept, Concept.id == ConceptTag.concept_id)
+            .join(Course, Course.id == Concept.course_id)
+            .where(
+                ConceptTag.concept_id == concept_id,
+                ConceptTag.target_kind == target_kind,
+                ConceptTag.target_id == target_id,
+                Concept.deleted_at.is_(None),
+                Course.instructor_id == actor.id,
+                Course.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Concept tag not found")
+
+    row.review_status = body.review_status
+    if body.limitation is not None:
+        row.limitation = body.limitation
+    row.reviewed_by = actor.id
+    row.reviewed_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(row)
+
+    return APIResponse(
+        success=True, data=ConceptTagReviewResponse.model_validate(row)
     )
