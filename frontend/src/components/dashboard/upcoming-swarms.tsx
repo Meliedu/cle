@@ -3,10 +3,10 @@
 import { format, parseISO } from "date-fns";
 import { CalendarClock } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CalendarEvent } from "@/hooks/use-calendar-events";
+import type { DashboardPreviewEvent } from "@/components/dashboard/dashboard-preview-events";
 
 interface UpcomingSwarmsProps {
-  readonly events: readonly CalendarEvent[];
+  readonly events: readonly DashboardPreviewEvent[];
   readonly limit?: number;
   readonly title?: string;
   readonly showPreviewBadge?: boolean;
@@ -14,7 +14,7 @@ interface UpcomingSwarmsProps {
   readonly emptyLabel?: string;
 }
 
-const TONE_CLASSES: Record<CalendarEvent["color"], string> = {
+const TONE_CLASSES: Record<DashboardPreviewEvent["color"], string> = {
   honey:
     "bg-[var(--color-primary-light)] text-[var(--color-text-on-primary)]",
   coral: "bg-[oklch(88%_0.07_35)] text-[oklch(30%_0.05_35)]",

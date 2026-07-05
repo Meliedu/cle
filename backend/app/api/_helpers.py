@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.course import Course, Enrollment
+from app.models.task import Task
 
 
 async def verify_enrollment(
@@ -61,3 +62,37 @@ async def verify_instructor_enrollment(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enrolled as an instructor in this course",
         )
+
+
+async def enqueue_note_drafting(
+    db: AsyncSession,
+    *,
+    course_id: uuid.UUID,
+) -> None:
+    """Enqueue a ``draft_learning_notes`` task for a course, deduped.
+
+    Note drafting is batch/periodic work — one pending task per course is
+    sufficient. If a ``draft_learning_notes`` task for this course is already
+    pending or running, skip the enqueue so a burst of attempts doesn't pile
+    up redundant draft passes. ``Task.payload`` is JSON, so the course filter
+    uses ``->>`` text extraction. The Task row is added to the caller's
+    session; the caller commits.
+    """
+    existing = (
+        await db.execute(
+            select(Task.id).where(
+                Task.task_type == "draft_learning_notes",
+                Task.status.in_(("pending", "running")),
+                Task.payload.op("->>")("course_id") == str(course_id),
+            )
+        )
+    ).first()
+    if existing is not None:
+        return
+    db.add(
+        Task(
+            task_type="draft_learning_notes",
+            payload={"course_id": str(course_id)},
+            status="pending",
+        )
+    )

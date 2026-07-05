@@ -1,15 +1,19 @@
 import asyncio
+import hashlib
 import logging
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Awaitable, Callable
 
 import sqlalchemy as sa
 from sqlalchemy import select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_factory
 from app.models.api_usage import ApiUsage
+from app.models.cron_run import CronRun
 from app.models.task import Task
 from app.services.storage import delete_file_safe
 
@@ -150,6 +154,33 @@ async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
             len(orphan_keys),
             grace_seconds,
         )
+
+
+async def mark_overdue_submissions(session: AsyncSession) -> int:
+    """Daily-cron job: flip 'not_started'/'in_progress' rows past their
+    assignment's due_at to 'late'. Idempotent."""
+    from app.models import Assignment, AssignmentSubmission
+
+    now = _utcnow()
+    rows = (
+        await session.execute(
+            select(AssignmentSubmission, Assignment)
+            .join(Assignment, AssignmentSubmission.assignment_id == Assignment.id)
+            .where(
+                Assignment.due_at < now,
+                Assignment.deleted_at.is_(None),
+                AssignmentSubmission.status.in_(("not_started", "in_progress")),
+            )
+        )
+    ).all()
+    n = 0
+    for sub, _asn in rows:
+        sub.status = "late"
+        n += 1
+    if n:
+        await session.commit()
+        logger.info("Marked %d submissions as late", n)
+    return n
 
 
 async def prune_api_usage() -> int:
@@ -299,82 +330,239 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
         result = await run_generation_job(session, task.task_type, task.payload)
         await session.commit()
         return result
+    elif task.task_type == "parse_syllabus":
+        from app.services.jobs import run_parse_syllabus
+        result = await run_parse_syllabus(session, task.payload)
+        return result
+    elif task.task_type == "extract_concept_candidates":
+        from app.services.adaptive_jobs import run_extract_concept_candidates
+        return await run_extract_concept_candidates(session, task.payload)
+    elif task.task_type == "tag_artifact_concepts":
+        from app.services.adaptive_jobs import run_tag_artifact_concepts
+        return await run_tag_artifact_concepts(session, task.payload)
+    elif task.task_type == "update_concept_mastery":
+        from app.services.adaptive_jobs import run_update_concept_mastery
+        # Inject the task's enqueue time so the handler can dedupe on retry
+        # (see I-1 fix). Use a ``_`` prefix to mark the key as system-injected
+        # rather than caller-provided. If a stuck-task reset re-runs this
+        # Task, the second invocation will see a ConceptMasteryHistory row
+        # whose ``recorded_at >= task.created_at`` and skip the update.
+        return await run_update_concept_mastery(
+            session,
+            {**task.payload, "_task_created_at": task.created_at.isoformat()},
+        )
+    elif task.task_type == "replay_attempt_history":
+        # Backfill job: re-applies the last N days of attempts through
+        # mastery. Intentionally *not* watermark-idempotent — operators
+        # wipe ConceptMastery first if they want a clean slate. Handler
+        # commits internally, mirroring the other concept-job handlers.
+        from app.services.adaptive_jobs import run_replay_attempt_history
+        return await run_replay_attempt_history(session, task.payload)
+    elif task.task_type == "evaluate_instructor_alerts":
+        from app.services.adaptive_jobs import run_evaluate_instructor_alerts
+        return await run_evaluate_instructor_alerts(session, task.payload)
+    elif task.task_type == "draft_learning_notes":
+        from app.services.adaptive_jobs import run_draft_learning_notes
+        return await run_draft_learning_notes(session, task.payload)
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
 
 
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+# How long before a stale ``last_success_at`` reading allows a kick-off
+# even with cadence still nominally not elapsed. Unused — semantics rely on
+# cadence comparison alone — kept for documentation symmetry.
+
+
+def _cron_lock_key(name: str) -> int:
+    """Stable 63-bit advisory-lock key for a cron-name. Salted so it can't
+    collide with course/concept advisory locks elsewhere in the codebase."""
+    h = hashlib.blake2b(digest_size=8)
+    h.update(name.encode("utf-8"))
+    h.update(b"cron_run")
+    return int.from_bytes(h.digest(), "big") & 0x7FFFFFFFFFFFFFFF
+
+
+async def _claim_and_run_cron(
+    name: str,
+    cadence: timedelta,
+    body: Callable[[], Awaitable[None]],
+) -> None:
+    """Run ``body()`` if the cron is due; advance ``last_success_at`` only
+    after the body returns successfully.
+
+    Acquires a per-name transaction-scoped advisory lock that is held across
+    the cadence check, the body run, and the watermark advance. Concurrent
+    workers calling the same cron either skip immediately
+    (``pg_try_advisory_xact_lock`` returns false) or — once the holder
+    commits — see the freshly-bumped watermark and skip on cadence. A
+    failure in ``body`` raises through, the surrounding rollback releases
+    the lock, and ``last_success_at`` stays where it was so the next tick
+    retries instead of waiting a full cadence interval.
+    """
+    lock_key = _cron_lock_key(name)
+    # Lazy seed in its own transaction so a body failure later doesn't
+    # roll the seed row back. Subsequent boots see the persisted row.
+    async with async_session_factory() as seed_session:
+        await seed_session.execute(
+            pg_insert(CronRun)
+            .values(name=name, last_success_at=_EPOCH)
+            .on_conflict_do_nothing(index_elements=["name"])
+        )
+        await seed_session.commit()
+
+    async with async_session_factory() as s:
+        held = (
+            await s.execute(
+                text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": lock_key}
+            )
+        ).scalar_one()
+        if not held:
+            return
+
+        last = (
+            await s.execute(
+                select(CronRun.last_success_at).where(CronRun.name == name)
+            )
+        ).scalar_one()
+        now = _utcnow()
+        if now - last < cadence:
+            await s.commit()  # release lock, nothing to do
+            return
+
+        body_ok = False
+        try:
+            await body()
+            body_ok = True
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Cron %s body failed; watermark NOT advanced", name
+            )
+
+        if body_ok:
+            await s.execute(
+                update(CronRun)
+                .where(CronRun.name == name)
+                .values(last_success_at=now)
+            )
+        # Commit either way to release the advisory lock without thrashing
+        # the seed row. ``last_success_at`` only moves on success.
+        await s.commit()
+
+
+async def _body_stuck_reset() -> None:
+    async with async_session_factory() as session:
+        await _reset_stuck_tasks(session)
+        await _reconcile_orphaned_documents(session)
+
+
+async def _body_overdue() -> None:
+    async with async_session_factory() as session:
+        await mark_overdue_submissions(session)
+
+
+async def _body_decay() -> None:
+    from app.services.mastery import decay_due_mastery_rows
+
+    async with async_session_factory() as session:
+        n = await decay_due_mastery_rows(session)
+        logger.info("HLR decay touched %d mastery rows", n)
+
+
+async def _body_alerts_enqueue() -> None:
+    from app.models import Course
+
+    async with async_session_factory() as session:
+        ids = (
+            await session.execute(
+                select(Course.id).where(Course.deleted_at.is_(None))
+            )
+        ).scalars().all()
+        for cid in ids:
+            session.add(
+                Task(
+                    task_type="evaluate_instructor_alerts",
+                    payload={"course_id": str(cid)},
+                    status="pending",
+                )
+            )
+            # Note drafting is batch/periodic (not per-attempt): the hourly
+            # alert cron also seeds a draft_learning_notes pass per course so
+            # AI drafts are produced off the request path for instructors to
+            # review.
+            session.add(
+                Task(
+                    task_type="draft_learning_notes",
+                    payload={"course_id": str(cid)},
+                    status="pending",
+                )
+            )
+        await session.commit()
+
+
+async def _process_claimed_task(task: Task) -> None:
+    """Process a single claimed task in fresh sessions.
+
+    Process and complete in fresh sessions so pipeline-internal commits
+    (and any rollback they trigger) can't leave the claim session in an
+    undefined state that would break ``fail_task``.
+    """
+    task_id = task.id
+    logger.info(
+        "Processing task %s (type=%s, attempt=%s)",
+        task_id, task.task_type, task.attempts,
+    )
+    try:
+        task_result: dict | None = None
+        async with async_session_factory() as process_session:
+            reloaded = await process_session.get(Task, task_id)
+            if reloaded is None:
+                # Row vanished between claim and process. There's no row
+                # left to leave "running", but log loudly — this is
+                # unexpected outside of explicit admin deletion.
+                logger.error("Task %s disappeared after claim; skipping", task_id)
+                return
+            task_result = await process_task(process_session, reloaded)
+
+        async with async_session_factory() as complete_session:
+            await complete_task(complete_session, task_id, task_result)
+        logger.info("Task %s completed", task_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Task %s failed", task_id)
+        try:
+            async with async_session_factory() as fail_session:
+                await fail_task(
+                    fail_session, task_id, _sanitize_error_message(exc)
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("fail_task itself failed for %s", task_id)
+
+
+async def _run_cron_ticks() -> None:
+    """Run all due cron ticks in canonical order. Each call goes through
+    ``_claim_and_run_cron`` which checks ``cron_runs.last_success_at``,
+    serializes via advisory lock, and only advances the watermark on
+    success. Any single failure is logged but doesn't abort the rest."""
+    await _claim_and_run_cron("stuck_reset", timedelta(minutes=5), _body_stuck_reset)
+    await _claim_and_run_cron("prune", timedelta(hours=1), prune_nonces_and_usage)
+    await _claim_and_run_cron("overdue", timedelta(hours=24), _body_overdue)
+    await _claim_and_run_cron("decay", timedelta(hours=24), _body_decay)
+    await _claim_and_run_cron("alert", timedelta(hours=1), _body_alerts_enqueue)
+
+
 async def worker_loop(shutdown_event: asyncio.Event) -> None:
     logger.info("Task worker started")
-    last_stuck_reset = _utcnow() - timedelta(hours=1)
-    # Seed ``last_prune_run`` so the first prune tick runs ~1 h after startup
-    # rather than immediately — keeps boot quiet while still guaranteeing
-    # hourly cadence.
-    last_prune_run = _utcnow()
-
     while not shutdown_event.is_set():
         try:
-            # Periodically reset stuck tasks + reconcile orphaned docs.
-            if _utcnow() - last_stuck_reset > timedelta(minutes=5):
-                try:
-                    async with async_session_factory() as reset_session:
-                        await _reset_stuck_tasks(reset_session)
-                        await _reconcile_orphaned_documents(reset_session)
-                except Exception:  # noqa: BLE001
-                    logger.exception("Failed to run reconciliation")
-                last_stuck_reset = _utcnow()
-
-            # Hourly prune of api_usage + expired OAuth nonces. Runs inside
-            # this loop so we don't need a second scheduler asyncio task.
-            if _utcnow() - last_prune_run > timedelta(hours=1):
-                await prune_nonces_and_usage()
-                last_prune_run = _utcnow()
-
-            # Short-lived claim session so we don't hold a DB connection open
-            # during the full processing pipeline.
+            await _run_cron_ticks()
+            # Short-lived claim session so we don't hold a DB connection
+            # open during the full processing pipeline.
             async with async_session_factory() as claim_session:
                 task = await claim_task(claim_session)
-
             if task is None:
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
                 continue
-
-            task_id = task.id
-            logger.info(
-                "Processing task %s (type=%s, attempt=%s)",
-                task_id, task.task_type, task.attempts,
-            )
-
-            # Process and complete in fresh sessions so that pipeline-internal
-            # commits (and any rollback they trigger) can't leave the claim
-            # session in an undefined state that breaks fail_task.
-            try:
-                task_result: dict | None = None
-                async with async_session_factory() as process_session:
-                    reloaded = await process_session.get(Task, task_id)
-                    if reloaded is None:
-                        # Row vanished between claim and process. There's no row
-                        # left to leave "running", but log loudly — this is
-                        # unexpected outside of explicit admin deletion.
-                        logger.error(
-                            "Task %s disappeared after claim; skipping",
-                            task_id,
-                        )
-                        continue
-                    task_result = await process_task(process_session, reloaded)
-
-                async with async_session_factory() as complete_session:
-                    await complete_task(complete_session, task_id, task_result)
-                logger.info("Task %s completed", task_id)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("Task %s failed", task_id)
-                try:
-                    async with async_session_factory() as fail_session:
-                        await fail_task(
-                            fail_session, task_id, _sanitize_error_message(exc)
-                        )
-                except Exception:  # noqa: BLE001
-                    logger.exception("fail_task itself failed for %s", task_id)
-
+            await _process_claimed_task(task)
         except Exception:  # noqa: BLE001
             logger.exception("Worker loop error")
             await asyncio.sleep(POLL_INTERVAL_SECONDS)

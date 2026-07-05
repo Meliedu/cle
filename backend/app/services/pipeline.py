@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chunk import Chunk
 from app.models.document import Document
+from app.models.task import Task
 from app.services.chunker import chunk_text
 from app.services.embedder import embed_texts
 from app.services.parser import parse_document
@@ -78,6 +79,7 @@ async def process_document_pipeline(
         embeddings = await embed_texts([c.content for c in chunks])
 
         # 5. Store chunks + final metadata in a single transaction.
+        created_chunks: list[Chunk] = []
         for chunk_data, embedding in zip(chunks, embeddings):
             chunk = Chunk(
                 document_id=document.id,
@@ -90,10 +92,29 @@ async def process_document_pipeline(
                 metadata_=dict(chunk_data.metadata) if chunk_data.metadata else {},
             )
             session.add(chunk)
+            created_chunks.append(chunk)
 
         document.status = "ready"
         document.page_count = parse_result.page_count
         document.word_count = parse_result.word_count
+        await session.commit()
+
+        # 6. Enqueue concept-tagging tasks for each newly-stored chunk so the
+        #    worker can populate ``concept_tags`` asynchronously. Only runs
+        #    after the chunk commit above succeeded — failed chunk inserts
+        #    raise and skip this block via the ``except`` branch.
+        for created_chunk in created_chunks:
+            session.add(
+                Task(
+                    task_type="tag_artifact_concepts",
+                    payload={
+                        "target_kind": "chunk",
+                        "target_id": str(created_chunk.id),
+                        "course_id": str(created_chunk.course_id),
+                    },
+                    status="pending",
+                )
+            )
         await session.commit()
 
         logger.info(f"Document {document_id} processed: {len(chunks)} chunks stored")

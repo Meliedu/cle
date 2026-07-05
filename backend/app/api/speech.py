@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 from dataclasses import asdict
 
@@ -9,8 +10,43 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api._helpers import verify_enrollment
 from app.api.deps import get_current_user, get_db
 from app.models.course import Course
+from app.models.pronunciation import PronunciationItem, PronunciationSet
 from app.models.score import PronunciationScore
+from app.models.task import Task
 from app.schemas.common import APIResponse
+from app.services.learning_events import record_attempt_event
+
+logger = logging.getLogger(__name__)
+
+
+def _enqueue_mastery_for_pronunciation(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    course_id: uuid.UUID,
+    pronunciation_item_id: uuid.UUID,
+    overall_score: float,
+) -> None:
+    """Add a single ``update_concept_mastery`` Task row for a pronunciation attempt.
+
+    ``overall_score`` is the 0-100 result from the speech grader; we map to
+    [0, 1] for the Beta-Binomial update. Caller commits.
+    """
+    outcome = max(0.0, min(1.0, float(overall_score) / 100.0))
+    db.add(
+        Task(
+            task_type="update_concept_mastery",
+            payload={
+                "user_id": str(user_id),
+                "course_id": str(course_id),
+                "target_kind": "pronunciation_item",
+                "target_id": str(pronunciation_item_id),
+                "outcome": outcome,
+                "attempt_kind": "pronunciation",
+            },
+            status="pending",
+        )
+    )
 from app.schemas.speech import (
     GeneratePromptsRequest,
     PracticePromptResponse,
@@ -69,6 +105,7 @@ async def grade(
     reference_text: str = Form(...),
     course_id: str = Form(...),
     language: str = Form(default="english"),
+    pronunciation_item_id: str | None = Form(default=None),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[PronunciationGradeResponse]:
@@ -78,6 +115,38 @@ async def grade(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid course_id"
         )
+
+    item_uuid: uuid.UUID | None = None
+    if pronunciation_item_id is not None and pronunciation_item_id != "":
+        try:
+            item_uuid = uuid.UUID(pronunciation_item_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid pronunciation_item_id",
+            )
+        # Verify the item exists and its set belongs to this course. Without
+        # this check a student could pass an item_id from another course's set
+        # and get a mastery update written against an unrelated concept graph.
+        item_check = (
+            await db.execute(
+                select(PronunciationItem.id)
+                .join(
+                    PronunciationSet,
+                    PronunciationSet.id == PronunciationItem.pronunciation_set_id,
+                )
+                .where(
+                    PronunciationItem.id == item_uuid,
+                    PronunciationSet.course_id == course_uuid,
+                    PronunciationSet.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if item_check is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Pronunciation item not found in this course",
+            )
 
     await verify_enrollment(db, course_uuid, user.id)
 
@@ -111,6 +180,7 @@ async def grade(
     score = PronunciationScore(
         user_id=user.id,
         course_id=course_uuid,
+        pronunciation_item_id=item_uuid,
         language=language,
         target_text=reference_text,
         audio_r2_key=r2_key,
@@ -128,6 +198,37 @@ async def grade(
     await award_xp(db, user.id, course_uuid, xp=30, activity="pronunciation")
     await db.commit()
     await db.refresh(score)
+
+    # Enqueue mastery update + next-actions recompute. Only fires when the
+    # attempt was tied to a pronunciation_item (free-form practice has no
+    # concept tag to update). Failure here must not roll back the durable
+    # score row — log and swallow, mirroring quiz/flashcard/revision paths.
+    if item_uuid is not None and result.overall_score is not None:
+        try:
+            _enqueue_mastery_for_pronunciation(
+                db,
+                user_id=user.id,
+                course_id=course_uuid,
+                pronunciation_item_id=item_uuid,
+                overall_score=float(result.overall_score),
+            )
+            await record_attempt_event(
+                db,
+                course_id=course_uuid,
+                user_id=user.id,
+                source_kind="pronunciation",
+                source_id=score.id,
+                stage="after_class",
+                value={"overall_score": float(result.overall_score)},
+            )
+            await db.commit()
+        except Exception:  # noqa: BLE001 — non-fatal: score already persisted
+            logger.exception(
+                "Failed to enqueue mastery update for pronunciation_item_id=%s user_id=%s",
+                item_uuid,
+                user.id,
+            )
+            await db.rollback()
 
     return APIResponse(
         success=True,

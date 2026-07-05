@@ -9,6 +9,10 @@
   --color-accent: oklch(60% 0.12 230);
   --color-accent-hover: oklch(53% 0.14 230);
   --color-accent-light: oklch(95% 0.03 230);
+  /* On-color text for accent backgrounds (used by decision components). */
+  --color-on-accent: oklch(98% 0 0);
+  /* Soft accent surface (translucent backgrounds like CI bands). */
+  --color-accent-soft: oklch(95% 0.03 230);
 
   /* Warm supporting hues used in illustrations + featured areas */
   --color-coral: oklch(70% 0.13 35);

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import {
-  CalendarDays,
   ChevronsLeft,
   ChevronsRight,
   GraduationCap,
@@ -106,12 +105,6 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       label: "Courses",
       icon: GraduationCap,
       href: "/dashboard/courses",
-    },
-    {
-      id: "calendar",
-      label: "Calendar",
-      icon: CalendarDays,
-      href: "/dashboard/calendar",
     },
     ...(isInstructor && CANVAS_ENABLED
       ? [

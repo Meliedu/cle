@@ -88,3 +88,8 @@ async def test_embed_query_returns_single_vector():
 
     assert result == fake_vector
     mock_embed.assert_awaited_once_with(["search query"])
+
+
+def test_concept_embedding_dim_constant():
+    from app.services import embedder
+    assert embedder.CONCEPT_EMBEDDING_DIMENSIONS == 3072

@@ -1,7 +1,16 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, JSON, String, UniqueConstraint, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    JSON,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -10,6 +19,14 @@ from app.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDPrimaryKe
 
 class Course(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "courses"
+    __table_args__ = (
+        # Course Context Package approval gate (CLE §6.5): touchpoints / note
+        # drafting are released only once the context is ``approved``.
+        CheckConstraint(
+            "context_status IN ('draft','approved')",
+            name="ck_courses_context_status_valid",
+        ),
+    )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str | None] = mapped_column(String(50))
@@ -23,6 +40,12 @@ class Course(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         String(16), nullable=False, unique=True, index=True
     )
     settings: Mapped[dict] = mapped_column(JSON, default=dict)
+    context_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="draft", server_default=text("'draft'")
+    )
+    context_approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
     instructor: Mapped["User"] = relationship("User", lazy="selectin")
     enrollments: Mapped[list["Enrollment"]] = relationship(

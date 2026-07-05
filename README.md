@@ -39,6 +39,13 @@ Meli (_honey_ in several languages, _salt_ in Hebrew) is a RAG-powered platform 
 ### For Instructors
 
 - **Upload anything** - PDF, DOCX, PPTX, MP3, MP4. Docling parses documents; Whisper transcribes audio.
+- **Curriculum spine** - structure a course into modules, schedule meetings, attach learning objectives (with Bloom's taxonomy levels), and publish assignments with due dates and weighted grading.
+- **Syllabus parser** - upload a syllabus PDF/DOCX, the LLM extracts modules, meetings, objectives, and assignments into an editable JSON payload, then applies them in one transactional step.
+- **Concept curation** - the LLM extracts candidate concepts from chunks, clusters them by embedding distance, and surfaces a review queue where you approve, rename, merge, or reject each cluster. Build a prerequisite DAG with cycle detection at write-time.
+- **Cohort mastery view** - per-concept Beta-Binomial mastery across every enrolled student, so "who is weak at *inference*?" is a real query rather than a guess.
+- **Instructor alerts** - an evaluator runs a 7-rule scan (cohort-wide weakness, missed deadlines, falling-behind students, content with no engagement, etc.) and surfaces dismissable / resolvable alerts in a centre.
+- **Engine settings + A/B** - flip the adaptive engine on, off, or run `random_50` (deterministic per-(user, course) hash) to A/B-test the engine against a control arm. Per-user overrides for edge cases.
+- **Assignment grading** - per-student submission roster, score and feedback entry, automatic late-flagging for overdue submissions.
 - **Generate quizzes** from uploaded materials with one click. Edit, publish, and track student attempts.
 - **Generate flashcard sets** tied to specific documents or entire courses.
 - **Host live quizzes** - Kahoot-style real-time sessions with join codes, speed-based scoring, and live leaderboards.
@@ -48,6 +55,10 @@ Meli (_honey_ in several languages, _salt_ in Hebrew) is a RAG-powered platform 
 
 ### For Students
 
+- **Course calendar** - per-week view across all enrolled courses showing scheduled meetings and published assignment deadlines, sorted by time.
+- **Today page** - the engine ranks the top-10 things you should do next by combining your concept mastery, upcoming deadlines, and meeting prep. Click-throughs are recorded so the engine learns which actions actually move the needle.
+- **Personal mastery panel** - per-concept Beta-Binomial mastery (`α/(α+β)`) and confidence (`1 − √var`), with HLR-style forgetting decay so untouched concepts drift back toward the prior over a 14-day half-life.
+- **Assignment submissions** - draft → submit flow with status tracking (not started / in progress / submitted / late / graded / excused).
 - **Practice quizzes** - take AI-generated quizzes with explanations for every answer.
 - **Flashcards with SM-2** - spaced repetition algorithm schedules reviews at optimal intervals.
 - **Adaptive revision** - infinite practice mode with a contextual bandit that adapts difficulty to your skill level in real time.
@@ -84,7 +95,13 @@ Meli (_honey_ in several languages, _salt_ in Hebrew) is a RAG-powered platform 
                                                  |   |  quizzes, flash, |   |
                                                  |   |  live, revision, |   |
                                                  |   |  speech, analytics|  |
-                                                 |   |  progress        |   |
+                                                 |   |  progress,       |   |
+                                                 |   |  curriculum,     |   |
+                                                 |   |  syllabus,       |   |
+                                                 |   |  concepts,       |   |
+                                                 |   |  mastery,        |   |
+                                                 |   |  next_actions,   |   |
+                                                 |   |  alerts, engine  |   |
                                                  |   +--------+---------+   |
                                                  |            |             |
                                                  |   +--------v---------+   |
@@ -113,6 +130,12 @@ Meli (_honey_ in several languages, _salt_ in Hebrew) is a RAG-powered platform 
                                               |  chunks, quizzes,           |
                                               |  flashcards, tasks,         |
                                               |  live_sessions, revision,   |
+                                              |  modules, meetings,         |
+                                              |  assignments, syllabus,     |
+                                              |  concepts (+ prereqs/tags), |
+                                              |  concept_mastery,           |
+                                              |  next_actions, alerts,      |
+                                              |  action_outcomes,           |
                                               |  bandit_models, progress,   |
                                               |  pronunciation_scores       |
                                               +-----------------------------+
@@ -149,8 +172,9 @@ The document processing pipeline is the core of Meli. When an instructor uploads
 ```
  Upload                Parse                 Chunk                  Embed                Store
 +------+  R2 store   +------+  Markdown    +------+  ~500 tok    +------+  vector     +------+
-| File | ----------> |Docling| ----------> |Chunker| ----------> |OpenAI| ----------> |pgvec |
-|      |             |Whisper|             |       |  overlap     |      |  1536 dim   | tor  |
+| File | ----------> |Docling| ----------> |Chunker| ----------> |OpenRtr| ---------> |pgvec |
+|      |             |Whisper|             |       |  overlap     | text- |  1536 dim   | tor  |
+|      |             |       |             |       |              |  3-lg |             |      |
 +------+             +------+             +------+              +------+             +------+
                          |                     |
                     PDF/DOCX/PPTX        Sentence-aligned
@@ -161,7 +185,7 @@ The document processing pipeline is the core of Meli. When an instructor uploads
 |-------|---------|---------|
 | **Parse** | [parser.py](backend/app/services/parser.py) | Docling for PDF/DOCX/PPTX with page-level extraction. Whisper for MP3/MP4. |
 | **Chunk** | [chunker.py](backend/app/services/chunker.py) | Sentence-aligned splitting at ~500 tokens with 50-token overlap. Page numbers preserved. |
-| **Embed** | [embedder.py](backend/app/services/embedder.py) | OpenAI `text-embedding-3-large` (1536 dims). Batched in groups of 100. |
+| **Embed** | [embedder.py](backend/app/services/embedder.py) | `openai/text-embedding-3-large` via OpenRouter, reduced to 1536 dims for chunk vectors. Batched in groups of 100. (Concept embeddings in Phase 2 use the native 3072 dim.) |
 | **Retrieve** | [retriever.py](backend/app/services/retriever.py) | Three modes: vector (pgvector cosine), full-text (tsvector + GIN), or hybrid (Reciprocal Rank Fusion). |
 | **Generate** | [generator.py](backend/app/services/generator.py) | OpenRouter LLM with automatic fallback. Primary model tried first; on JSON parse failure, secondary model retried. |
 
@@ -302,6 +326,156 @@ After 20 attempts, the `strategy` field transitions from `"rules"` to `"bandit"`
 #### Pool management
 
 Items are pre-generated at easy/medium/hard difficulty via the background task worker. When unserved items for any difficulty drop below 5, a `revision_pool_replenish` task is enqueued (7 easy, 7 medium, 6 hard). The `revision_item_served` junction table ensures no student sees the same item twice.
+
+### Curriculum, Calendar & Syllabus (Adaptive Engine — Phase 1)
+
+The curriculum spine layers above the existing content + bandit + FSRS-5 stack. Six new tables (`course_modules`, `course_meetings`, `learning_objectives`, `assignments`, `assignment_submissions`, `syllabus_imports`) plus a `documents.kind` column scoping uploads to `lecture` / `syllabus` / `reading` / `reference` / `other`.
+
+```
+                Instructor flow                                Student flow
+
+    +---------------+   parse_syllabus task    +-----------+
+    |  Upload PDF   +--->  LLM JSON extract --->  Review   |          +-----------+
+    |  kind=syllabus|                          |  payload  |          |  Calendar |
+    +---------------+                          +-----+-----+          |   page    |
+                                                     | apply          +-----+-----+
+                                                     v                      |
+    +-------------+   +---------+   +------------+   +-------------+   +----v----+
+    |   modules   |<--+ meetings+-->| objectives |   | assignments +-->|  feed   |
+    +-------------+   +---------+   +------------+   +------+------+   +---------+
+                                                            | publish
+                                                     +------v------+
+                                                     | submissions |
+                                                     | (per user)  |
+                                                     +------+------+
+                                                            | mark_overdue
+                                                            | (24h cron)
+                                                            v
+                                                       'late' status
+```
+
+| Capability | Service / Endpoint |
+|------------|-------------------|
+| Module CRUD | `/api/courses/{id}/modules` ([modules.py](backend/app/api/modules.py)) |
+| Meeting CRUD + calendar feed | `/api/courses/{id}/meetings`, `/api/courses/{id}/calendar` ([meetings.py](backend/app/api/meetings.py)) |
+| Objective CRUD with Bloom levels | `/api/courses/{id}/objectives` ([objectives.py](backend/app/api/objectives.py)) |
+| Assignments + submissions + grading | `/api/courses/{id}/assignments` ([assignments.py](backend/app/api/assignments.py)) |
+| Syllabus parse + apply | `/api/courses/{id}/syllabus/imports` ([syllabus.py](backend/app/api/syllabus.py)) — LLM extraction in [services/syllabus.py](backend/app/services/syllabus.py) |
+| Overdue cron (daily) | `mark_overdue_submissions` in [worker.py](backend/app/services/worker.py) — flips `not_started`/`in_progress` past `due_at` to `late` |
+
+Permissions: instructors get full CRUD scoped to courses they own. Students get read access to the calendar, list-published-assignments, and write access to their own submissions only. Cross-course access is blocked by ownership checks at the dependency layer (`get_owned_course` in [deps.py](backend/app/api/deps.py)).
+
+The syllabus parser is rate-limited (per-user hourly cap) to protect against unbounded LLM spend. Truncation beyond 40 000 characters is logged. Failed imports surface a "Re-trigger" affordance in the UI.
+
+### Concepts & Mastery (Adaptive Engine — Phase 2)
+
+The concept layer adds the *meaning* axis on top of the existing evidence layer. Five new tables (`concepts`, `concept_prerequisites`, `concept_tags`, `concept_mastery`, `concept_mastery_history`) plus a `primary_concept_id` column on `revision_attempts`. Concept embeddings are `vector(3072)` matching the native dim of `text-embedding-3-large`; chunk embeddings stay at 1536 — tagging happens via LLM at write-time, not vector crosswalk.
+
+```
+                    +--------------+   extract (LLM)   +-------------+
+                    |   chunks     +------------------>|  candidate  |
+                    | (per course) |                   |  concepts   |
+                    +------+-------+                   +------+------+
+                           |                                  | embed (3072d)
+                           | tag                              | greedy
+                           | (LLM,                     +------v------+
+                           |  inheritance)             |  clusters   |
+                           v                           +------+------+
+                  +-----------------+                         | curate
+                  |  concept_tags   |  polymorphic            v
+                  |  target_kind in |  ────────────────  +---------+
+                  |  chunk |        |                    | concepts|
+                  |  question |     |                    | (course |
+                  |  flashcard_card |                    |  scope) |
+                  |  pool_item |    |                    +----+----+
+                  |  pronunciation_ |                         |
+                  |    item |       |                         | DAG (cycle-
+                  |  objective |    |                         | guarded at
+                  |  meeting |      |                         | write)
+                  |  assignment     |                    +----v----+
+                  +--------+--------+                    |concept_ |
+                           |                             |prereqs  |
+            quiz/flash/    |                             +---------+
+            revision/      | apply attempt evidence
+            pronunciation  |
+            attempts ----->|         +-----------------+
+                           +-------->| concept_mastery |  α, β counts
+                                     |    + history    |  mastery_score = α/(α+β)
+                                     +--------+--------+  confidence  = 1 − √var
+                                              |
+                                       nightly HLR decay
+                                       (2^(−days/τ), τ=14d)
+```
+
+| Capability | Service / Endpoint |
+|------------|-------------------|
+| Concept CRUD + cohort | `/api/courses/{id}/concepts` ([concepts.py](backend/app/api/concepts.py)) |
+| Prerequisite DAG (cycle check via `WITH RECURSIVE` at write) | `/api/courses/{id}/concept-prerequisites` ([concept_prerequisites.py](backend/app/api/concept_prerequisites.py)) |
+| Cluster curation queue (LLM extract → greedy cosine cluster → instructor decide) | `/api/courses/{id}/concept-clusters` ([concept_clusters.py](backend/app/api/concept_clusters.py)) |
+| Tag inspection (read-only, polymorphic) | `/api/concept-tags/{target_kind}/{target_id}` ([concept_tags.py](backend/app/api/concept_tags.py)) |
+| Personal mastery + cohort view | `/api/users/me/courses/{id}/mastery`, `/api/courses/{id}/mastery` ([mastery.py](backend/app/api/mastery.py)) |
+| LLM extraction + 90-day replay | `POST /concepts/extract`, `POST /concepts/replay` (instructor-triggered, 409 if in-flight) |
+| Background jobs | `extract_concept_candidates` (clustering runs inline within this handler), `tag_artifact_concepts`, `update_concept_mastery`, `replay_attempt_history`. Mastery decay runs as an in-worker cron block invoking `decay_due_mastery_rows` (gated by a `last_decay_run` watermark) — not a separate Task row. |
+
+**Mastery math.** Each attempt-recording endpoint enqueues `update_concept_mastery` after committing the user's attempt (try/except so attempt durability survives an enqueue failure). The handler joins `concept_tags` for the target, runs `α += w·outcome, β += w·(1−outcome)` for every tagged concept (chunk-inherited tags carry `weight × 0.7`), recomputes confidence, and appends a history row. A nightly cron applies HLR-style forgetting decay. Concept embeddings are stored on `concepts.embedding` for similarity search; HNSW is intentionally absent — pgvector caps HNSW at 2000 dims for `vector` and clustering runs in-process.
+
+**Race + retry safety.** First-attempt rows use `INSERT … ON CONFLICT DO NOTHING RETURNING` then re-fetch on conflict — see `services/mastery.py::_get_or_create_mastery`. Tasks that mutate user-facing state carry a `_task_created_at` watermark; the handler checks `concept_mastery_history` for `recorded_at >= watermark` and skips if already-applied. Closes the seam between handler-commit and `complete_task`-commit when `_reset_stuck_tasks` requeues.
+
+**Generation grounding.** Quiz / flashcard / summary generators load the latest applied `SyllabusImport` payload as additional context, and tag artifact outputs with concepts inherited from the source chunk. The pronunciation grade endpoint accepts a `pronunciation_item_id` form field and feeds those attempts into mastery the same way (free-form practice keeps working — the FK is nullable).
+
+### Decision Layer (Adaptive Engine — Phase 3)
+
+The decision layer reads from `concept_mastery` + curriculum and produces ranked actions and instructor alerts. Four new tables (`next_actions`, `action_outcomes`, `instructor_alerts`, `engine_overrides`) plus a `courses.adaptive_engine_mode` column.
+
+```
+                     concept_mastery + curriculum + deadlines
+                                       |
+                                       v
+              +---------- KST outer-fringe candidate filter -----------+
+              |  concepts whose every prerequisite has                 |
+              |  mastery_score >= 0.7 AND confidence >= 0.5            |
+              |  but the concept itself does not                       |
+              +---------------------+----------------------------------+
+                                    |
+                                    v
+                         +-----------------------+
+                         |  scoring (weighted)   |   prep_meeting     3.0
+                         |  one fn per           |   complete_assign  5.0
+                         |  action_type          |   practice_weak    2.0
+                         +----------+------------+   flashcard_review 1.5
+                                    |                catch_up_reading 1.0
+                                    v
+                            top-10 next_actions
+                            (TTL 1h, 30-min lazy
+                             recompute on read)
+                                    |
+                       served / clicked / observed
+                                    |
+                                    v
+                         +-----------------------+
+                         |    action_outcomes    |   engine_variant ∈ {on, off}
+                         |  (per impression)     |   tracks A/B telemetry
+                         +-----------+-----------+
+                                     |
+                                     | quarterly retune
+                                     v
+                            tune_action_coefficients
+                            (currently propose-only)
+```
+
+| Capability | Service / Endpoint |
+|------------|-------------------|
+| Student "Today" — top-10 ranked actions | `GET /api/users/me/courses/{id}/next-actions` ([next_actions.py](backend/app/api/next_actions.py)) — lazy 30-min recompute on read |
+| Click-through telemetry | `POST /api/next-actions/{id}/click` (records impression + click for the served `engine_variant`) |
+| Instructor alerts centre | `GET /api/courses/{id}/alerts`, `PATCH /api/courses/{id}/alerts/{aid}` ([instructor_alerts.py](backend/app/api/instructor_alerts.py)) — dismiss / resolve |
+| Engine settings + per-user overrides | `GET / PATCH /api/courses/{id}/engine`, `PUT / DELETE /api/courses/{id}/engine/overrides/{uid}` ([engine_settings.py](backend/app/api/engine_settings.py)) |
+| Background jobs | `materialize_next_actions`, `evaluate_instructor_alerts`, `tune_action_coefficients`, `record_action_outcome`; daily horizon-scan cron enqueues recompute for upcoming deadlines/meetings |
+
+**Engine modes.** Per-course `adaptive_engine_mode ∈ {on, off, random_50}`, per-user override (`on` / `off` only) wins over course mode. `random_50` deterministically splits students using `blake2b(user_id || course_id) % 2`, so the same student stays in the same arm across sessions and per-student outcome curves stay clean. When the resolved mode is `off`, the API returns an empty list **but still writes** `action_outcomes` rows with `engine_variant='off'` for the artifact the student touched anyway — that's what produces the off-arm outcome curve for retroactive A/B.
+
+**Scoring as tie-breaker.** KST outer-fringe is the *candidate selector*; scoring orders candidates within it. Coefficients are initial defaults; `tune_action_coefficients` runs quarterly and proposes deltas to `Task.payload['result']` without applying them — manual review until enough outcome data accumulates to trust auto-apply.
+
+**What the engine does not touch.** The bandit / FSRS / recalibration tables are read-only neighbours; the concept layer filters the candidate pool *before* the bandit picks difficulty within an item set. The two systems compose vertically.
 
 ### Live Quiz (Kahoot-style)
 
@@ -530,26 +704,42 @@ cd frontend && npm run e2e
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | PostgreSQL async connection string |
-| `CLERK_SECRET_KEY` | Clerk backend API key |
-| `CLERK_JWKS_URL` | Clerk JWKS endpoint for JWT verification |
+| `DATABASE_URL` | PostgreSQL async connection string (use the `meli_app` role in prod so RLS is enforced) |
+| `ENVIRONMENT` | `development` or `production` — production gates several required vars |
+| `BETTER_AUTH_JWKS_URL` | Better Auth JWKS endpoint (e.g. `http://localhost:3000/api/auth/jwks`) |
+| `BETTER_AUTH_ISSUER` | Expected JWT `iss` claim (e.g. `http://localhost:3000`) |
+| `BETTER_AUTH_AUDIENCE` | Expected JWT `aud` claim (e.g. `meli-backend`) |
+| `BETTER_AUTH_INTERNAL_SECRET` | Shared secret for Next.js signup hook → `POST /api/internal/users/link` |
+| `RESEND_API_KEY` | Resend API key (verification + password-reset email) |
+| `RESEND_FROM_EMAIL` | From-address for transactional email (default: `Meli <noreply@meli.app>`) |
 | `R2_ACCOUNT_ID` | Cloudflare account ID |
 | `R2_ACCESS_KEY_ID` | R2 access key |
 | `R2_SECRET_ACCESS_KEY` | R2 secret key |
 | `R2_BUCKET_NAME` | R2 bucket name |
 | `R2_ENDPOINT_URL` | R2 S3-compatible endpoint |
-| `OPENAI_API_KEY` | For embeddings + Whisper |
-| `OPENROUTER_API_KEY` | For LLM generation |
-| `OPENROUTER_PRIMARY_MODEL` | Primary model (default: `qwen/qwen3.6-plus:free`) |
-| `OPENROUTER_FALLBACK_MODEL` | Fallback model (default: `google/gemini-2.5-flash-lite`) |
+| `OPENAI_API_KEY` | Whisper transcription (audio/video). Embeddings now route via OpenRouter — this stays optional unless you upload media. |
+| `OPENROUTER_API_KEY` | LLM generation + embeddings + VLM (single key for everything) |
+| `OPENROUTER_PRIMARY_MODEL` | Primary LLM (default: `deepseek/deepseek-v3.2`) |
+| `OPENROUTER_FALLBACK_MODEL` | Fallback LLM on JSON-parse failure (default: `google/gemini-2.5-flash-lite`) |
+| `VLM_MODEL` | Vision-LLM for figure captions / low-text page rescue (default: `google/gemini-2.5-flash`) |
+| `ENABLE_FIGURE_CAPTIONS` | Toggle Docling+VLM caption pass (default: `true`; turn `false` in dev to save spend) |
+| `ENABLE_PAGE_RESCUE` | Toggle VLM transcription for scan/image-only PDF pages (default: `true`) |
 | `ALLOWED_EMAIL_DOMAINS` | Comma-separated (e.g., `connect.ust.hk,ust.hk`) |
 | `STUDENT_RATE_LIMIT` | AI requests per hour for students (default: 10) |
 | `INSTRUCTOR_RATE_LIMIT` | AI requests per hour for instructors (default: 50) |
-| `AZURE_SPEECH_KEY` | Azure Speech Services key (pronunciation grading) |
-| `AZURE_SPEECH_REGION` | Azure Speech region |
+| `MAX_UPLOAD_SIZE_MB` | Hard upload cap (default: 100) |
+| `RUN_WORKER_IN_API` | Run document worker + Canvas scheduler in-process (default: `true`; set `false` on prod API container if running a separate worker service) |
+| `AZURE_SPEECH_KEY` | Azure Speech Services key (English pronunciation grading) |
+| `AZURE_SPEECH_REGION` | Azure Speech region (default: `eastasia`) |
 | `IFLYTEK_APP_ID` | iFlytek app ID (Chinese pronunciation) |
 | `IFLYTEK_API_KEY` | iFlytek API key |
 | `IFLYTEK_API_SECRET` | iFlytek API secret |
+| `INTEGRATIONS_ENCRYPTION_KEY` | Fernet key for encrypting third-party tokens at rest (Canvas, etc.). Required in prod. |
+| `CANVAS_ALLOWED_HOSTS` | Comma-separated allowlist of Canvas hostnames (SSRF defense) |
+| `CANVAS_CLIENT_ID` / `CANVAS_CLIENT_SECRET` | HKUST Canvas Developer Key (OAuth 2.0) |
+| `CANVAS_BASE_URL` | Canvas tenant base URL (default: `https://canvas.ust.hk`) |
+| `CANVAS_REDIRECT_URI` | OAuth callback (default: `http://localhost:8000/api/canvas/oauth/callback`) |
+| `CANVAS_STATE_SECRET` | Signing key for OAuth state JWT (32+ random bytes) |
 
 </details>
 
@@ -558,11 +748,14 @@ cd frontend && npm run e2e
 
 | Variable | Description |
 |----------|-------------|
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
-| `CLERK_SECRET_KEY` | Clerk secret key |
 | `NEXT_PUBLIC_API_URL` | Backend API URL (default: `http://localhost:8000/api`) |
-| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Sign-in route (default: `/sign-in`) |
-| `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Sign-up route (default: `/sign-up`) |
+| `NEXT_PUBLIC_CANVAS_ENABLED` | Show the Canvas LMS connect UI in the dashboard |
+| `NEXT_PUBLIC_MICROSOFT_SSO_ENABLED` | Show the Microsoft SSO option on the sign-in page |
+| `BETTER_AUTH_SECRET` | Better Auth signing secret (used by the Next.js `auth` handler) |
+| `BETTER_AUTH_URL` | Public origin for Better Auth (e.g. `http://localhost:3000`) |
+| `BETTER_AUTH_INTERNAL_SECRET` | Must match the backend value — used by the signup hook posting to the backend |
+| `DATABASE_URL` | Same Postgres as the backend — Better Auth tables live in the `auth` schema |
+| `RESEND_API_KEY` | Resend key for verification + password-reset email |
 
 </details>
 
@@ -574,7 +767,7 @@ cd frontend && npm run e2e
 
 ## API Reference
 
-All endpoints are prefixed with `/api` and require `Authorization: Bearer <clerk_jwt>` except `/health`.
+All endpoints are prefixed with `/api` and require `Authorization: Bearer <better_auth_jwt>` except `/health`. The token is fetched by the frontend `useApiToken` hook via `authClient.token()` and verified server-side against the Better Auth JWKS (`BETTER_AUTH_JWKS_URL`).
 
 Response envelope:
 
@@ -692,7 +885,7 @@ Rate limited: students 10/hr, instructors 50/hr (configurable).
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `POST` | `/api/speech/grade` | Enrolled | Grade pronunciation (upload audio + reference text) |
+| `POST` | `/api/speech/grade` | Enrolled | Grade pronunciation (upload audio + reference text + optional `pronunciation_item_id` to feed concept mastery) |
 | `GET` | `/api/courses/:id/pronunciation-history` | Enrolled | Past pronunciation scores |
 
 </details>
@@ -719,6 +912,33 @@ Rate limited: students 10/hr, instructors 50/hr (configurable).
 </details>
 
 <details>
+<summary><strong>Curriculum (Modules / Meetings / Objectives / Assignments)</strong></summary>
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` `GET` `PUT` `DELETE` | `/api/courses/:id/modules[/:moduleId]` | Instructor | Course module CRUD (flat list; soft delete) |
+| `POST` `GET` `PUT` `DELETE` | `/api/courses/:id/meetings[/:meetingId]` | Instructor | Course meetings CRUD; unique `meeting_index` per course |
+| `GET` | `/api/courses/:id/calendar?from_date=&to_date=` | Enrolled | Combined feed: meetings + published assignments in time range (max 366 days) |
+| `POST` `GET` `PUT` `DELETE` | `/api/courses/:id/objectives[/:objectiveId]` | Instructor | Learning objectives with Bloom levels; mutually-exclusive module/meeting scope |
+| `POST` `GET` `PUT` `DELETE` | `/api/courses/:id/assignments[/:assignmentId]` | Instructor (write) / Enrolled (read) | Assignments CRUD; students see only published |
+| `POST` | `/api/courses/:id/assignments/:aid/submission` | Student | Upsert own submission (in_progress → submitted) |
+| `GET` | `/api/courses/:id/assignments/:aid/submissions` | Instructor | Roster of all submissions for an assignment |
+| `POST` | `/api/courses/:id/assignments/:aid/submissions/:sid/grade` | Instructor | Grade submission (score 0–9999.99, feedback, status) |
+
+</details>
+
+<details>
+<summary><strong>Syllabus Parser</strong></summary>
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/api/courses/:id/syllabus/imports` | Instructor | Trigger LLM parse of a `kind=syllabus` document (rate-limited) |
+| `GET` | `/api/courses/:id/syllabus/imports` | Instructor | List imports (statuses: pending → parsed → applied / failed / superseded) |
+| `POST` | `/api/courses/:id/syllabus/imports/:iid/apply` | Instructor | Apply (possibly edited) parsed payload — creates modules/meetings/objectives/assignments transactionally |
+
+</details>
+
+<details>
 <summary><strong>Canvas LMS</strong></summary>
 
 | Method | Endpoint | Auth | Description |
@@ -726,6 +946,36 @@ Rate limited: students 10/hr, instructors 50/hr (configurable).
 | `POST` | `/api/courses/:id/canvas/connect` | Instructor | Connect to Canvas course |
 | `GET` | `/api/courses/:id/canvas/files` | Instructor | List Canvas course files |
 | `POST` | `/api/courses/:id/canvas/import` | Instructor | Import Canvas files into Meli |
+
+</details>
+
+<details>
+<summary><strong>Concepts & Mastery (Adaptive Engine — Phase 2)</strong></summary>
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` `GET` `PUT` `DELETE` | `/api/courses/:id/concepts[/:cid]` | Instructor | Concept CRUD (course-scoped, soft-merge via `canonical_id`) |
+| `POST` | `/api/courses/:id/concepts/extract` | Instructor | Enqueue LLM extraction across course chunks |
+| `POST` | `/api/courses/:id/concepts/replay` | Instructor | Trigger 90-day attempt-history replay (409 if in-flight) |
+| `POST` `GET` `DELETE` | `/api/courses/:id/concept-prerequisites[/:p/:d]` | Instructor | Prerequisite DAG with cycle detection at write |
+| `GET` `POST` | `/api/courses/:id/concept-clusters[/:cluster_id/decide]` | Instructor | Cluster review queue: approve / rename / merge / reject |
+| `GET` | `/api/concept-tags/:target_kind/:target_id` | Enrolled | Read concept tags for any tagged artifact |
+| `GET` | `/api/users/me/courses/:id/mastery` | Enrolled | Personal per-concept mastery (α, β, mastery_score, confidence) |
+| `GET` | `/api/courses/:id/mastery` | Instructor | Cohort mastery view across all enrolled students |
+
+</details>
+
+<details>
+<summary><strong>Decision Layer (Adaptive Engine — Phase 3)</strong></summary>
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/users/me/courses/:id/next-actions` | Enrolled | Top-10 ranked actions (lazy 30-min recompute) |
+| `POST` | `/api/next-actions/:id/click` | Enrolled | Record a click — produces `action_outcomes` row tagged with the served `engine_variant` |
+| `GET` | `/api/courses/:id/alerts` | Instructor | List active instructor alerts |
+| `PATCH` | `/api/courses/:id/alerts/:aid` | Instructor | Dismiss / resolve an alert |
+| `GET` `PATCH` | `/api/courses/:id/engine` | Instructor | Read / set course engine mode (`on` / `off` / `random_50`) |
+| `PUT` `DELETE` | `/api/courses/:id/engine/overrides/:user_id` | Instructor | Per-user override (`on` / `off` only) |
 
 </details>
 
@@ -741,51 +991,83 @@ Rate limited: students 10/hr, instructors 50/hr (configurable).
 meli/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI app + lifespan (worker startup)
+│   │   ├── main.py              # FastAPI app + lifespan (worker + Canvas scheduler)
 │   │   ├── config.py            # pydantic-settings from .env
 │   │   ├── database.py          # SQLAlchemy async engine
 │   │   ├── api/                 # Route handlers
-│   │   │   ├── deps.py          #   get_current_user, require_instructor
+│   │   │   ├── deps.py          #   get_current_user, require_instructor, get_owned_course
+│   │   │   ├── internal.py      #   Better Auth signup hook → users link/delete
 │   │   │   ├── rag.py           #   RAG query + generation endpoints
-│   │   │   ├── courses.py       #   Course CRUD
-│   │   │   ├── documents.py     #   Upload + file management
-│   │   │   ├── quizzes.py       #   Quiz CRUD + attempts + grading
-│   │   │   ├── flashcards.py    #   Flashcard sets + SM-2 progress
-│   │   │   ├── revision.py      #   Adaptive revision sessions
+│   │   │   ├── courses.py, documents.py, quizzes.py, flashcards.py
+│   │   │   ├── revision.py      #   Adaptive revision sessions (bandit)
+│   │   │   ├── recalibration.py #   Difficulty recalibration (Dirichlet/HMM)
 │   │   │   ├── live.py          #   Live quiz (WebSocket + REST)
-│   │   │   ├── speech.py        #   Pronunciation grading
-│   │   │   ├── analytics.py     #   Instructor analytics
-│   │   │   ├── progress.py      #   Gamification (XP, badges, leaderboard)
-│   │   │   └── canvas.py        #   Canvas LMS integration
+│   │   │   ├── speech.py, pronunciation.py   # Pronunciation grading + sets
+│   │   │   ├── analytics.py, progress.py     # Instructor analytics + gamification
+│   │   │   ├── canvas.py, canvas_oauth.py    # Canvas LMS + per-user OAuth
+│   │   │   │
+│   │   │   │ ── Adaptive Engine — Phase 1 (curriculum spine)
+│   │   │   ├── modules.py, meetings.py, objectives.py, assignments.py
+│   │   │   ├── syllabus.py      #   LLM parse → review → transactional apply
+│   │   │   │
+│   │   │   │ ── Adaptive Engine — Phase 2 (concepts + mastery)
+│   │   │   ├── concepts.py, concept_prerequisites.py
+│   │   │   ├── concept_clusters.py, concept_tags.py
+│   │   │   ├── mastery.py       #   Personal + cohort mastery views
+│   │   │   │
+│   │   │   │ ── Adaptive Engine — Phase 3 (decision layer)
+│   │   │   ├── next_actions.py        # Today: top-10 ranked actions + clicks
+│   │   │   ├── instructor_alerts.py   # Alerts centre (dismiss / resolve)
+│   │   │   └── engine_settings.py     # Mode + per-user overrides (A/B)
 │   │   ├── models/              # SQLAlchemy 2.0 models
 │   │   │   ├── base.py          #   UUID PK, timestamps, soft delete mixins
 │   │   │   ├── user.py          #   User, Course, Enrollment
-│   │   │   ├── document.py      #   Document, Chunk (+ tsvector)
-│   │   │   ├── quiz.py          #   Quiz, Question, QuizAttempt, QuizDocument
-│   │   │   ├── flashcard.py     #   FlashcardSet, FlashcardCard, FlashcardProgress
-│   │   │   ├── revision.py      #   RevisionSession, RevisionPoolItem, RevisionAttempt, BanditModel
-│   │   │   ├── live.py          #   LiveSession, LiveAnswer
-│   │   │   ├── gamification.py  #   StudentProgress, PronunciationScore
-│   │   │   └── task.py          #   Task, ApiUsage, CanvasIntegration
+│   │   │   ├── document.py, chunk.py    #   Document + Chunk (vector + tsvector)
+│   │   │   ├── quiz.py, flashcard.py, revision.py, recalibration.py
+│   │   │   ├── live_answer.py, session.py, summary.py
+│   │   │   ├── score.py, pronunciation.py   # Gamification + pronunciation
+│   │   │   ├── task.py, cron_run.py, api_usage.py, oauth_nonce.py
+│   │   │   ├── integration.py, canvas.py    # Canvas integration + creds
+│   │   │   ├── scheduler.py     #   FSRS scheduler state
+│   │   │   ├── curriculum.py    #   Phase 1: modules, meetings, objectives, assignments, syllabus_imports
+│   │   │   ├── concept.py       #   Phase 2: concepts, prereqs, tags, mastery (+history)
+│   │   │   └── decision.py      #   Phase 3: next_actions, action_outcomes, instructor_alerts, engine_overrides
 │   │   ├── schemas/             # Pydantic v2 request/response models
 │   │   ├── services/            # Business logic
-│   │   │   ├── pipeline.py      #   Orchestrates download → parse → chunk → embed → store
-│   │   │   ├── worker.py        #   PostgreSQL task queue consumer
+│   │   │   ├── pipeline.py      #   download → parse → chunk → embed → store
+│   │   │   ├── worker.py        #   PostgreSQL task-queue consumer + cron blocks
+│   │   │   ├── jobs.py          #   Task dispatch + watermarks
 │   │   │   ├── parser.py        #   Docling + Whisper dispatch
-│   │   │   ├── chunker.py       #   Sentence-aligned ~500-token chunks
-│   │   │   ├── embedder.py      #   OpenAI text-embedding-3-large
-│   │   │   ├── retriever.py     #   Hybrid search (vector + fulltext + RRF)
-│   │   │   ├── generator.py     #   OpenRouter LLM with fallback strategy
-│   │   │   ├── bandit.py        #   REINFORCE contextual bandit for difficulty adaptation
-│   │   │   ├── live_quiz.py     #   WebSocket manager + session state machine
-│   │   │   ├── gamification.py  #   XP awards, streaks, badges, leaderboard
-│   │   │   ├── speech.py        #   Azure Speech + iFlytek pronunciation grading
+│   │   │   ├── vlm.py           #   Vision-LLM captions + low-text page rescue
+│   │   │   ├── chunker.py, embedder.py, retriever.py, generator.py
+│   │   │   ├── bandit.py        #   REINFORCE contextual bandit
+│   │   │   ├── pool.py, recalibrator.py     # Revision pool + Dirichlet recalibrator
+│   │   │   ├── live_quiz.py, gamification.py, speech.py
 │   │   │   ├── storage.py       #   Cloudflare R2 via boto3
-│   │   │   ├── auth.py          #   Clerk JWT verification + role detection
-│   │   │   └── canvas.py        #   Canvas LMS client
+│   │   │   ├── auth.py          #   Better Auth JWT verification + role detection
+│   │   │   ├── crypto.py, url_safety.py     # Fernet token encryption + SSRF guard
+│   │   │   ├── canvas_client.py, canvas_oauth.py, canvas_files.py
+│   │   │   ├── canvas_roster.py, canvas_sync.py    # Daily scheduler + roster diff
+│   │   │   ├── scheduler.py     #   FSRS-5 scheduler
+│   │   │   │
+│   │   │   │ ── Adaptive Engine — Phase 1
+│   │   │   ├── syllabus.py, syllabus_grounding.py
+│   │   │   │
+│   │   │   │ ── Adaptive Engine — Phase 2
+│   │   │   ├── concept_extraction.py, concept_clustering.py, concept_tagger.py
+│   │   │   ├── mastery.py       #   Beta-Binomial update + HLR decay
+│   │   │   │
+│   │   │   │ ── Adaptive Engine — Phase 3
+│   │   │   ├── outer_fringe.py  #   KST candidate filter (CTE)
+│   │   │   ├── scoring.py, action_coeffs.py    # Per-action-type scoring + tunable coeffs
+│   │   │   ├── next_actions.py  #   Materialiser + lazy/event-driven recompute
+│   │   │   ├── alerts.py        #   7-rule evaluator
+│   │   │   ├── engine_mode.py   #   on/off/random_50 resolver (blake2b A/B)
+│   │   │   └── adaptive_jobs.py #   Phase 3 task handlers
 │   │   └── middleware/          # ASGI middleware
-│   │       ├── auth.py          #   Early Bearer token gate
-│   │       └── rate_limit.py    #   Per-user hourly limits on /api/rag/*
+│   │       ├── auth.py          #   Bearer token gate on /api/*
+│   │       ├── rate_limit.py    #   Per-user hourly limits on /api/rag/*
+│   │       └── security_headers.py
 │   ├── alembic/                 # Database migrations (async)
 │   ├── tests/                   # pytest + pytest-asyncio
 │   ├── seed.py                  # Demo data seeder
@@ -796,48 +1078,43 @@ meli/
 ├── frontend/
 │   ├── src/
 │   │   ├── app/                 # Next.js 16 App Router
-│   │   │   ├── dashboard/       #   Authenticated views
-│   │   │   │   ├── courses/     #     Course list + detail
-│   │   │   │   │   └── [courseId]/
-│   │   │   │   │       ├── quizzes/          # Quiz player
-│   │   │   │   │       ├── flashcards/       # Flashcard player
-│   │   │   │   │       ├── revision/         # Adaptive revision
-│   │   │   │   │       ├── pronunciation/    # Speech grading
-│   │   │   │   │       └── live/             # Live quiz host/join
-│   │   │   ├── sign-in/         #   Clerk sign-in
-│   │   │   └── sign-up/         #   Clerk sign-up
+│   │   │   ├── dashboard/courses/[courseId]/
+│   │   │   │   ├── quizzes/, flashcards/, revision/, pronunciation/, live/
+│   │   │   │   ├── modules/, meetings/, objectives/, assignments/, syllabus/   # Phase 1
+│   │   │   │   ├── concepts/, concept-curation/, prerequisites/, mastery/       # Phase 2
+│   │   │   │   └── today/, alerts/, engine/                                     # Phase 3
+│   │   │   ├── sign-in/, sign-up/   # Better Auth screens (custom components)
+│   │   │   └── api/auth/[...all]/   # Better Auth handler (JWKS, sessions, hooks)
 │   │   ├── components/          # Feature-organized
-│   │   │   ├── course/          #   Create course dialog
-│   │   │   ├── documents/       #   Upload zone, document selector
-│   │   │   ├── quiz/            #   Player, list, preview, results, generate dialog
-│   │   │   ├── flashcard/       #   Player, list, preview, generate dialog
-│   │   │   ├── revision/        #   Player, quiz/flashcard items, stats bar, summary
-│   │   │   ├── live-quiz/       #   Lobby, host panel, player view, podium
-│   │   │   ├── pronunciation/   #   Recorder, score display, history chart
-│   │   │   ├── gamification/    #   XP toast, badge display, leaderboard, progress card
-│   │   │   ├── analytics/       #   Course analytics dashboard
-│   │   │   ├── summary/         #   Generate summary dialog
-│   │   │   ├── layout/          #   Navbar, sidebar, dashboard shell, language toggle
-│   │   │   └── ui/              #   shadcn/ui primitives
-│   │   ├── hooks/               # Custom hooks
-│   │   │   ├── use-api-token.ts
-│   │   │   ├── use-courses.ts
-│   │   │   ├── use-quizzes.ts
-│   │   │   ├── use-flashcard-sets.ts
-│   │   │   ├── use-documents.ts
-│   │   │   ├── use-revision.ts
-│   │   │   ├── use-live-quiz.ts
-│   │   │   ├── use-pronunciation.ts
-│   │   │   ├── use-progress.ts
-│   │   │   ├── use-analytics.ts
-│   │   │   └── use-role.ts
-│   │   ├── lib/api.ts           # Typed fetch wrapper with Clerk Bearer token
+│   │   │   ├── auth/            #   Sign-in / sign-up forms
+│   │   │   ├── course/, documents/, quiz/, flashcard/, folders/, generation/
+│   │   │   ├── revision/, live-quiz/, pronunciation/, summary/
+│   │   │   ├── analytics/, gamification/, recalibration/
+│   │   │   ├── curriculum/      #   Phase 1: modules/meetings/objectives/assignments/syllabus
+│   │   │   ├── concepts/        #   Phase 2: concept CRUD, clusters, prereq DAG, mastery
+│   │   │   ├── decision/        #   Phase 3: today, alerts centre, engine settings
+│   │   │   ├── canvas/, dashboard/, providers/, layout/, ui/
+│   │   ├── hooks/               # Custom hooks (TanStack Query wrappers)
+│   │   │   ├── use-api-token.ts, use-auth.ts, use-role.ts
+│   │   │   ├── use-courses.ts, use-documents.ts, use-quizzes.ts, use-flashcard-sets.ts
+│   │   │   ├── use-revision.ts, use-recalibration.ts, use-live-quiz.ts
+│   │   │   ├── use-pronunciation*.ts, use-canvas.ts, use-progress.ts, use-analytics.ts
+│   │   │   ├── use-modules.ts, use-meetings.ts, use-objectives.ts, use-assignments.ts
+│   │   │   ├── use-assignment-submissions.ts, use-calendar-events.ts, use-syllabus.ts
+│   │   │   ├── use-concepts.ts, use-concept-prerequisites.ts, use-concept-clusters.ts
+│   │   │   ├── use-concept-tags.ts, use-mastery.ts
+│   │   │   └── use-next-actions.ts, use-todos.ts, use-instructor-alerts.ts, use-engine-settings.ts
+│   │   ├── lib/api.ts           # Typed fetch wrapper with Better Auth Bearer token
+│   │   ├── lib/auth-client.ts   # Better Auth client (token, session, sign-in/out)
 │   │   ├── proxy.ts             # Next.js 16 proxy (replaces middleware.ts)
 │   │   └── styles/tokens.css    # Design tokens (oklch, "Honey & Salt" palette)
 │   ├── e2e/                     # Playwright tests
 │   └── package.json
 │
-├── docs/superpowers/            # Design specs + implementation plans
+├── docs/
+│   ├── superpowers/             # Design specs + implementation plans (Phase 1/2/3)
+│   ├── migrations/              # Migration playbooks (Clerk → Better Auth)
+│   └── compliance/
 ├── docker-compose.yml           # PostgreSQL 17 + pgvector local dev
 └── .env.example                 # Environment variable template
 ```
@@ -875,14 +1152,22 @@ PostgreSQL 17 with pgvector and tsvector extensions. Key design decisions:
 - **Difficulty recalibration** via `recalibration_stats` + `recalibration_models` (Dirichlet/HMM over LLM-labeled difficulty vs. observed outcomes)
 - **Gamification** in `student_progress` (XP, streaks, badges JSONB, activity counts)
 - **Live quiz** state in `live_sessions` and `live_answers` tables
+- **Curriculum spine** in `course_modules`, `course_meetings`, `learning_objectives`, `assignments`, `assignment_submissions` (no soft-delete on submissions/imports — by design for audit trail)
+- **Syllabus parser** state in `syllabus_imports` (pending → parsed → applied / failed / superseded); `documents.kind` column scopes uploads
+- **Concept ontology** per-course in `concepts` with `canonical_id` soft-merge + `cluster_id` for curation; `vector(3072)` embedding column matches `text-embedding-3-large` native dim
+- **Prerequisite DAG** in `concept_prerequisites` with cycle detection enforced at write via `WITH RECURSIVE`
+- **Polymorphic concept tags** in `concept_tags(target_kind, target_id, concept_id, weight)` with partial indexes per kind; `target_kind` covers `chunk | question | flashcard_card | pool_item | pronunciation_item | objective | meeting | assignment`
+- **Beta-Binomial mastery** in `concept_mastery (user_id, concept_id)` with `α`, `β` pseudo-counts and a `GENERATED ALWAYS AS (α/(α+β)) STORED` `mastery_score` column; full audit trail in `concept_mastery_history`
+- **Decision layer** in `next_actions` (materialised, TTL 1h, polymorphic `target_id`), `action_outcomes` (per-impression telemetry with `engine_variant`, `next_action_id` `ON DELETE SET NULL`), `instructor_alerts` (rule + severity + status), `engine_overrides` (per-user) and `courses.adaptive_engine_mode ∈ {on, off, random_50}`
+- **Pronunciation → mastery FK** in `pronunciation_scores.pronunciation_item_id` (nullable, `ON DELETE SET NULL`) so set-based pronunciation attempts feed `update_concept_mastery` while free-form practice still works
 
 ### Schema Diagram
 
 ```
-                                    +-------------+
-                                    |    users    |
-                                    |   (Clerk)   |
-                                    +------+------+
+                                    +---------------+
+                                    |     users     |
+                                    | (Better Auth) |
+                                    +-------+-------+
                                            |
                     +----------------------+---------------------+
                     |                      |                     |
@@ -919,6 +1204,28 @@ PostgreSQL 17 with pgvector and tsvector extensions. Key design decisions:
               |student_progress  |
               |(XP/streak/badges)|
               +------------------+
+
+              +------------- Adaptive Engine — Phase 1/2/3 -----------------+
+              |                                                             |
+              |  course_modules ── course_meetings ── learning_objectives   |
+              |       │                                                     |
+              |  assignments ── assignment_submissions   syllabus_imports   |
+              |                                                             |
+              |  concepts ── concept_prerequisites (DAG)                    |
+              |     │                                                       |
+              |  concept_tags (polymorphic: chunk | question | flashcard_   |
+              |     │         card | pool_item | pronunciation_item |       |
+              |     │         objective | meeting | assignment)             |
+              |     │                                                       |
+              |  concept_mastery (α, β, mastery_score GENERATED) ─          |
+              |     │   concept_mastery_history (append-only audit)         |
+              |     │                                                       |
+              |  next_actions (materialised cache, TTL 1h)                  |
+              |     │                                                       |
+              |  action_outcomes (engine_variant: on | off, A/B telemetry)  |
+              |                                                             |
+              |  instructor_alerts ── engine_overrides                      |
+              +-------------------------------------------------------------+
 ```
 
 ### Core Tables
@@ -928,7 +1235,7 @@ PostgreSQL 17 with pgvector and tsvector extensions. Key design decisions:
 
 | Table | Columns | Notes |
 |-------|---------|-------|
-| **users** | `id` (uuid PK), `clerk_id` (unique), `email` (unique), `full_name`, `role`, `avatar_url`, `created_at`, `updated_at` | Auto-created on first Clerk JWT. Role derived from email domain. |
+| **users** | `id` (uuid PK), `better_auth_id` (unique), `email` (unique), `full_name`, `role`, `avatar_url`, `created_at`, `updated_at` | Auto-created on first Better Auth JWT (or via the `POST /api/internal/users/link` signup hook). Role derived from email domain. |
 | **courses** | `id`, `name`, `code`, `description`, `language`, `semester`, `instructor_id` (FK users), `settings` (JSON), timestamps, `deleted_at` | Soft delete. Settings stores per-course config. |
 | **enrollments** | `id`, `course_id` (FK), `user_id` (FK), `role`, `enrolled_at` | Unique(`course_id`, `user_id`). Cascades on course/user delete. |
 
@@ -1048,12 +1355,16 @@ alembic downgrade -1
 
 ## Auth & Authorization
 
-Authentication is handled by **Clerk**. The frontend wraps the app in `<ClerkProvider>` and uses `proxy.ts` to protect routes. The backend verifies JWTs independently:
+Authentication is handled by **self-hosted Better Auth** running inside the Next.js app. Better Auth's tables (`user`, `session`, `account`, `verification`, `jwks`) live in the `auth` schema of the same Postgres as the backend; the JWT plugin issues EdDSA (Ed25519) tokens signed by keys it rotates itself and publishes a JWKS at `/api/auth/jwks`.
 
-1. **Middleware** ([`middleware/auth.py`](backend/app/middleware/auth.py)) - cheap Bearer token presence check on `/api/*` paths
-2. **Dependency** ([`api/deps.py`](backend/app/api/deps.py)) - full JWT signature verification via JWKS, user lookup/auto-creation
-3. **Role detection** - email domain determines role: `ust.hk` = instructor, `connect.ust.hk` = student
-4. **Enforcement** - `require_instructor` dependency blocks students from admin endpoints
+1. **Frontend session + token fetch** — `frontend/src/lib/auth-client.ts` wraps the Better Auth client; the `useApiToken` hook calls `authClient.token()` to mint a fresh JWT for each backend request. Route protection lives in `frontend/src/proxy.ts` (Next.js 16's replacement for `middleware.ts`).
+2. **Middleware** ([`middleware/auth.py`](backend/app/middleware/auth.py)) — cheap Bearer-token presence check on `/api/*` paths.
+3. **Dependency** ([`api/deps.py`](backend/app/api/deps.py)) — `get_current_user` verifies the JWT against `BETTER_AUTH_JWKS_URL` via `PyJWKClient`, checks issuer / audience, then upserts a row in `public.users` keyed on `better_auth_id`.
+4. **Signup hook** — Better Auth's `databaseHooks.user.create.after` fires `POST /api/internal/users/link` (guarded by `BETTER_AUTH_INTERNAL_SECRET`) so the local `users` row is created atomically with the auth-schema row.
+5. **Role detection** — email domain determines role: `ust.hk` = instructor, `connect.ust.hk` = student (configurable via `ALLOWED_EMAIL_DOMAINS`).
+6. **Enforcement** — `require_instructor` dependency blocks students from admin endpoints; per-course ownership checks (`get_owned_course`) gate cross-course access.
+
+The full migration history (Clerk → Better Auth) lives at [`docs/migrations/clerk-to-better-auth.md`](docs/migrations/clerk-to-better-auth.md).
 
 <br/>
 
@@ -1075,7 +1386,10 @@ Authentication is handled by **Clerk**. The frontend wraps the app in `<ClerkPro
 | **2e** Difficulty Adapter | Done | REINFORCE contextual bandit, adaptive revision sessions, pool management |
 | **2f** Analytics | Done | Instructor dashboard: course overview, quiz stats, student stats |
 | **2g** Flashcard Publishing | Done | Publish/unpublish control for flashcard sets (mirrors quizzes) |
-| **3** Planned | Planned | i18n (Traditional Chinese), Canvas LMS import, advanced analytics |
+| **3a** Adaptive Engine — Phase 1 | Done | Curriculum spine (modules / meetings / objectives / assignments), per-week calendar feed, scoped syllabus parser with LLM extraction + transactional applier, daily `mark_overdue_submissions` cron |
+| **3b** Adaptive Engine — Phase 2 | Done | Concepts knowledge graph + prerequisite DAG with cycle check, Beta-Binomial mastery + HLR forgetting decay, polymorphic concept tags, LLM extract → cluster → instructor curation, syllabus-as-generation-context, 90-day attempt replay, pronunciation→mastery FK |
+| **3c** Adaptive Engine — Phase 3 | Done | KST outer-fringe `next_actions` ranking + scoring, lazy 30-min recompute + event-driven rebuild, daily horizon-scan cron, 7-rule instructor alerts, `action_outcomes` telemetry with `engine_variant`, course mode (`on`/`off`/`random_50`) + per-user overrides, quarterly coefficient retune (propose-only) |
+| **4** Planned | Planned | i18n (Traditional Chinese), Canvas LMS deeper integration, pre-class meeting briefings (cohort-weakness → upcoming session), `student_daily_briefings` rich-card variant of Today |
 
 <br/>
 

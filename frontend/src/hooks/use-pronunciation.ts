@@ -44,6 +44,7 @@ interface GradeInput {
   readonly referenceText: string;
   readonly courseId: string;
   readonly language: string;
+  readonly pronunciationItemId?: string;
 }
 
 // --- Hooks ---
@@ -57,6 +58,7 @@ export function usePronunciationGrade() {
       referenceText,
       courseId,
       language,
+      pronunciationItemId,
     }: GradeInput): Promise<PronunciationGradeResponse> => {
       const token = await getToken({ template: "backend" });
       if (!token) throw new Error("Not authenticated");
@@ -66,6 +68,9 @@ export function usePronunciationGrade() {
       formData.append("reference_text", referenceText);
       formData.append("course_id", courseId);
       formData.append("language", language);
+      if (pronunciationItemId) {
+        formData.append("pronunciation_item_id", pronunciationItemId);
+      }
 
       const response = await fetch(`${API_URL}/speech/grade`, {
         method: "POST",

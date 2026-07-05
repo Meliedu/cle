@@ -25,6 +25,7 @@ from app.models.pronunciation import (
 )
 from app.models.quiz import Question, Quiz, QuizDocument
 from app.models.summary import CourseSummary
+from app.models.task import Task
 from app.schemas.rag import (
     GenerateFlashcardsRequest,
     GeneratePronunciationRequest,
@@ -39,9 +40,17 @@ from app.services.generator import (
     generate_summary,
 )
 from app.services.retriever import retrieve_chunks
+from app.services.syllabus_grounding import load_syllabus_grounding
 from app.utils.sanitize import sanitize_query as _sanitize
 
 logger = logging.getLogger(__name__)
+
+# Batch size for ``run_replay_attempt_history``. Each pass over the four
+# attempt tables (quiz / flashcard / revision / pronunciation) streams rows
+# in chunks of this size and commits between batches so a long replay
+# doesn't hold a single transaction (and its DB connection + working set)
+# open for the whole window. Module-level so tests can monkey-patch it.
+REPLAY_BATCH_SIZE = 500
 
 
 async def _course_language(session: AsyncSession, course_id: uuid.UUID) -> str:
@@ -52,6 +61,43 @@ async def _course_language(session: AsyncSession, course_id: uuid.UUID) -> str:
     if course is None:
         raise ValueError(f"Course {course_id} not found")
     return course.language
+
+
+def _enqueue_artifact_tag_task(
+    session: AsyncSession,
+    *,
+    target_kind: str,
+    target_id: uuid.UUID,
+    course_id: uuid.UUID,
+    source_chunk_id: uuid.UUID | None,
+) -> None:
+    """Queue a ``tag_artifact_concepts`` job for a freshly-created artifact.
+
+    The downstream handler (``run_tag_artifact_concepts``) inherits chunk
+    tags onto the new target at weight × 0.7 via
+    ``inherit_tags_from_chunk``. Without ``source_chunk_id`` the inherit
+    path has nothing to copy from — skip the enqueue entirely so the
+    worker doesn't churn on no-op ``skipped_orphan`` results.
+
+    The Task row is added to the *same* session as the artifact insert.
+    The worker commits both together (see ``worker.process_task``), so we
+    don't open a separate transaction here and never roll back the
+    parent's work.
+    """
+    if source_chunk_id is None:
+        return
+    session.add(
+        Task(
+            task_type="tag_artifact_concepts",
+            payload={
+                "target_kind": target_kind,
+                "target_id": str(target_id),
+                "course_id": str(course_id),
+                "source_chunk_id": str(source_chunk_id),
+            },
+            status="pending",
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +147,7 @@ async def run_generate_quiz(
         top_k=20,
         document_ids=document_uuids,
     )
+    grounding = await load_syllabus_grounding(session, course_id)
     generated = await generate_quiz(
         chunks,
         num_questions=num_questions,
@@ -108,6 +155,7 @@ async def run_generate_quiz(
         question_types=question_types,
         mcq_option_count=mcq_option_count,
         difficulty=difficulty,
+        grounding_context=grounding,
     )
 
     quiz = Quiz(
@@ -121,25 +169,45 @@ async def run_generate_quiz(
     session.add(quiz)
     await session.flush()
 
+    # We don't get per-question provenance back from the LLM, so use the
+    # top-ranked retrieved chunk as the "primary source" for tag inheritance.
+    # Same heuristic as ``pool.replenish_pool``. The 0.7 inheritance weight
+    # in ``inherit_tags_from_chunk`` already discounts the loss of fidelity.
+    primary_source_chunk_id = chunks[0].chunk_id if chunks else None
+
+    questions: list[Question] = []
     for idx, gq in enumerate(generated):
-        session.add(
-            Question(
-                quiz_id=quiz.id,
-                question_index=idx,
-                type=gq.type,
-                question_text=gq.question_text,
-                options=gq.options,
-                correct_answer=gq.correct_answer,
-                explanation=gq.explanation,
-                difficulty=gq.difficulty,
-            )
+        question = Question(
+            quiz_id=quiz.id,
+            question_index=idx,
+            type=gq.type,
+            question_text=gq.question_text,
+            options=gq.options,
+            correct_answer=gq.correct_answer,
+            explanation=gq.explanation,
+            difficulty=gq.difficulty,
+            source_chunk_id=primary_source_chunk_id,
         )
+        session.add(question)
+        questions.append(question)
 
     if document_uuids:
         for doc_id in document_uuids:
             session.add(QuizDocument(quiz_id=quiz.id, document_id=doc_id))
 
     await session.flush()
+
+    # Cascade-tag each new question by enqueuing a tag-inheritance job. The
+    # task rows commit together with the question rows in the worker.
+    for question in questions:
+        _enqueue_artifact_tag_task(
+            session,
+            target_kind="question",
+            target_id=question.id,
+            course_id=course_id,
+            source_chunk_id=question.source_chunk_id,
+        )
+
     logger.info("generate_quiz job finished quiz_id=%s questions=%d", quiz.id, len(generated))
     return {"quiz_id": str(quiz.id), "question_count": len(generated)}
 
@@ -176,11 +244,13 @@ async def run_generate_flashcards(
         top_k=20,
         document_ids=document_uuids,
     )
+    grounding = await load_syllabus_grounding(session, course_id)
     generated = await generate_flashcards(
         chunks,
         num_cards=num_cards,
         language=language,
         difficulty=difficulty,
+        grounding_context=grounding,
     )
 
     fc_set = FlashcardSet(
@@ -192,20 +262,26 @@ async def run_generate_flashcards(
     session.add(fc_set)
     await session.flush()
 
+    # Use the top-ranked retrieved chunk as the primary source for tag
+    # inheritance — see comment in ``run_generate_quiz`` for rationale.
+    primary_source_chunk_id = chunks[0].chunk_id if chunks else None
+
     # Flashcards generated at mixed difficulty are stored as "medium" per-card
     # since the generator doesn't currently emit a per-card difficulty. A
     # specific-difficulty run tags all cards with that difficulty.
     card_difficulty = difficulty if difficulty != "mixed" else "medium"
+    cards: list[FlashcardCard] = []
     for idx, gc in enumerate(generated):
-        session.add(
-            FlashcardCard(
-                flashcard_set_id=fc_set.id,
-                card_index=idx,
-                front=gc.front,
-                back=gc.back,
-                difficulty=card_difficulty,
-            )
+        card = FlashcardCard(
+            flashcard_set_id=fc_set.id,
+            card_index=idx,
+            front=gc.front,
+            back=gc.back,
+            difficulty=card_difficulty,
+            source_chunk_id=primary_source_chunk_id,
         )
+        session.add(card)
+        cards.append(card)
 
     if document_uuids:
         for doc_id in document_uuids:
@@ -214,6 +290,16 @@ async def run_generate_flashcards(
             )
 
     await session.flush()
+
+    for card in cards:
+        _enqueue_artifact_tag_task(
+            session,
+            target_kind="flashcard_card",
+            target_id=card.id,
+            course_id=course_id,
+            source_chunk_id=card.source_chunk_id,
+        )
+
     logger.info(
         "generate_flashcards job finished set_id=%s cards=%d", fc_set.id, len(generated)
     )
@@ -252,12 +338,14 @@ async def run_generate_pronunciation(
         top_k=20,
         document_ids=document_uuids,
     )
+    grounding = await load_syllabus_grounding(session, course_id)
     generated = await generate_pronunciation(
         chunks,
         num_items=num_items,
         item_types=item_types,
         difficulty=difficulty,
         language=language,
+        grounding_context=grounding,
     )
 
     pron_set = PronunciationSet(
@@ -271,19 +359,25 @@ async def run_generate_pronunciation(
     session.add(pron_set)
     await session.flush()
 
+    # Top-ranked retrieved chunk as primary source for tag inheritance —
+    # see ``run_generate_quiz`` for rationale.
+    primary_source_chunk_id = chunks[0].chunk_id if chunks else None
+
+    items: list[PronunciationItem] = []
     for idx, gp in enumerate(generated):
-        session.add(
-            PronunciationItem(
-                pronunciation_set_id=pron_set.id,
-                item_index=idx,
-                text=gp.text,
-                phonetic=gp.phonetic,
-                translation=gp.translation,
-                tips=gp.tips,
-                item_type=gp.item_type,
-                difficulty=gp.difficulty,
-            )
+        item = PronunciationItem(
+            pronunciation_set_id=pron_set.id,
+            item_index=idx,
+            text=gp.text,
+            phonetic=gp.phonetic,
+            translation=gp.translation,
+            tips=gp.tips,
+            item_type=gp.item_type,
+            difficulty=gp.difficulty,
+            source_chunk_id=primary_source_chunk_id,
         )
+        session.add(item)
+        items.append(item)
 
     if document_uuids:
         for doc_id in document_uuids:
@@ -294,6 +388,16 @@ async def run_generate_pronunciation(
             )
 
     await session.flush()
+
+    for item in items:
+        _enqueue_artifact_tag_task(
+            session,
+            target_kind="pronunciation_item",
+            target_id=item.id,
+            course_id=course_id,
+            source_chunk_id=item.source_chunk_id,
+        )
+
     logger.info(
         "generate_pronunciation job finished set_id=%s items=%d",
         pron_set.id,
@@ -328,7 +432,10 @@ async def run_generate_summary(
         top_k=20,
         document_ids=document_uuids,
     )
-    summary_text = await generate_summary(chunks, language=language)
+    grounding = await load_syllabus_grounding(session, course_id)
+    summary_text = await generate_summary(
+        chunks, language=language, grounding_context=grounding
+    )
 
     existing = await session.execute(
         select(CourseSummary).where(CourseSummary.course_id == course_id)
@@ -353,6 +460,77 @@ async def run_generate_summary(
     return {"course_id": str(course_id), "summary_id": str(record.id)}
 
 
+async def run_parse_syllabus(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    import asyncio
+
+    from app.models.curriculum import SyllabusImport
+    from app.models.document import Document
+    from app.services.parser import parse_document
+    from app.services.storage import download_file
+    from app.services.syllabus import parse_syllabus_text
+
+    import_id = uuid.UUID(payload["syllabus_import_id"])
+    document_id = uuid.UUID(payload["document_id"])
+
+    imp = (
+        await session.execute(
+            select(SyllabusImport).where(SyllabusImport.id == import_id)
+        )
+    ).scalar_one_or_none()
+    if imp is None:
+        return {"status": "missing"}
+
+    doc = (
+        await session.execute(
+            select(Document).where(Document.id == document_id)
+        )
+    ).scalar_one_or_none()
+    if doc is None or doc.kind != "syllabus":
+        imp.status = "failed"
+        imp.error_message = "syllabus document missing or kind changed"
+        await session.commit()
+        return {"status": "failed"}
+
+    # Fix 13: defense-in-depth cross-course check
+    if doc.course_id != imp.course_id:
+        imp.status = "failed"
+        imp.error_message = "document course mismatch"
+        await session.commit()
+        return {"status": "failed"}
+
+    try:
+        raw_bytes = await asyncio.to_thread(download_file, doc.r2_key)
+        parse_result = await parse_document(raw_bytes, doc.file_type, doc.filename)
+        text = parse_result.text
+        imp.raw_text = text[:200000]
+        payload_json = await parse_syllabus_text(text)
+        imp.parsed_payload = payload_json
+        imp.status = "parsed"
+        await session.commit()
+        return {"status": "parsed", "syllabus_import_id": str(imp.id)}
+    except Exception as exc:
+        # Fix 3: on any error, mark the import as failed so the UI can re-trigger
+        logger.exception(
+            "run_parse_syllabus failed for import_id=%s: %s", import_id, exc
+        )
+        try:
+            imp.status = "failed"
+            # Reuse the worker's URL-redacting sanitiser so transient errors
+            # that surface a Cloudflare R2 signed URL or asyncpg
+            # ``postgres://user:pass@host`` connection string don't land in
+            # an instructor-visible state field.
+            from app.services.worker import _sanitize_error_message
+            imp.error_message = _sanitize_error_message(exc)
+            await session.commit()
+        except Exception:
+            logger.exception(
+                "Failed to persist failure status for import_id=%s", import_id
+            )
+        return {"status": "failed"}
+
+
 _HANDLERS = {
     "generate_quiz": run_generate_quiz,
     "generate_flashcards": run_generate_flashcards,
@@ -368,3 +546,16 @@ async def run_generation_job(
     if handler is None:
         raise ValueError(f"Unknown generation task type: {task_type}")
     return await handler(session, payload)
+
+
+# Backward-compat re-exports for code that imports Phase 3 handlers from
+# this module. The handlers themselves now live in
+# ``app.services.adaptive_jobs`` to keep this file under the 800-line cap.
+from app.services.adaptive_jobs import (  # noqa: E402, F401
+    run_draft_learning_notes,
+    run_evaluate_instructor_alerts,
+    run_extract_concept_candidates,
+    run_replay_attempt_history,
+    run_tag_artifact_concepts,
+    run_update_concept_mastery,
+)

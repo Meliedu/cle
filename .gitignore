@@ -56,3 +56,9 @@ prompt/
 # Playwright MCP browser-probe cache (console logs + DOM snapshots)
 .playwright-mcp/
 .gstack/
+
+# Superpowers planning docs — local-only, not part of the shipped repo
+docs/
+docs/superpowers/
+docs/adaptive_engine/
+docs/work-history.md

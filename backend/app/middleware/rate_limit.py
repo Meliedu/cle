@@ -16,6 +16,7 @@ returns non-2xx we roll it back so failed calls don't burn the quota.
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 import sqlalchemy as sa
@@ -37,6 +38,22 @@ _PUBLIC_PATH_PREFIXES = ("/health", "/docs", "/openapi.json", "/redoc")
 # must share the same per-user rate limits.
 _EXTRA_GENERATION_PATHS = ("/api/speech/generate-prompts",)
 
+# Regexes to match LLM-backed endpoints whose path contains a course_id
+# (so prefix-match is insufficient). Each POST to one of these kicks off
+# an OpenRouter-billing job.
+#
+# - syllabus/imports: parses a syllabus PDF via the LLM (Phase 1).
+# - concepts/extract:  samples chunks per document and asks the LLM for
+#   candidate concepts (Phase 2 adaptive engine).
+# - concepts/replay:   re-applies attempt evidence across a 90-day window;
+#   while it isn't a per-row LLM call, it is an expensive instructor-only
+#   batch job that must share the same per-user cap to prevent a single
+#   instructor from queueing concurrent replays across many courses.
+_RATE_LIMITED_REGEXES = (
+    re.compile(r"^/api/courses/[^/]+/syllabus/imports$"),
+    re.compile(r"^/api/courses/[^/]+/concepts/(?:extract|replay)$"),
+)
+
 
 def _is_public_path(path: str) -> bool:
     return any(path.startswith(prefix) for prefix in _PUBLIC_PATH_PREFIXES)
@@ -45,7 +62,9 @@ def _is_public_path(path: str) -> bool:
 def _is_rate_limited_path(path: str) -> bool:
     if path.startswith("/api/rag/"):
         return True
-    return any(path == extra for extra in _EXTRA_GENERATION_PATHS)
+    if path in _EXTRA_GENERATION_PATHS:
+        return True
+    return any(pattern.match(path) for pattern in _RATE_LIMITED_REGEXES)
 
 
 def _rate_limit_response(retry_after_seconds: int) -> dict:

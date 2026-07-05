@@ -3,10 +3,10 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { DayPicker } from "react-day-picker";
-import type { CalendarEvent } from "@/hooks/use-calendar-events";
+import type { DashboardPreviewEvent } from "@/components/dashboard/dashboard-preview-events";
 
 interface MiniCalendarProps {
-  readonly events: readonly CalendarEvent[];
+  readonly events: readonly DashboardPreviewEvent[];
   readonly selected?: Date;
   readonly onSelectDate?: (date: Date | undefined) => void;
 }

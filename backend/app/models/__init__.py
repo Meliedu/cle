@@ -1,5 +1,6 @@
 from app.models.api_usage import ApiUsage
 from app.models.base import Base
+from app.models.cron_run import CronRun
 from app.models.canvas import CanvasSyncEvent, CanvasUserCredential, PendingEnrollment
 from app.models.integration import CanvasIntegration
 from app.models.chunk import Chunk
@@ -14,6 +15,12 @@ from app.models.flashcard import (
 )
 from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument, QuizFolder
 from app.models.scheduler import SchedulerModel
+from app.models.pronunciation import (
+    PronunciationFolder,
+    PronunciationItem,
+    PronunciationSet,
+    PronunciationSetDocument,
+)
 from app.models.score import PronunciationScore, StudentProgress
 from app.models.live_answer import LiveAnswer
 from app.models.session import LiveSession, SessionSummary
@@ -28,6 +35,30 @@ from app.models.revision import (
     RevisionSession,
 )
 from app.models.user import User
+from app.models.curriculum import (
+    Assignment,
+    AssignmentSubmission,
+    CourseMeeting,
+    CourseModule,
+    LearningObjective,
+    SyllabusImport,
+)
+from app.models.concept import (
+    Concept,
+    ConceptMastery,
+    ConceptMasteryHistory,
+    ConceptPrerequisite,
+    ConceptTag,
+)
+from app.models.decision import InstructorAlert
+from app.models.evidence import (
+    CourseRecordItem,
+    FollowUpAction,
+    LearningEvent,
+    LearningNote,
+    OutcomeCheck,
+    ReviewAction,
+)
 
 __all__ = [
     "Base",
@@ -48,6 +79,10 @@ __all__ = [
     "FlashcardProgress",
     "SchedulerModel",
     "PronunciationScore",
+    "PronunciationFolder",
+    "PronunciationSet",
+    "PronunciationSetDocument",
+    "PronunciationItem",
     "StudentProgress",
     "SessionSummary",
     "CourseSummary",
@@ -55,6 +90,7 @@ __all__ = [
     "LiveSession",
     "Task",
     "ApiUsage",
+    "CronRun",
     "CanvasIntegration",
     "CanvasSyncEvent",
     "CanvasUserCredential",
@@ -66,4 +102,22 @@ __all__ = [
     "BanditModel",
     "RecalibrationStats",
     "RecalibrationModel",
+    "CourseModule",
+    "CourseMeeting",
+    "LearningObjective",
+    "Assignment",
+    "AssignmentSubmission",
+    "SyllabusImport",
+    "Concept",
+    "ConceptPrerequisite",
+    "ConceptTag",
+    "ConceptMastery",
+    "ConceptMasteryHistory",
+    "InstructorAlert",
+    "LearningEvent",
+    "LearningNote",
+    "ReviewAction",
+    "FollowUpAction",
+    "OutcomeCheck",
+    "CourseRecordItem",
 ]

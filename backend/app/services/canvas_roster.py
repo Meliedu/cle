@@ -137,11 +137,24 @@ async def sync_roster(
         spec = desired[email]
         user = users_by_email.get(email)
         if user is not None:
-            db.add(
-                Enrollment(
-                    course_id=meli_course_id, user_id=user.id, role=spec["role"]
+            # ON CONFLICT DO NOTHING — under concurrent syncs (or rapid
+            # retries that lost the FOR UPDATE SKIP LOCKED race), the same
+            # (course_id, user_id) pair can be inserted twice. The unique
+            # index would otherwise raise IntegrityError and abort the
+            # whole roster transaction; do-nothing keeps the rest of the
+            # diff atomic.
+            stmt = (
+                pg_insert(Enrollment)
+                .values(
+                    course_id=meli_course_id,
+                    user_id=user.id,
+                    role=spec["role"],
+                )
+                .on_conflict_do_nothing(
+                    index_elements=["course_id", "user_id"]
                 )
             )
+            await db.execute(stmt)
             diff.added += 1
             stale_pending = pending_by_email.pop(email, None)
             if stale_pending is not None:

@@ -12,6 +12,8 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.services.learning_events import record_attempt_event
+
 logger = logging.getLogger(__name__)
 
 from app.api._helpers import (
@@ -21,6 +23,7 @@ from app.api._helpers import (
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument, QuizFolder
 from app.models.session import LiveSession
+from app.models.task import Task
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.services.gamification import award_xp
@@ -44,6 +47,47 @@ from app.schemas.quiz import (
 )
 
 router = APIRouter(tags=["quizzes"])
+
+
+def _enqueue_mastery_for_quiz(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    course_id: uuid.UUID,
+    answers: dict[str, str],
+    questions_by_id: dict[uuid.UUID, Question],
+) -> None:
+    """Add one ``update_concept_mastery`` Task row per answered question.
+
+    The worker resolves each question's tagged concepts and applies a
+    Beta-Binomial update to the student's mastery rows. Caller is
+    responsible for committing — and for catching/logging exceptions so
+    a Task-write failure doesn't roll back the user's already-committed
+    QuizAttempt.
+    """
+    for qid_str, answer in answers.items():
+        try:
+            qid = uuid.UUID(qid_str)
+        except (ValueError, TypeError):
+            continue
+        question = questions_by_id.get(qid)
+        if question is None:
+            continue
+        outcome = 1.0 if answer == question.correct_answer else 0.0
+        db.add(
+            Task(
+                task_type="update_concept_mastery",
+                payload={
+                    "user_id": str(user_id),
+                    "course_id": str(course_id),
+                    "target_kind": "question",
+                    "target_id": str(qid),
+                    "outcome": outcome,
+                    "attempt_kind": "quiz",
+                },
+                status="pending",
+            )
+        )
 
 
 @router.get(
@@ -743,6 +787,39 @@ async def submit_attempt(
         quiz_time_seconds=attempt.time_taken_seconds,
     )
     await db.commit()
+
+    # Enqueue mastery updates after the attempt is durable. A failure here
+    # must not roll back the student's attempt; we log and swallow.
+    try:
+        questions_by_id = {q.id: q for q in quiz.questions}
+        _enqueue_mastery_for_quiz(
+            db,
+            user_id=user.id,
+            course_id=quiz.course_id,
+            answers=body.answers,
+            questions_by_id=questions_by_id,
+        )
+        await record_attempt_event(
+            db,
+            course_id=quiz.course_id,
+            user_id=user.id,
+            source_kind="quiz_attempt",
+            source_id=attempt.id,
+            stage="after_class",
+            value={
+                "score": float(attempt.score),
+                "correct": attempt.correct_count,
+                "total": attempt.total_questions,
+            },
+        )
+        await db.commit()
+    except Exception:  # noqa: BLE001 — non-fatal: attempt already persisted
+        logger.exception(
+            "Failed to enqueue mastery updates for quiz_id=%s user_id=%s",
+            quiz_id,
+            user.id,
+        )
+        await db.rollback()
 
     return APIResponse(
         success=True,

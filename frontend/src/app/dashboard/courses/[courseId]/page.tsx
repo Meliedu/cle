@@ -31,8 +31,8 @@ import { CourseDescriptionCard } from "@/components/course/course-description-ca
 import { CanvasTab } from "@/components/canvas/canvas-tab";
 import { CANVAS_ENABLED } from "@/lib/features";
 import { CourseAnalytics } from "@/components/analytics/course-analytics";
-import { RecalibrationOverview } from "@/components/recalibration/overview";
 import { LiveSessionsPanel } from "@/components/live-quiz/live-sessions-panel";
+import { SyllabusUploadCard } from "@/components/documents/syllabus-upload-card";
 import { useCourse } from "@/hooks/use-courses";
 import { useDocuments, useDeleteDocument, type DocumentResponse } from "@/hooks/use-documents";
 import { useProgress } from "@/hooks/use-progress";
@@ -97,7 +97,6 @@ const ALLOWED_TABS_STUDENT = [
 const ALLOWED_TABS_INSTRUCTOR = [
   ...ALLOWED_TABS_STUDENT,
   "students",
-  "recalibration",
   ...(CANVAS_ENABLED ? (["canvas"] as const) : []),
 ] as const;
 type AllowedTab =
@@ -268,17 +267,20 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
       {activeTab === "materials" && (
         <div className="space-y-6">
           {isInstructor && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <UploadIcon className="size-4" />
-                  Upload Materials
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <UploadZone courseId={courseId} />
-              </CardContent>
-            </Card>
+            <>
+              <SyllabusUploadCard courseId={courseId} />
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <UploadIcon className="size-4" />
+                    Upload Materials
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <UploadZone courseId={courseId} />
+                </CardContent>
+              </Card>
+            </>
           )}
 
           {/* Document list */}
@@ -424,10 +426,6 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
 
       {activeTab === "students" && (
         <CourseAnalytics courseId={courseId} />
-      )}
-
-      {activeTab === "recalibration" && isInstructor && (
-        <RecalibrationOverview courseId={courseId} />
       )}
 
       {CANVAS_ENABLED && activeTab === "canvas" && isInstructor && (
