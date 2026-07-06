@@ -8,6 +8,7 @@ describe("sanitizeRedirect", () => {
     input: string | null;
     expected: string;
   }> = [
+    // --- allowed: same-origin path-absolute targets -----------------------
     {
       name: "allows a plain internal path",
       input: "/dashboard",
@@ -24,13 +25,44 @@ describe("sanitizeRedirect", () => {
       expected: "/dashboard/courses?tab=materials",
     },
     {
+      name: "normalizes an interior backslash to a slash (same-origin, safe)",
+      input: "/a\\b",
+      expected: "/a/b",
+    },
+    // --- rejected: cross-origin escapes ------------------------------------
+    {
       name: "rejects protocol-relative URLs",
       input: "//evil.com",
       expected: DEFAULT_REDIRECT,
     },
     {
-      name: "rejects backslash protocol-relative escape (WHATWG normalizes \\ to /)",
+      name: "rejects backslash protocol-relative escape (parser folds \\ to /, origin becomes evil.com)",
       input: "/\\evil.com",
+      expected: DEFAULT_REDIRECT,
+    },
+    {
+      name: "rejects TAB-obfuscated protocol-relative (parser strips \\t before parsing)",
+      input: "/\t/evil.com",
+      expected: DEFAULT_REDIRECT,
+    },
+    {
+      name: "rejects LF-obfuscated protocol-relative (parser strips \\n before parsing)",
+      input: "/\n/evil.com",
+      expected: DEFAULT_REDIRECT,
+    },
+    {
+      name: "rejects CR-obfuscated protocol-relative (parser strips \\r before parsing)",
+      input: "/\r/evil.com",
+      expected: DEFAULT_REDIRECT,
+    },
+    {
+      name: "rejects TAB + backslash combo (strips \\t, folds \\ — origin becomes evil.com)",
+      input: "/\t\\evil.com",
+      expected: DEFAULT_REDIRECT,
+    },
+    {
+      name: "rejects paths that normalize to a protocol-relative pathname",
+      input: "/.//evil.com",
       expected: DEFAULT_REDIRECT,
     },
     {
@@ -43,6 +75,7 @@ describe("sanitizeRedirect", () => {
       input: "javascript:alert(1)",
       expected: DEFAULT_REDIRECT,
     },
+    // --- rejected: nothing usable ------------------------------------------
     {
       name: "falls back on null",
       input: null,
