@@ -16,7 +16,7 @@
 //   `get_current_user` Clerk path.
 
 import { betterAuth } from "better-auth";
-import { jwt } from "better-auth/plugins";
+import { jwt, genericOAuth } from "better-auth/plugins";
 import { createAuthMiddleware, APIError } from "better-auth/api";
 import { dash } from "@better-auth/infra";
 import { Pool } from "pg";
@@ -111,6 +111,48 @@ async function linkUserOnBackend(input: {
   }
 }
 
+// ---------------------------------------------------------------------------
+// HKUST OIDC (Entra ID) — dormant until env vars are supplied.
+//
+// HKUST runs TWO separate Microsoft Entra tenants: a Staff tenant (@ust.hk)
+// and a Student tenant (@connect.ust.hk). Each needs its own OIDC app
+// registration (client id, secret, discovery URL), so we configure two
+// generic-OAuth providers and route users at login (see the sign-in page's
+// "HKUST Staff" / "HKUST Student" buttons).
+//
+// Both slots stay OFF until their env vars exist: any provider missing a
+// clientId / clientSecret / discoveryUrl is filtered out, and the plugin is
+// only registered when at least one provider survives the filter. With no
+// env vars set (today's state) this contributes ZERO behavior change.
+//
+// VERIFIED callback path (better-auth 1.6.23 generic-oauth plugin):
+//   ${baseURL}/api/auth/oauth2/callback/{providerId}
+// i.e. /api/auth/oauth2/callback/hkust-staff and .../hkust-student.
+// Route registered as "/oauth2/callback/:providerId" under basePath
+// "/api/auth" — see docs/oidc-redirect-uris.md for the evidence trail.
+//
+// The email-domain gate + user-linking databaseHooks below fire on
+// `user.create` regardless of sign-in method, so OIDC sign-ups are gated and
+// linked to public.users exactly like Microsoft-social and email/password
+// sign-ups. Affiliation-claim gating (eduPersonAffiliation) is a to-wire item
+// tracked in the ITSO doc; it is intentionally out of scope here.
+const hkustOidcProviders = [
+  {
+    providerId: "hkust-staff",
+    clientId: process.env.HKUST_STAFF_MELI_CLIENT_ID ?? "",
+    clientSecret: process.env.HKUST_STAFF_MELI_CLIENT_SECRET ?? "",
+    discoveryUrl: process.env.HKUST_STAFF_DISCOVERY_URL ?? "",
+    scopes: ["openid", "profile", "email"],
+  },
+  {
+    providerId: "hkust-student",
+    clientId: process.env.HKUST_STUDENT_MELI_CLIENT_ID ?? "",
+    clientSecret: process.env.HKUST_STUDENT_MELI_CLIENT_SECRET ?? "",
+    discoveryUrl: process.env.HKUST_STUDENT_DISCOVERY_URL ?? "",
+    scopes: ["openid", "profile", "email"],
+  },
+].filter((p) => p.clientId && p.clientSecret && p.discoveryUrl);
+
 export const auth = betterAuth({
   database: pool,
   secret: process.env.BETTER_AUTH_SECRET,
@@ -204,6 +246,11 @@ export const auth = betterAuth({
     // Reads BETTER_AUTH_API_KEY from env and exposes /api/auth/dash/*
     // for the hosted dashboard at https://dashboard.better-auth.com.
     dash(),
+    // HKUST OIDC (staff + student Entra tenants). Only mounted when at least
+    // one provider has full credentials — dormant with no env vars set.
+    ...(hkustOidcProviders.length
+      ? [genericOAuth({ config: hkustOidcProviders })]
+      : []),
   ],
 
   hooks: {

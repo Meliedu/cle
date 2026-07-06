@@ -7,6 +7,10 @@ import { AuthCard } from "@/components/auth/auth-card";
 import { AuthLinkRow } from "@/components/auth/auth-link-row";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { DividerLabel } from "@/components/auth/divider-label";
+import {
+  HkustSsoButtons,
+  type HkustProviderId,
+} from "@/components/auth/hkust-sso-buttons";
 import { MicrosoftButton } from "@/components/auth/microsoft-button";
 import { PrimaryButton } from "@/components/auth/auth-buttons";
 import { TextField } from "@/components/auth/text-field";
@@ -14,6 +18,11 @@ import { authClient } from "@/lib/auth-client";
 
 const MICROSOFT_SSO_ENABLED =
   process.env.NEXT_PUBLIC_MICROSOFT_SSO_ENABLED === "true";
+
+// HKUST OIDC (staff + student Entra tenants) is a pure env-flag drop: the two
+// tenant buttons only appear when the flag is "enabled" AND the backend
+// providers are configured (src/lib/auth.ts). Unset today → dormant.
+const HKUST_SSO_ENABLED = process.env.NEXT_PUBLIC_HKUST_SSO === "enabled";
 
 interface FieldErrors {
   email?: string;
@@ -37,6 +46,7 @@ export default function SignInPage() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [busy, setBusy] = useState(false);
   const [microsoftBusy, setMicrosoftBusy] = useState(false);
+  const [hkustPending, setHkustPending] = useState<HkustProviderId | null>(null);
 
   const emailRef = useRef<HTMLInputElement | null>(null);
   const passwordRef = useRef<HTMLInputElement | null>(null);
@@ -52,6 +62,28 @@ export default function SignInPage() {
       setErrors({ form: error.message ?? "Microsoft sign-in failed" });
     }
     setMicrosoftBusy(false);
+  };
+
+  const onHkust = async (providerId: HkustProviderId) => {
+    setErrors({});
+    setHkustPending(providerId);
+    try {
+      // Same generic-OAuth entry as any provider: better-auth redirects the
+      // browser to the tenant's Entra authorize endpoint and returns to
+      // /api/auth/oauth2/callback/{providerId}, then to callbackURL.
+      const { error } = await authClient.signIn.oauth2({
+        providerId,
+        callbackURL: redirectTo,
+      });
+      if (error) {
+        setErrors({ form: error.message ?? "HKUST sign-in failed" });
+        setHkustPending(null);
+      }
+      // On success the browser is navigating away; keep the spinner up.
+    } catch {
+      setErrors({ form: "Couldn't reach the HKUST sign-in service. Try again." });
+      setHkustPending(null);
+    }
   };
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -108,13 +140,30 @@ export default function SignInPage() {
           />
         }
       >
-        {MICROSOFT_SSO_ENABLED ? (
+        {HKUST_SSO_ENABLED || MICROSOFT_SSO_ENABLED ? (
           <>
-            <MicrosoftButton
-              onClick={onMicrosoft}
-              loading={microsoftBusy}
-              disabled={busy}
-            />
+            <div className="space-y-3">
+              {HKUST_SSO_ENABLED ? (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                    Sign in with HKUST
+                  </p>
+                  <HkustSsoButtons
+                    onProvider={onHkust}
+                    pending={hkustPending}
+                    disabled={busy || microsoftBusy}
+                  />
+                </div>
+              ) : null}
+
+              {MICROSOFT_SSO_ENABLED ? (
+                <MicrosoftButton
+                  onClick={onMicrosoft}
+                  loading={microsoftBusy}
+                  disabled={busy || Boolean(hkustPending)}
+                />
+              ) : null}
+            </div>
             <DividerLabel label="or with email" />
           </>
         ) : null}

@@ -1,0 +1,169 @@
+# Meli — HKUST OIDC Redirect URIs (verified against the code)
+
+**Status:** Verified. Supersedes the *inferred* paths in
+`docs/meli_docs/Meli_Session_Handoff.md` §3.2.
+**App:** CLE-Meli (Next.js frontend, Better Auth self-hosted).
+**Auth library:** `better-auth@1.6.23`, generic-OAuth (OIDC) plugin.
+**Prepared for:** HKUST ITSO (redirect-URI registration in Microsoft Entra).
+
+---
+
+## 1. Verified callback path
+
+Better Auth's generic-OAuth plugin mounts the OAuth callback at
+`/oauth2/callback/:providerId`, **relative to the auth basePath**. Our
+instance uses the default basePath `/api/auth` (no `basePath` override in
+`src/lib/auth.ts`), so the full, browser-facing redirect URI is:
+
+```
+{origin}/api/auth/oauth2/callback/{providerId}
+```
+
+### Evidence
+
+1. **Installed source** —
+   `frontend/node_modules/better-auth/dist/plugins/generic-oauth/routes.mjs`:
+   ```js
+   const oAuth2Callback = (options) =>
+     createAuthEndpoint("/oauth2/callback/:providerId", { ... })
+   ```
+   and `.../generic-oauth/index.mjs` builds the default redirect URI as:
+   ```js
+   redirectURI: `${ctx.baseURL}/oauth2/callback/${c.providerId}`
+   ```
+   (`ctx.baseURL` already includes the `/api/auth` basePath.)
+
+2. **Official docs** (Context7, better-auth generic-oauth plugin):
+   > The default callback URL will be
+   > `${baseURL}/api/auth/oauth2/callback/:providerId`, and your OAuth
+   > provider must be configured to use this specific URL.
+
+3. **basePath** — `src/lib/auth.ts` calls `betterAuth({...})` with no
+   `basePath`, so the default `/api/auth` applies (consistent with the JWKS
+   endpoint the backend already consumes at `/api/auth/jwks`).
+
+`providerId` is our choice, set in `src/lib/auth.ts`. We use **`hkust-staff`**
+and **`hkust-student`** — two distinct provider IDs so the two Entra tenants
+never collide on a shared callback path.
+
+---
+
+## 2. Redirect URIs to register
+
+Origins (from handoff §3.2 / §4):
+
+| Env   | Origin |
+|-------|--------|
+| Local | `http://localhost:3000` |
+| Dev   | `https://cle-meli-dev.hkust.edu.hk` |
+| Prod  | `https://cle-meli.hkust.edu.hk` |
+
+**Sign-in entry URL** (app login page, same for both tenants):
+`https://cle-meli.hkust.edu.hk`
+
+### 2.1 Staff provider — `providerId = hkust-staff`
+
+| Env   | Redirect URI |
+|-------|--------------|
+| Local | `http://localhost:3000/api/auth/oauth2/callback/hkust-staff` |
+| Dev   | `https://cle-meli-dev.hkust.edu.hk/api/auth/oauth2/callback/hkust-staff` |
+| Prod  | `https://cle-meli.hkust.edu.hk/api/auth/oauth2/callback/hkust-staff` |
+
+### 2.2 Student provider — `providerId = hkust-student`
+
+| Env   | Redirect URI |
+|-------|--------------|
+| Local | `http://localhost:3000/api/auth/oauth2/callback/hkust-student` |
+| Dev   | `https://cle-meli-dev.hkust.edu.hk/api/auth/oauth2/callback/hkust-student` |
+| Prod  | `https://cle-meli.hkust.edu.hk/api/auth/oauth2/callback/hkust-student` |
+
+---
+
+## 3. Tenant & application IDs
+
+| Item | Value | Source |
+|------|-------|--------|
+| Staff tenant GUID | `c917f3e2-9322-4926-9bb3-daca730413ca` | handoff §3.1 |
+| CLE-Meli **staff** app (client ID) | `830c7819-96e7-4fef-af23-407d4b4365ed` | handoff §3.1 |
+| Staff discovery URL | `https://login.microsoftonline.com/c917f3e2-9322-4926-9bb3-daca730413ca/v2.0/.well-known/openid-configuration` | handoff §3.1 |
+| Student tenant GUID | **pending ITSO** (different GUID) | handoff §3.1 |
+| CLE-Meli **student** app (client ID) | **pending ITSO** | handoff §3.1 |
+| Student discovery URL | **pending ITSO** (`.../{student-tenant}/v2.0/.well-known/openid-configuration`) | handoff §3.1 |
+
+---
+
+## 4. Open decision — staff callback path (`hkust` vs `hkust-staff`)
+
+The handoff (§3.2) notes the **staff** Entra app may already be registered
+with a redirect URI ending in `.../callback/hkust` (the old inferred single
+provider). Our code now uses **`hkust-staff`** for tenant symmetry with
+`hkust-student`. Two ways to reconcile:
+
+- **Recommended (default): ITSO updates the staff app** to the three
+  `.../callback/hkust-staff` URIs in §2.1. Keeps the two providers symmetric
+  and self-documenting (`hkust-staff` / `hkust-student`).
+- **Alternative: rename our providerId to `hkust`.** A one-line change in
+  `src/lib/auth.ts` (and the button `providerId`), avoiding any ITSO edit to
+  the staff app — but then the student provider is `hkust-student` while the
+  staff one is bare `hkust`, which is asymmetric.
+
+**Action:** ask ITSO to confirm the currently-registered staff redirect
+path. If they can add/update URIs easily, go with `hkust-staff`. Do **not**
+finalise the student registration until this is settled so both match.
+
+---
+
+## 5. Secrets & security notes
+
+- **Secrets are never committed.** They live only in environment variables.
+  Names (see `frontend/.env.example`):
+  - `HKUST_STAFF_MELI_CLIENT_ID`, `HKUST_STAFF_MELI_CLIENT_SECRET`,
+    `HKUST_STAFF_DISCOVERY_URL`
+  - `HKUST_STUDENT_MELI_CLIENT_ID`, `HKUST_STUDENT_MELI_CLIENT_SECRET`,
+    `HKUST_STUDENT_DISCOVERY_URL`
+- **Staff client secret expires 2028-06-28** (ITSO email). Because it arrived
+  over plaintext email, consider rotating it in Entra once sign-in works.
+- Each provider is only activated when its `clientId` + `clientSecret` +
+  `discoveryUrl` are all present (`src/lib/auth.ts` filters incomplete slots
+  and only mounts the plugin when at least one survives). Until then the OIDC
+  path is fully dormant — no runtime change.
+- The UI buttons ("HKUST Staff" / "HKUST Student") render only when
+  `NEXT_PUBLIC_HKUST_SSO=enabled`, so activation is a pure env-var drop.
+
+---
+
+## 6. Authorization / access-control notes (for ITSO review)
+
+HKUST SSO authenticates any valid HKUST account; **the app authorises.** Two
+gates, both keyed on `user.create` so they apply to OIDC sign-ups exactly as
+they already do for Microsoft-social and email/password sign-ups:
+
+1. **Email-domain gate (already live).** `detectRoleFromEmail()`
+   (`src/lib/auth-domain.ts`) runs in the `databaseHooks.user.create.before`
+   hook in `src/lib/auth.ts`. It rejects any address outside
+   `ust.hk` / `connect.ust.hk` and assigns the role by domain. Throwing there
+   aborts the row create in the same transaction, so a denied SSO user leaves
+   **no** orphan in `auth.user`. The `.after` hook then POSTs to the FastAPI
+   `/api/internal/users/link` endpoint to create/link the `public.users` row.
+   *Confirmed:* these hooks fire on the generic-OAuth sign-up path because
+   Better Auth funnels every new user through `user.create` regardless of
+   sign-in method.
+
+2. **Affiliation-claim gate (TO WIRE when providers activate).** Handoff §3
+   calls for denying other-tenant accounts using
+   `eduPersonAffiliation` / `voPersonAffiliation` claims (deny
+   `@cityu.edu.hk`, `@polyu.edu.hk`, etc.) rather than trusting the email
+   domain alone. This is **out of scope** for the dormant slots and should be
+   added when the OIDC providers go live — likely via a `getUserInfo` /
+   claim-mapping step on each generic-OAuth provider plus a check in the
+   `user.create.before` hook. Tracked here so it is not forgotten.
+
+---
+
+## 7. Change log
+
+- Verified callback pattern against `better-auth@1.6.23` installed source +
+  official docs. Replaced the inferred `.../callback/hkust` /
+  `.../callback/hkust-student` split (handoff §3.2) with the verified
+  `.../api/auth/oauth2/callback/{providerId}` pattern and standardised the
+  staff provider on `hkust-staff` (pending the §4 decision).
