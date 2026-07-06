@@ -5,6 +5,8 @@ from app.api.assignments import router as assignments_router
 from app.api.auth import router as auth_router
 from app.api.canvas import router as canvas_router
 from app.api.canvas_oauth import router as canvas_oauth_router
+from app.api.checkpoints import course_router as checkpoints_course_router
+from app.api.checkpoints import router as checkpoints_router
 from app.api.concept_clusters import router as concept_clusters_router
 from app.api.concept_prerequisites import router as concept_prerequisites_router
 from app.api.concept_tags import router as concept_tags_router
@@ -62,3 +64,5 @@ api_router.include_router(mastery_router)
 api_router.include_router(instructor_alerts_router)
 api_router.include_router(review_router)
 api_router.include_router(setup_router)
+api_router.include_router(checkpoints_course_router)
+api_router.include_router(checkpoints_router)
