@@ -13,6 +13,27 @@ import { ApiError, apiFetch, type ApiEnvelope } from "@/lib/api";
  * so invalidating that prefix refreshes every derived slice.
  */
 
+// ----- step keys (mirror backend `SETUP_STEP_KEYS`, in wizard order) -----
+
+/**
+ * Ordered setup-step keys, mirroring `app/services/setup.py::SETUP_STEP_KEYS`.
+ * The wizard renders the rail in exactly this order; each key maps to a
+ * `teacher.setup.steps.*` label and a per-step done flag in `SetupState.steps`.
+ */
+export const SETUP_STEP_KEYS = [
+  "basics",
+  "syllabus",
+  "materials",
+  "schedule",
+  "analyzer_review",
+  "ilo_map",
+  "checkpoints",
+  "score_policy",
+  "class_code",
+] as const;
+
+export type SetupStepKey = (typeof SETUP_STEP_KEYS)[number];
+
 // ----- types (mirror backend schemas) -----
 
 export type SetupStatus = "draft" | "in_review" | "published";

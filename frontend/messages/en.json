@@ -81,6 +81,78 @@
       },
       "publish": "Publish course",
       "reopen": "Reopen setup",
+      "newCourse": {
+        "title": "Create course",
+        "subtitle": "Set up a course before students join.",
+        "breadcrumb": "Courses",
+        "sectionTitle": "Start with course basics",
+        "name": "Course name",
+        "namePlaceholder": "e.g. English for Academic Purposes",
+        "code": "Course code",
+        "codePlaceholder": "e.g. LANG1512",
+        "language": "Language",
+        "languagePlaceholder": "Select language",
+        "semester": "Term",
+        "semesterPlaceholder": "e.g. 2024 Spring",
+        "description": "Short description",
+        "descriptionHint": "Optional. We'll use this on the course landing card.",
+        "descriptionPlaceholder": "Briefly describe this course…",
+        "submit": "Continue",
+        "creating": "Creating…",
+        "cancel": "Cancel",
+        "createError": "We couldn't create the course. Please try again.",
+        "nameRequired": "Course name is required.",
+        "codeRequired": "Course code is required.",
+        "languageRequired": "Please select a language.",
+        "semesterRequired": "Term is required.",
+        "sidebar": {
+          "title": "Setup creates",
+          "sessions": {
+            "title": "Session folders",
+            "description": "Organized spaces for each week's teaching and materials."
+          },
+          "checkpoints": {
+            "title": "Checkpoints for each session",
+            "description": "Automatic learning-check prompts grounded on your materials."
+          },
+          "joinCode": {
+            "title": "Hidden course join code",
+            "description": "Stays hidden until you publish the course."
+          }
+        }
+      },
+      "basics": {
+        "title": "Course basics",
+        "name": "Course name",
+        "code": "Course code",
+        "language": "Language",
+        "languagePlaceholder": "Select language",
+        "semester": "Term",
+        "description": "Short description",
+        "descriptionHint": "Optional. We'll use this on the course landing card.",
+        "descriptionPlaceholder": "Briefly describe this course…",
+        "save": "Save & continue",
+        "saving": "Saving…",
+        "saveError": "We couldn't save course basics. Please try again.",
+        "nameRequired": "Course name is required.",
+        "preview": {
+          "title": "What students will see",
+          "untitledCode": "Course code",
+          "untitledName": "Untitled course",
+          "secretsNote": "The class join code stays hidden until you publish."
+        }
+      },
+      "wizard": {
+        "subtitle": "Complete each step, then publish to open your course.",
+        "breadcrumb": "Courses",
+        "back": "Back",
+        "next": "Next",
+        "progress": "Step {current} of {total}",
+        "comingSoon": "This step opens as setup progresses. Come back once the earlier steps are done.",
+        "loadErrorTitle": "Couldn't load setup",
+        "loadError": "We couldn't load this course's setup. Please try again.",
+        "retry": "Try again"
+      },
       "errors": {
         "SETUP_INCOMPLETE": "Finish every setup step before publishing.",
         "SETUP_NOT_OPEN": "This course is not open yet.",

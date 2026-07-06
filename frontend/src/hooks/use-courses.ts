@@ -62,6 +62,41 @@ export function useEnrollByCode() {
   });
 }
 
+export interface CourseCreatePayload {
+  readonly name: string;
+  readonly code?: string | null;
+  readonly description?: string | null;
+  readonly language: string;
+  readonly semester?: string | null;
+  readonly settings?: Record<string, unknown>;
+}
+
+/**
+ * POST `/courses` — create a course and return the persisted row so the caller
+ * can route into the setup wizard (`/teacher/courses/{id}/setup`). Invalidates
+ * the course list so it reflects the new draft.
+ */
+export function useCreateCourse() {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: CourseCreatePayload) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const response = await apiFetch<ApiEnvelope<CourseResponse>>("/courses", {
+        method: "POST",
+        token,
+        body: JSON.stringify({ settings: {}, ...payload }),
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["courses"] });
+    },
+  });
+}
+
 export function useCourse(courseId: string) {
   const { getToken, isSignedIn } = useAuth();
 
