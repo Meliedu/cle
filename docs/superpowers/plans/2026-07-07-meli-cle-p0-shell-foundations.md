@@ -632,7 +632,9 @@ export const STUDENT_NAV: NavItem[] = [
 - [ ] **Step 3: Verify** — both lanes render their nav; collapse persists across reload; keyboard focus order sane; `npm run lint` clean.
 - [ ] **Step 4: Commit** — `git commit -am "feat(shell): config-driven sidebar with collapsed mode for both role lanes"`
 
----### Task 8: Profile + notification preferences (T012/T013, S021/S022)
+---> **Task 7 recorded deviation:** `NavItem` ships `label` (English literal) instead of `labelKey`, matching the existing sidebar's non-next-intl reality. The `label → labelKey` rename + `nav.*` message keys land with the P7 i18n key audit. Reviewed and accepted 2026-07-07.
+
+### Task 8: Profile + notification preferences (T012/T013, S021/S022)
 
 **Files:**
 - Backend — Create: migration (autogenerate), Modify: `backend/app/models/user.py` (add `notification_prefs` JSONB, default `{}`), `backend/app/api/auth.py` (PATCH endpoint), `backend/app/schemas/` (prefs schema)
