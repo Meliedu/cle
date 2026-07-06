@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -29,10 +30,18 @@ test_session_factory = async_sessionmaker(test_engine, class_=AsyncSession, expi
 
 
 @pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+def event_loop_policy():
+    """Event loop policy used by pytest-asyncio for the whole session.
+
+    On Windows the default ``ProactorEventLoop`` lacks ``add_reader``/
+    ``add_writer`` support that asyncpg requires, which surfaces as
+    ``OSError: could not get source code`` / ``another operation is in
+    progress`` errors. Force the selector-based policy there; keep the stock
+    policy everywhere else so Linux/macOS behavior is unchanged.
+    """
+    if sys.platform == "win32":
+        return asyncio.WindowsSelectorEventLoopPolicy()
+    return asyncio.get_event_loop_policy()
 
 
 @pytest_asyncio.fixture
