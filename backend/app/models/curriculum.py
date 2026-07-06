@@ -11,6 +11,7 @@ from sqlalchemy import (
     Numeric,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -42,6 +43,10 @@ class CourseMeeting(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
             "status IN ('planned','in_progress','taught','cancelled')",
             name="ck_course_meetings_status_valid",
         ),
+        CheckConstraint(
+            "release_state IN ('locked','released','completed','archived')",
+            name="ck_course_meetings_release_state_valid",
+        ),
         UniqueConstraint("course_id", "meeting_index", name="uq_course_meetings_course_index"),
     )
 
@@ -57,6 +62,10 @@ class CourseMeeting(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
     location: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="planned")
+    release_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="locked", server_default=text("'locked'")
+    )
+    topic_summary: Mapped[str | None] = mapped_column(String)
     pre_meeting_briefing: Mapped[dict | None] = mapped_column(JSONB)
     post_meeting_summary: Mapped[dict | None] = mapped_column(JSONB)
     canvas_event_id: Mapped[str | None] = mapped_column(String(100))

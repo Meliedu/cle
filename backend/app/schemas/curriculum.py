@@ -46,6 +46,7 @@ class CourseMeetingCreate(BaseModel):
     duration_minutes: int = Field(default=60, ge=1, le=600)
     location: str | None = None
     module_id: uuid.UUID | None = None
+    topic_summary: str | None = None
 
 
 class CourseMeetingUpdate(BaseModel):
@@ -56,6 +57,7 @@ class CourseMeetingUpdate(BaseModel):
     location: str | None = None
     module_id: uuid.UUID | None = None
     status: MeetingStatus | None = None
+    topic_summary: str | None = None
 
 
 class CourseMeetingResponse(BaseModel):
@@ -68,6 +70,8 @@ class CourseMeetingResponse(BaseModel):
     duration_minutes: int
     location: str | None
     status: MeetingStatus
+    release_state: str
+    topic_summary: str | None
     canvas_event_id: str | None
     created_at: datetime
     updated_at: datetime
