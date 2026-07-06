@@ -10,7 +10,7 @@
    `docs/superpowers/specs/2026-07-06-meli-cle-checkpoint-loop-design.md`
 3. Follow the roadmap's **Session bootstrap protocol** — it tells you which phase is next, whether its detailed plan exists, and how to execute + hand off.
 
-Current state: spec approved (`1e655bd`); roadmap + detailed P0 plan written. **Next action: execute the P0 plan** (`docs/superpowers/plans/2026-07-07-meli-cle-p0-shell-foundations.md`).
+Current state: **P0 (Shell & foundations) is COMPLETE** — all 10 tasks shipped (see the roadmap Handoff Log entry dated 2026-07-07 for SHAs, verification numbers, and the known pre-existing backend-failure list). **Next action: PR `feat/cle-p0-shell` to main, then write the P1 plan** (course setup wizard & gates) via `superpowers:writing-plans` from the P1 phase brief + spec, and execute it.
 
 Note: `docs/` is gitignored — commit doc files with `git add -f`.
 

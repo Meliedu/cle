@@ -3,17 +3,20 @@ import { test, expect } from '@playwright/test';
 /**
  * Auth-related E2E smoke tests.
  *
- * These tests verify public page rendering and unauthenticated redirect
- * behavior. Full sign-in/sign-up flows require Clerk Testing Tokens
- * (https://clerk.com/docs/testing/overview) or a Clerk test instance,
- * which is out of scope for this initial setup.
+ * These verify public page rendering and unauthenticated redirect behavior
+ * against the current Better Auth sign-in/sign-up screens (the app migrated
+ * off Clerk). Authenticated flows require a live backend session (Better Auth
+ * issues JWTs server-side and role gating runs in `proxy.ts`), which this
+ * harness's webServer (frontend `npm run dev` only) cannot provide — so
+ * role-routing behavior is covered by the vitest unit tests
+ * (`src/components/layout/role-gate.test.tsx`,
+ * `src/app/dashboard/dashboard-redirect.test.tsx`).
  */
 
 test.describe('Landing page', () => {
   test('renders with Sign In and Get Started links', async ({ page }) => {
     await page.goto('/');
 
-    // The header should contain navigation links to auth pages
     const signInLink = page.getByRole('link', { name: 'Sign In' }).first();
     const getStartedLink = page.getByRole('link', { name: 'Get Started' });
 
@@ -32,7 +35,6 @@ test.describe('Landing page', () => {
   test('displays feature cards', async ({ page }) => {
     await page.goto('/');
 
-    // Verify at least the four feature titles are visible
     await expect(page.getByText('Smart Quizzes')).toBeVisible();
     await expect(page.getByText('AI Flashcards')).toBeVisible();
     await expect(page.getByText('Pronunciation Practice')).toBeVisible();
@@ -42,37 +44,46 @@ test.describe('Landing page', () => {
 
 test.describe('Unauthenticated redirect', () => {
   test('visiting /dashboard redirects to sign-in', async ({ page }) => {
-    // Clerk middleware protects /dashboard — an unauthenticated request
-    // should be redirected to /sign-in (or a Clerk-hosted sign-in URL).
+    // `proxy.ts` runs a Better Auth session check; an unauthenticated request
+    // to a protected route is redirected to /sign-in.
     await page.goto('/dashboard');
 
-    // Wait for navigation to settle. The URL should contain "sign-in".
     await page.waitForURL(/sign-in/, { timeout: 10_000 });
     expect(page.url()).toContain('sign-in');
   });
 });
 
 test.describe('Sign-in page', () => {
-  test('renders the Clerk sign-in form container', async ({ page }) => {
+  test('renders the Better Auth sign-in form', async ({ page }) => {
     await page.goto('/sign-in');
 
-    // Clerk injects its form into the page. The outer centering wrapper
-    // should be present. The Clerk component itself renders inside a
-    // shadow DOM or iframe depending on the version, so we check for the
-    // page-level wrapper being visible as a smoke test.
-    //
-    // NOTE: For deeper assertions on Clerk UI elements, configure
-    // Clerk Testing Tokens to get a predictable rendered form.
-    const wrapper = page.locator('div.flex.min-h-screen');
-    await expect(wrapper).toBeVisible();
+    // Heading + email/password fields + the footer link to sign-up.
+    await expect(
+      page.getByRole('heading', { name: 'Sign in to Meli' })
+    ).toBeVisible();
+    await expect(page.getByLabel('Email')).toBeVisible();
+    await expect(page.getByLabel('Password')).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Sign in' })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('link', { name: 'Forgot password?' })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('link', { name: 'Create an account' })
+    ).toBeVisible();
   });
 });
 
 test.describe('Sign-up page', () => {
-  test('renders the Clerk sign-up form container', async ({ page }) => {
+  test('renders the Better Auth sign-up form', async ({ page }) => {
     await page.goto('/sign-up');
 
-    const wrapper = page.locator('div.flex.min-h-screen');
-    await expect(wrapper).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Join the studio' })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('link', { name: 'Sign in' })
+    ).toBeVisible();
   });
 });

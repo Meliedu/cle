@@ -36,7 +36,7 @@
 
 ## Phase Tracker
 
-- [ ] **P0 — Shell & foundations** → plan: `2026-07-07-meli-cle-p0-shell-foundations.md` (WRITTEN — execute next)
+- [x] **P0 — Shell & foundations** → plan: `2026-07-07-meli-cle-p0-shell-foundations.md` (COMPLETE)
 - [ ] **P1 — Course setup wizard & gates** → plan: not written
 - [ ] **P2 — Student entry & enrollment** → plan: not written
 - [ ] **P3 — Checkpoint loop core** → plan: not written
@@ -105,6 +105,40 @@ Phases must run in order: P1 depends on P0's config/shell; P2 on P1's setup gate
 ---
 
 ## Handoff Log (append-only; newest first)
+
+### 2026-07-07 — P0 executed & closed out (Shell & foundations)
+
+**All 10 P0 tasks shipped** (SHAs newest-first for related work per task):
+1. Pilot profile registry — `d045e5b` (typed CLE pilot config).
+2. `GET /api/config` — `da81178` (exposes the pilot profile).
+3. Backend-authoritative `useRole` — `271d721` (role from `users.role`, not email-domain guess) + `cb0159d` (surface /me failure state instead of eternal skeleton).
+4. Frontend pilot-config hook + shared authed-query helper — `721f9f8` + `3c38cce` (restrict `enabled` to boolean + vitest coverage).
+5. P0 pattern components (PageHeader, StateBanner, EmptyState) — `1324311` + `1c06cd2` (API hardening: passthrough, heading level, tones, alert roles).
+6. Role-scoped `/teacher` + `/student` route trees with RoleGate + `/dashboard` role redirect — `3f4b021` + `5d97bf1` (simplify RoleGate contract + shared `roleHomePath`).
+7. Config-driven per-lane collapsible sidebar (Figma T003/T004, S014/S015) — `9dff85c`.
+8. Profile + notification preferences (whitelisted JSONB + PATCH, atomic merge) — `e5d7fc3` + `1501e95`.
+9. OIDC-ready sign-in rebuild (dormant hkust-staff/hkust-student slots behind env flags, verified callback docs) — `55da688` + `1c490bf` + `0977d50` (parser-based redirect sanitizer).
+10. Role-routing tests + P0 close-out — this commit: role-gate/dashboard-redirect/role-load-error vitest units, refreshed Better Auth e2e (`auth.spec.ts`), new `role-routing.spec.ts`, tracker + handoff + RESUME updates.
+
+**Environment facts (Windows dev):**
+- Backend venv at `backend/.venv` created via `py -3.12`, all `requirements.txt` installed incl. torch CPU.
+- Docker Postgres 17 + pgvector; `langassistant_test` DB created manually with the same creds for the async suite.
+- `backend/pytest.ini` added: `WindowsSelectorEventLoopPolicy` + session-scoped event loop for the async suite (see `a5ee42d`).
+- Frontend vitest set up (jsdom, `src/**/*.test.{ts,tsx}`, no global setup file — tests use `afterEach(cleanup)`).
+
+**Verification (2026-07-07, actual):**
+- Frontend: `npx tsc --noEmit` clean; `npx vitest run` → 7 files, 47 tests passing; `npm run build` succeeds. `npm run lint` → 22 problems (18 errors/4 warnings) ALL in pre-existing untouched files (use-auth.ts, use-live-timer.ts, live-quiz/*, flashcard/*, quiz/*, revision/*, pronunciation/*, etc.) — zero new issues from P0.
+- Backend: `pytest -q` → 588 passed, 12 skipped, 8 failed + 3 errors, all in the KNOWN pre-existing set below (no new failures).
+
+**KNOWN pre-existing backend failures (do NOT chase in P1 — unrelated to P0):**
+- `test_alerts_evaluator.py` — 5 failures (`adaptive_engine_mode` kwarg / TypeError).
+- `test_scheduler_integration.py` — 3 errors (`created_by` kwarg / shared-DB `create_all` races).
+- `test_canvas_coverage.py` — 2 failures (`_due_integrations` filtering).
+- `test_live_quiz_service.py` — 1 failure (leaderboard `user_id` KeyError).
+
+**Authenticated E2E limitation (documented, intentional):** the e2e webServer runs the frontend `npm run dev` only (no backend), and role gating runs server-side in `proxy.ts` via Better Auth session (Playwright `page.route` can't intercept it), so authenticated role-routing is covered by vitest units, not e2e. `role-routing.spec.ts` asserts only the honest infra-free case: unauthenticated `/teacher/dashboard` and `/student/dashboard` both redirect to `/sign-in`. E2e specs were type-checked (`tsc`) but not executed (no backend/session infra to stand up).
+
+**NEXT ACTION:** PR `feat/cle-p0-shell` to main, then write the P1 plan (course setup wizard & gates) via `superpowers:writing-plans` and execute.
 
 ### 2026-07-07 — Planning session (Fable 5)
 - Spec approved + committed (`1e655bd`). This roadmap + detailed P0 plan written and committed.
