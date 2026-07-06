@@ -142,6 +142,95 @@
           "secretsNote": "The class join code stays hidden until you publish."
         }
       },
+      "syllabus": {
+        "title": "Upload your syllabus",
+        "subtitle": "Upload a syllabus (PDF or DOCX). We'll parse it in the background so you can review and apply the schedule, outcomes, and assignments it detects.",
+        "statusLabel": "Syllabus import status",
+        "loading": "Loading syllabus imports…",
+        "continue": "Continue",
+        "skip": "Skip for now",
+        "continueError": "We couldn't save this step. Please try again.",
+        "applyError": "We couldn't apply this syllabus. Please try again.",
+        "empty": {
+          "title": "No syllabus uploaded yet",
+          "reason": "Upload a syllabus above to start the import, or skip this step for now."
+        },
+        "preview": {
+          "modules": "{count, plural, one {# module} other {# modules}}",
+          "meetings": "{count, plural, one {# session} other {# sessions}}",
+          "objectives": "{count, plural, one {# outcome} other {# outcomes}}",
+          "assignments": "{count, plural, one {# assignment} other {# assignments}}"
+        },
+        "status": {
+          "parsing": {
+            "title": "Parsing your syllabus…",
+            "reason": "This runs in the background. It'll be ready for review shortly."
+          },
+          "parsed": {
+            "title": "Syllabus parsed — review and apply",
+            "reason": "Applying writes the detected schedule and outcomes into your course.",
+            "apply": "Apply syllabus"
+          },
+          "applied": {
+            "title": "Syllabus applied",
+            "reason": "The detected schedule and outcomes are now part of your course."
+          },
+          "failed": {
+            "title": "We couldn't parse this syllabus",
+            "reason": "Try uploading a clearer PDF or DOCX, or skip this step for now."
+          }
+        },
+        "aside": {
+          "title": "Used during setup",
+          "description": {
+            "title": "Draft course description",
+            "description": "We reuse the syllabus overview to draft a course summary."
+          },
+          "sessions": {
+            "title": "Create session folders",
+            "description": "Detected sessions become organized spaces for each class."
+          },
+          "checkpoints": {
+            "title": "Generate initial checkpoints",
+            "description": "Learning-check prompts grounded on your materials."
+          }
+        }
+      },
+      "materials": {
+        "title": "Upload course materials",
+        "subtitle": "Add readings, slides, and recordings. We parse and index each file so quizzes, checkpoints, and answers are grounded on your content.",
+        "statusLabel": "Document processing status",
+        "loading": "Loading documents…",
+        "continue": "Continue",
+        "skip": "Skip for now",
+        "continueError": "We couldn't save this step. Please try again.",
+        "processed": "{ready} of {total} ready",
+        "processing": "{count} processing",
+        "empty": {
+          "title": "No materials uploaded yet",
+          "reason": "Drag in a PDF, DOCX, PPTX, MP4, or MP3 above, or skip this step for now."
+        },
+        "state": {
+          "processing": "Processing",
+          "ready": "Ready",
+          "failed": "Failed"
+        },
+        "aside": {
+          "title": "Meli is reading",
+          "schedule": {
+            "title": "Extract schedule",
+            "description": "Detecting weekly sessions and key dates from your files."
+          },
+          "outcomes": {
+            "title": "Find course outcomes",
+            "description": "Surfacing the learning outcomes your materials cover."
+          },
+          "topics": {
+            "title": "Identify session topics",
+            "description": "Mapping content to each session for grounded checkpoints."
+          }
+        }
+      },
       "wizard": {
         "subtitle": "Complete each step, then publish to open your course.",
         "breadcrumb": "Courses",

@@ -16,6 +16,14 @@ vi.mock("@/components/setup/step-basics", () => ({
   StepBasics: () => <div data-testid="step-basics">basics-content</div>,
 }));
 
+vi.mock("@/components/setup/step-syllabus", () => ({
+  StepSyllabus: () => <div data-testid="step-syllabus">syllabus-content</div>,
+}));
+
+vi.mock("@/components/setup/step-materials", () => ({
+  StepMaterials: () => <div data-testid="step-materials">materials-content</div>,
+}));
+
 vi.mock("@/hooks/use-setup", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/hooks/use-setup")>();
   return { ...actual, useSetupState: vi.fn() };

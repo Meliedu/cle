@@ -8,6 +8,8 @@ import { useTranslations } from "next-intl";
 import { PageHeader, StateBanner, StepWizard, type WizardStep } from "@/components/patterns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StepBasics } from "@/components/setup/step-basics";
+import { StepSyllabus } from "@/components/setup/step-syllabus";
+import { StepMaterials } from "@/components/setup/step-materials";
 import {
   SETUP_STEP_KEYS,
   useSetupState,
@@ -15,8 +17,12 @@ import {
   type SetupStepKey,
 } from "@/hooks/use-setup";
 
-/** Steps that already have wizard content this phase (P1 Task 12). */
-const IMPLEMENTED_STEPS: ReadonlySet<SetupStepKey> = new Set(["basics"]);
+/** Steps that already have wizard content this phase (P1 Tasks 12–13). */
+const IMPLEMENTED_STEPS: ReadonlySet<SetupStepKey> = new Set([
+  "basics",
+  "syllabus",
+  "materials",
+]);
 
 function isStepKey(value: string | null): value is SetupStepKey {
   return value !== null && (SETUP_STEP_KEYS as readonly string[]).includes(value);
@@ -138,6 +144,10 @@ export function SetupWizard({ courseId }: SetupWizardProps) {
       >
         {currentId === "basics" ? (
           <StepBasics courseId={courseId} onComplete={handleNext} />
+        ) : currentId === "syllabus" ? (
+          <StepSyllabus courseId={courseId} onComplete={handleNext} />
+        ) : currentId === "materials" ? (
+          <StepMaterials courseId={courseId} onComplete={handleNext} />
         ) : (
           <StateBanner
             tone="waiting"
