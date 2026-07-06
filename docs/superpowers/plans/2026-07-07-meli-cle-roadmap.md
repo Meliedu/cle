@@ -106,6 +106,16 @@ Phases must run in order: P1 depends on P0's config/shell; P2 on P1's setup gate
 
 ## Handoff Log (append-only; newest first)
 
+### 2026-07-07 — P1 in progress (Course setup wizard & gates)
+
+Detailed plan: `docs/superpowers/plans/2026-07-07-meli-cle-p1-course-setup.md` (17 tasks, committed `da6bf44`). Two reconciliation Decisions baked in: (1) `courses.context_status` (draft→approved) stays the authoritative course-open gate; `setup_status` (draft|in_review|published) is the wizard lifecycle only; publish flips both, reopen rolls back setup_status only. (2) `course_meetings` reuses `meeting_index`=session_no + `location`=venue; adds `release_state` (locked|released|completed|archived) distinct from existing `status`, + `topic_summary`. (3) Checkpoints ship the full status enum but P1 writes DRAFT states only (no publish/QR — that's P3), guarded by `test_p1_has_no_publish_route`.
+
+**Backend tasks 1–10 COMPLETE & reviewed** (each: implement + adversarial spec+quality review + fix loop): T1 courses setup columns `012e216`; T2 meetings release_state/topic_summary `d878dda`; T3 checkpoint/checkpoint_card/score_category models + concept_tags widened to `checkpoint_card` `e3036b3`; T4 setup service (gate/publish/reopen) + score-category seeding `e3020a9`; T5 `analyze_course_setup` job `f7d3ffd`; T6 `generate_checkpoints` job (grounded, draft-only, card-id concept tagging) `3cb1b5a`; T7 meetings release-state endpoint `eac12f0`; T8 `setup.py` router `71a9ef4`; T9 `checkpoints.py` router `4de2c65`+`7d71c71` (REVIEW_REQUIRED code fix); T10 `scores.py` router `e1d0c43`(+null-name fix pending). New migration head chain: a669b7e5964b→51d14ae61c5f→6500885d2cfc. New task types dispatched in worker.py: `analyze_course_setup`, `generate_checkpoints`.
+
+**Frontend tasks 11–17 REMAINING:** StepWizard pattern + use-setup hook (T11); wizard route + new-course/basics (T12); syllabus+materials upload steps (T13); schedule+ILO steps (T14); analyzer/session-gen/checkpoint-gen review steps (T15); score-policy/class-code/memory-import-stub (T16); review-checklist/publish-success/missing-source + happy-path spec + P1 close-out (T17). Pull Figma group `1372:34` (T014–T028) per screen at build. Error taxonomy the FE switches on: `SETUP_INCOMPLETE|SETUP_NOT_OPEN|FINAL_CARD_FIXED|REVIEW_REQUIRED`.
+
+**Known pre-existing backend failures (NOT P1 — do not chase):** test_alerts_evaluator (adaptive_engine_mode kwarg, ~5), test_scheduler_integration (created_by kwarg / shared-DB create_all races, ~3), test_canvas_coverage (_due_integrations, ~2), test_live_quiz_service (leaderboard user_id KeyError, ~1).
+
 ### 2026-07-07 — P0 executed & closed out (Shell & foundations)
 
 **All 10 P0 tasks shipped** (SHAs newest-first for related work per task):
