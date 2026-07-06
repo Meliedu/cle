@@ -1,8 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/use-auth";
-import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 
 type Role = "instructor" | "student";
 
@@ -26,24 +24,10 @@ interface MeResponse {
  * instead of an eternal loading state.
  */
 export function useRole() {
-  const { getToken, isSignedIn } = useAuth();
-
-  const { data, isError } = useQuery({
+  const { data, isError } = useAuthedQuery<MeResponse>({
     queryKey: ["auth", "me"],
-    queryFn: async () => {
-      const token = await getToken({ template: "backend" });
-      if (!token) throw new Error("Not authenticated");
-      const response = await apiFetch<ApiEnvelope<MeResponse>>("/auth/me", {
-        token,
-      });
-      return response.data;
-    },
-    enabled: isSignedIn === true,
+    path: "/auth/me",
     staleTime: 5 * 60 * 1000,
-    retry: (count, error) => {
-      if (isAuthError(error)) return false;
-      return count < 3;
-    },
   });
 
   const role: Role | null =
