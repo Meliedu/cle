@@ -32,7 +32,8 @@ function makeDoc(overrides: Partial<DocumentResponse> = {}): DocumentResponse {
     filename: "Week 1 Reading.pdf",
     file_type: "pdf",
     file_size: 1024,
-    status: "completed",
+    // Terminal success status is "ready" (pipeline.py), not "completed".
+    status: "ready",
     page_count: 3,
     word_count: 900,
     created_at: "2026-01-01T00:00:00Z",
@@ -93,12 +94,14 @@ describe("StepMaterials", () => {
   it("enables continue once a document is ready and flips the flag", async () => {
     const onComplete = vi.fn();
     mockUseDocuments.mockReturnValue({
-      data: [makeDoc({ status: "completed" })],
+      data: [makeDoc({ status: "ready" })],
       isLoading: false,
     } as unknown as ReturnType<typeof useDocuments>);
     renderStep(onComplete);
     expect(screen.getByText(/^Ready$/)).toBeTruthy();
     const continueBtn = screen.getByRole("button", { name: /^Continue$/i });
+    // The real bug: a "ready" doc must ENABLE Continue (the gate keyed on the
+    // wrong "completed" status left this disabled).
     expect((continueBtn as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(continueBtn);
     await waitFor(() =>

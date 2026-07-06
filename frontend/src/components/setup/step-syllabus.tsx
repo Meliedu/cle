@@ -51,6 +51,11 @@ export function StepSyllabus({ courseId, onComplete }: StepSyllabusProps) {
     [imports]
   );
 
+  // Both Continue and Skip flip `syllabus` done=true. `setup_checklist` is
+  // boolean-only (services/setup.py), so there is no distinct "skipped" state in
+  // P1; the `analyzer_review` step is the real missing-source gate before
+  // publish (it flags objectives without a supporting source), so skipping here
+  // is safe.
   const flipDone = useCallback(async () => {
     setActionError(null);
     try {
@@ -124,7 +129,7 @@ export function StepSyllabus({ courseId, onComplete }: StepSyllabusProps) {
             disabled={!hasApplied || isFlipping}
             onClick={() => void flipDone()}
           >
-            {isFlipping ? <Loader2 className="animate-spin" /> : null}
+            {isFlipping ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
             {t("continue")}
           </Button>
           <Button
@@ -221,7 +226,7 @@ function ImportStatus({ imp, counts, onApply, isApplying, t }: ImportStatusProps
         disabled={isApplying}
         onClick={() => onApply(imp)}
       >
-        {isApplying ? <Loader2 className="animate-spin" /> : null}
+        {isApplying ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
         {t("status.parsed.apply")}
       </Button>
     </div>

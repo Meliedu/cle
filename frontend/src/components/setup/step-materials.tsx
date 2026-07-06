@@ -37,12 +37,19 @@ export function StepMaterials({ courseId, onComplete }: StepMaterialsProps) {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const docs = useMemo(() => documents ?? [], [documents]);
-  const readyCount = docs.filter((d) => d.status === "completed").length;
+  // Terminal success status is "ready" (pipeline.py; matches every other FE
+  // consumer, e.g. document-selector.tsx and dashboard courses/[courseId]).
+  const readyCount = docs.filter((d) => d.status === "ready").length;
   const processingCount = docs.filter(
     (d) => d.status === "pending" || d.status === "processing"
   ).length;
   const hasReady = readyCount > 0;
 
+  // Both Continue and Skip flip `materials` done=true. `setup_checklist` is
+  // boolean-only (services/setup.py), so there is no distinct "skipped" state in
+  // P1; the `analyzer_review` step is the real missing-source gate before
+  // publish (it flags sessions/objectives without materials), so skipping here
+  // is safe.
   const flipDone = useCallback(async () => {
     setActionError(null);
     try {
@@ -107,7 +114,7 @@ export function StepMaterials({ courseId, onComplete }: StepMaterialsProps) {
             disabled={!hasReady || isFlipping}
             onClick={() => void flipDone()}
           >
-            {isFlipping ? <Loader2 className="animate-spin" /> : null}
+            {isFlipping ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
             {t("continue")}
           </Button>
           <Button

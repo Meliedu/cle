@@ -148,7 +148,7 @@
         "statusLabel": "Syllabus import status",
         "loading": "Loading syllabus imports…",
         "continue": "Continue",
-        "skip": "Skip for now",
+        "skip": "Skip for now — add a syllabus before publishing",
         "continueError": "We couldn't save this step. Please try again.",
         "applyError": "We couldn't apply this syllabus. Please try again.",
         "empty": {
@@ -202,7 +202,7 @@
         "statusLabel": "Document processing status",
         "loading": "Loading documents…",
         "continue": "Continue",
-        "skip": "Skip for now",
+        "skip": "Skip for now — add materials before publishing",
         "continueError": "We couldn't save this step. Please try again.",
         "processed": "{ready} of {total} ready",
         "processing": "{count} processing",
