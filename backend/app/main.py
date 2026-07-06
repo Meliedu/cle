@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.api import api_router
 from app.config import settings
 from app.middleware import AuthMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware
+from app.pilot import get_pilot_profile
 from app.services.canvas_sync import run_scheduler as run_canvas_scheduler
 from app.services.worker import worker_loop
 
@@ -25,6 +26,8 @@ for _noisy in ("botocore", "boto3", "urllib3", "s3transfer", "httpx", "httpcore"
 async def lifespan(app: FastAPI):
     shutdown_event = asyncio.Event()
     background_tasks: list[asyncio.Task] = []
+    # Fail fast on an unknown PILOT_PROFILE before any background work starts.
+    get_pilot_profile()
     if settings.run_worker_in_api:
         background_tasks.append(asyncio.create_task(worker_loop(shutdown_event)))
         background_tasks.append(

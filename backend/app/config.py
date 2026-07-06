@@ -100,6 +100,9 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     allowed_email_domains: str = "connect.ust.hk,ust.hk"
 
+    # Active pilot profile (institution-specific config; see app/pilot).
+    pilot_profile: str = "cle"
+
     # FSRS scheduler feature flag
     fsrs_enabled: bool = True
 
