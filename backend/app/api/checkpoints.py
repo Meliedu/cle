@@ -66,7 +66,10 @@ def _assert_editable(cp: Checkpoint) -> None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
-                "code": "CHECKPOINT_NOT_EDITABLE",
+                # Spec typed-error taxonomy (§3.4): the FE switches on
+                # SETUP_INCOMPLETE | SETUP_NOT_OPEN | FINAL_CARD_FIXED |
+                # REVIEW_REQUIRED, so this must be REVIEW_REQUIRED.
+                "code": "REVIEW_REQUIRED",
                 "message": (
                     f"Checkpoint is '{cp.status}'; cards can only be edited while "
                     "it is a draft."
@@ -149,6 +152,9 @@ async def get_checkpoint(
     user: User = Depends(get_current_user),
 ) -> APIResponse[CheckpointWithCardsResponse]:
     cp = await _owned_checkpoint(checkpoint_id, user, db)
+    # Ensure onupdate-managed columns (updated_at) are populated before
+    # serialization — a prior card edit in the same session expires them.
+    await db.refresh(cp)
     cards = await _load_cards(db, cp.id)
     data = CheckpointWithCardsResponse.model_validate(cp)
     data.cards = [CheckpointCardResponse.model_validate(c) for c in cards]
@@ -225,17 +231,16 @@ async def update_card(
         # Soft-remove so the partial unique index / list queries skip it.
         card.deleted_at = _utcnow()
     else:
+        # No un-remove branch: removing soft-deletes (deleted_at), and
+        # _load_card 404s on deleted_at, so a removed card can never be edited
+        # back. Un-remove is a P3 concern once card history is exposed.
         for field in ("prompt", "document_id", "chunk_id", "objective_id", "removed_note"):
             if field in fields:
                 setattr(card, field, fields[field])
-        if fields.get("removed") is False:
-            card.removed = False
-            card.removed_reason = None
 
     _bump_editing(cp)
     await db.commit()
-    await db.refresh(card)
-    await db.refresh(cp)  # repopulate onupdate-expired columns for later reads
+    await db.refresh(card)  # pull the onupdate-refreshed updated_at
     return APIResponse(success=True, data=CheckpointCardResponse.model_validate(card))
 
 
@@ -275,6 +280,5 @@ async def add_card(
     db.add(card)
     _bump_editing(cp)
     await db.commit()
-    await db.refresh(card)
-    await db.refresh(cp)  # repopulate onupdate-expired columns for later reads
+    await db.refresh(card)  # pull the server-generated created_at/updated_at
     return APIResponse(success=True, data=CheckpointCardResponse.model_validate(card))

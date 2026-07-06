@@ -287,7 +287,7 @@ async def test_edit_rejected_when_not_editable(
         f"/api/checkpoints/{cp.id}/cards/{card.id}", json={"prompt": "nope"}
     )
     assert r.status_code == 409
-    assert r.json()["detail"]["code"] == "CHECKPOINT_NOT_EDITABLE"
+    assert r.json()["detail"]["code"] == "REVIEW_REQUIRED"
 
 
 # ----- ownership / delete -----
