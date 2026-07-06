@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.models.course import Course, Enrollment
+from app.models.score import ScoreCategory
 from app.models.user import User
+from app.pilot import get_pilot_profile
 from app.schemas.common import APIResponse, PaginatedResponse, PaginationMeta
 from app.schemas.course import (
     CourseCreate,
@@ -64,6 +66,18 @@ async def create_course(
             course_id=course.id, user_id=user.id, role="instructor"
         )
         db.add(enrollment)
+
+        # Seed the pilot's default score categories (T024 score-policy step).
+        for i, cat in enumerate(get_pilot_profile().score_category_defaults):
+            db.add(
+                ScoreCategory(
+                    course_id=course.id,
+                    name=cat.name,
+                    weight=cat.weight,
+                    sort=i,
+                )
+            )
+
         await db.commit()
         await db.refresh(course)
         return APIResponse(success=True, data=CourseResponse.model_validate(course))
