@@ -53,7 +53,7 @@ export function Switch({
       <span
         aria-hidden="true"
         className={cn(
-          "pointer-events-none inline-block size-5 rounded-full bg-white shadow-sm",
+          "pointer-events-none inline-block size-5 rounded-full bg-[var(--color-surface)] shadow-sm",
           "transition-transform duration-[var(--duration-fast)]",
           checked ? "translate-x-[22px]" : "translate-x-0.5",
         )}

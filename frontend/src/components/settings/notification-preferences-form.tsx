@@ -102,7 +102,8 @@ export function NotificationPreferencesForm() {
 
       <ul className="divide-y divide-[var(--color-border)]/60">
         {PREF_ITEMS.map((item) => {
-          // Absent key => enabled by default (opt-out model).
+          // Absent key => enabled by default (opt-out model) — mirrors the
+          // backend contract in NotificationPrefs.is_enabled (schemas/user.py).
           const enabled = prefs[item.key] ?? true;
           const labelId = `notif-${item.key}-label`;
           const descId = `notif-${item.key}-desc`;

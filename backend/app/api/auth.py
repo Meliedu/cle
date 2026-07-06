@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy import cast, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -23,10 +25,23 @@ async def update_notification_prefs(
 ):
     """Merge the submitted (non-None) notification preference keys over the
     stored dict. Unknown keys are rejected upstream by ``extra="forbid"`` (422).
+
+    The merge happens server-side as a single atomic
+    ``UPDATE users SET notification_prefs = notification_prefs || :submitted``
+    (JSONB concatenation), so two concurrent PATCHes touching different keys
+    cannot lose each other's writes the way a Python read-modify-write could.
     """
     submitted = body.notification_prefs.model_dump(exclude_none=True)
-    # Immutable merge: build a fresh dict rather than mutating the stored one.
-    current_user.notification_prefs = {**(current_user.notification_prefs or {}), **submitted}
-    await db.commit()
+    if submitted:
+        await db.execute(
+            update(User)
+            .where(User.id == current_user.id)
+            .values(
+                notification_prefs=User.notification_prefs.op("||")(
+                    cast(submitted, JSONB)
+                )
+            )
+        )
+        await db.commit()
     await db.refresh(current_user)
     return APIResponse(success=True, data=UserResponse.model_validate(current_user))

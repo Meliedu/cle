@@ -16,6 +16,16 @@ class NotificationPrefs(BaseModel):
     quiz_due_soon: bool | None = None
     weekly_summary: bool | None = None
 
+    @classmethod
+    def is_enabled(cls, prefs: dict, key: str) -> bool:
+        """Backend-authoritative opt-out default.
+
+        Contract: absent key = enabled (opt-out model); the frontend form and
+        future notification senders MUST use this rule when deciding whether
+        a user receives a given notification.
+        """
+        return bool(prefs.get(key, True))
+
 
 class NotificationPrefsUpdate(BaseModel):
     notification_prefs: NotificationPrefs
@@ -28,6 +38,10 @@ class UserResponse(BaseModel):
     full_name: str | None
     role: str
     avatar_url: str | None
+    # Deliberately `dict`, not `NotificationPrefs`: the stored value is a
+    # sparse map (only keys the user has toggled). Typing it as the schema
+    # would serialize every absent key as null, changing the wire contract.
+    # Consumers resolve absent keys via NotificationPrefs.is_enabled().
     notification_prefs: dict = Field(default_factory=dict)
     created_at: datetime
 

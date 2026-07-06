@@ -1,4 +1,5 @@
-from sqlalchemy import JSON, CheckConstraint, String, text
+from sqlalchemy import CheckConstraint, String, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -20,6 +21,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     full_name: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String(500))
+    # JSONB (not JSON) so PATCH /auth/me/preferences can merge submitted keys
+    # atomically server-side with the `||` operator (no lost updates).
     notification_prefs: Mapped[dict] = mapped_column(
-        JSON, nullable=False, default=dict, server_default=text("'{}'")
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )

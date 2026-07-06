@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '71889d907021'
@@ -18,14 +19,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Whitelisted notification preferences stored as JSON on users.
-    # Existing rows default to an empty object (server_default='{}').
+    # Whitelisted notification preferences stored as JSONB on users. JSONB
+    # (not JSON) so the PATCH endpoint can merge submitted keys atomically
+    # server-side with the `||` concatenation operator, avoiding the
+    # read-modify-write lost-update window. Existing rows default to '{}'.
     op.add_column(
         'users',
         sa.Column(
             'notification_prefs',
-            sa.JSON(),
-            server_default=sa.text("'{}'"),
+            postgresql.JSONB(),
+            server_default=sa.text("'{}'::jsonb"),
             nullable=False,
         ),
     )

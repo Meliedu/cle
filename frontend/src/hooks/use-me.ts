@@ -56,6 +56,10 @@ interface MutationContext {
  * over the stored one. Applies an optimistic update to the shared `["auth",
  * "me"]` cache, rolls back on error, reconciles with the server response on
  * success, and always revalidates on settle.
+ *
+ * Concurrency note: the rollback-to-snapshot correctness relies on the form
+ * disabling its switches while a mutation is pending (`disabled={isPending}`),
+ * so at most one PATCH from this client is in flight at a time.
  */
 export function useUpdateNotificationPrefs() {
   const { getToken } = useAuth();

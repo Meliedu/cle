@@ -1,5 +1,7 @@
 import pytest
 
+from app.schemas.user import NotificationPrefs
+
 
 @pytest.mark.asyncio
 async def test_patch_notification_prefs_roundtrip(async_client, logged_in_user):
@@ -16,6 +18,27 @@ async def test_patch_notification_prefs_roundtrip(async_client, logged_in_user):
 
 
 @pytest.mark.asyncio
+async def test_patch_sequential_merges_preserve_earlier_keys(async_client, logged_in_user):
+    """PATCHing key A then key B must keep both (server-side JSONB `||` merge)."""
+    resp_a = await async_client.patch(
+        "/api/auth/me/preferences",
+        json={"notification_prefs": {"report_ready": False}},
+    )
+    assert resp_a.status_code == 200
+
+    resp_b = await async_client.patch(
+        "/api/auth/me/preferences",
+        json={"notification_prefs": {"quiz_due_soon": False}},
+    )
+    assert resp_b.status_code == 200
+
+    me = await async_client.get("/api/auth/me")
+    prefs = me.json()["data"]["notification_prefs"]
+    assert prefs["report_ready"] is False
+    assert prefs["quiz_due_soon"] is False
+
+
+@pytest.mark.asyncio
 async def test_patch_rejects_unknown_keys(async_client, logged_in_user):
     resp = await async_client.patch(
         "/api/auth/me/preferences", json={"notification_prefs": {"evil_key": True}}
@@ -29,3 +52,9 @@ async def test_patch_requires_auth(client):
         "/api/auth/me/preferences", json={"notification_prefs": {"report_ready": True}}
     )
     assert resp.status_code in (401, 403)
+
+
+def test_is_enabled_defaults_absent_keys_to_true():
+    """Contract: absent key = enabled (opt-out model)."""
+    assert NotificationPrefs.is_enabled({}, "report_ready") is True
+    assert NotificationPrefs.is_enabled({"report_ready": False}, "report_ready") is False

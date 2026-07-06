@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { ME_QUERY_KEY } from "@/hooks/use-me";
 
 export type Role = "instructor" | "student";
 
@@ -30,7 +31,7 @@ interface MeResponse {
  */
 export function useRole() {
   const { data, isError } = useAuthedQuery<MeResponse>({
-    queryKey: ["auth", "me"],
+    queryKey: ME_QUERY_KEY,
     path: "/auth/me",
     staleTime: 5 * 60 * 1000,
   });
