@@ -9,70 +9,36 @@ import { FolderTree, ClipboardCheck, KeyRound, Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/patterns";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  CourseBasicsFields,
+  EMPTY_COURSE_BASICS,
+  type CourseBasicsValue,
+} from "@/components/course/course-basics-fields";
 import { useCreateCourse } from "@/hooks/use-courses";
-
-const LANGUAGES = ["Chinese", "English", "Japanese", "Korean"] as const;
-
-interface FormState {
-  readonly name: string;
-  readonly code: string;
-  readonly language: string;
-  readonly semester: string;
-  readonly description: string;
-}
-
-const INITIAL_FORM: FormState = {
-  name: "",
-  code: "",
-  language: "",
-  semester: "",
-  description: "",
-};
-
-type FieldErrors = Partial<Record<"name" | "code" | "language" | "semester", boolean>>;
-
-function validate(form: FormState): FieldErrors {
-  return {
-    name: !form.name.trim(),
-    code: !form.code.trim(),
-    language: !form.language,
-    semester: !form.semester.trim(),
-  };
-}
-
-function hasErrors(errors: FieldErrors): boolean {
-  return Object.values(errors).some(Boolean);
-}
 
 /**
  * T014 — new-course-start. Entry screen for a teacher to create a course before
  * students join. On success it routes into the setup wizard, where the same
  * basics can be refined (T015). A "Setup creates" aside previews what publishing
  * the wizard will generate.
+ *
+ * Validation: only the name is required here (consistent with the basics step);
+ * code/language/term are recommended-but-optional — the setup checklist, not
+ * per-field required attrs, is the real course-open gate.
  */
 export default function NewCoursePage() {
   const t = useTranslations("teacher.setup.newCourse");
   const router = useRouter();
   const createCourse = useCreateCourse();
 
-  const [form, setForm] = useState<FormState>(INITIAL_FORM);
-  const [errors, setErrors] = useState<FieldErrors>({});
+  const [form, setForm] = useState<CourseBasicsValue>(EMPTY_COURSE_BASICS);
+  const [nameError, setNameError] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const setField = useCallback(
-    <K extends keyof FormState>(field: K, value: FormState[K]) => {
+    (field: keyof CourseBasicsValue, value: string) => {
       setForm((prev) => ({ ...prev, [field]: value }));
-      setErrors((prev) => (prev[field as keyof FieldErrors] ? { ...prev, [field]: false } : prev));
+      if (field === "name") setNameError(false);
     },
     []
   );
@@ -80,9 +46,8 @@ export default function NewCoursePage() {
   const handleSubmit = useCallback(
     async (event: { preventDefault: () => void }) => {
       event.preventDefault();
-      const nextErrors = validate(form);
-      if (hasErrors(nextErrors)) {
-        setErrors(nextErrors);
+      if (!form.name.trim()) {
+        setNameError(true);
         return;
       }
       setSubmitError(null);
@@ -131,89 +96,25 @@ export default function NewCoursePage() {
             {t("sectionTitle")}
           </h2>
 
-          <div className="grid gap-5 sm:grid-cols-2">
-            <Field
-              id="course-name"
-              label={t("name")}
-              required
-              error={errors.name ? t("nameRequired") : undefined}
-            >
-              <Input
-                id="course-name"
-                placeholder={t("namePlaceholder")}
-                value={form.name}
-                onChange={(e) => setField("name", e.target.value)}
-                aria-invalid={errors.name || undefined}
-              />
-            </Field>
-
-            <Field
-              id="course-code"
-              label={t("code")}
-              required
-              error={errors.code ? t("codeRequired") : undefined}
-            >
-              <Input
-                id="course-code"
-                placeholder={t("codePlaceholder")}
-                value={form.code}
-                onChange={(e) => setField("code", e.target.value)}
-                aria-invalid={errors.code || undefined}
-              />
-            </Field>
-
-            <Field
-              id="course-semester"
-              label={t("semester")}
-              required
-              error={errors.semester ? t("semesterRequired") : undefined}
-            >
-              <Input
-                id="course-semester"
-                placeholder={t("semesterPlaceholder")}
-                value={form.semester}
-                onChange={(e) => setField("semester", e.target.value)}
-                aria-invalid={errors.semester || undefined}
-              />
-            </Field>
-
-            <Field
-              id="course-language"
-              label={t("language")}
-              required
-              error={errors.language ? t("languageRequired") : undefined}
-            >
-              <Select
-                value={form.language}
-                onValueChange={(val) => setField("language", val ?? "")}
-              >
-                <SelectTrigger
-                  id="course-language"
-                  className="w-full"
-                  aria-invalid={errors.language || undefined}
-                >
-                  <SelectValue placeholder={t("languagePlaceholder")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {LANGUAGES.map((lang) => (
-                    <SelectItem key={lang} value={lang}>
-                      {lang}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-
-          <Field id="course-description" label={t("description")} hint={t("descriptionHint")}>
-            <Textarea
-              id="course-description"
-              rows={3}
-              placeholder={t("descriptionPlaceholder")}
-              value={form.description}
-              onChange={(e) => setField("description", e.target.value)}
-            />
-          </Field>
+          <CourseBasicsFields
+            idPrefix="course"
+            value={form}
+            onValueChange={setField}
+            errors={nameError ? { name: t("nameRequired") } : undefined}
+            labels={{
+              name: t("name"),
+              namePlaceholder: t("namePlaceholder"),
+              code: t("code"),
+              codePlaceholder: t("codePlaceholder"),
+              semester: t("semester"),
+              semesterPlaceholder: t("semesterPlaceholder"),
+              language: t("language"),
+              languagePlaceholder: t("languagePlaceholder"),
+              description: t("description"),
+              descriptionPlaceholder: t("descriptionPlaceholder"),
+              descriptionHint: t("descriptionHint"),
+            }}
+          />
 
           {submitError ? (
             <p role="alert" className="text-[13px] text-[var(--color-error)]">
@@ -262,34 +163,6 @@ export default function NewCoursePage() {
           </ul>
         </aside>
       </div>
-    </div>
-  );
-}
-
-interface FieldProps {
-  readonly id: string;
-  readonly label: string;
-  readonly required?: boolean;
-  readonly hint?: string;
-  readonly error?: string;
-  readonly children: React.ReactNode;
-}
-
-function Field({ id, label, required, hint, error, children }: FieldProps) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>
-        {label}
-        {required ? <span className="ml-0.5 text-[var(--color-error)]">*</span> : null}
-      </Label>
-      {children}
-      {error ? (
-        <p id={`${id}-error`} className="text-[12px] text-[var(--color-error)]">
-          {error}
-        </p>
-      ) : hint ? (
-        <p className="text-[12px] text-[var(--color-text-muted)]">{hint}</p>
-      ) : null}
     </div>
   );
 }

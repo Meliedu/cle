@@ -5,33 +5,17 @@ import { useTranslations } from "next-intl";
 import { Loader2, Lock } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  CourseBasicsFields,
+  type CourseBasicsValue,
+} from "@/components/course/course-basics-fields";
 import {
   useCourse,
   useUpdateCourse,
   type CourseResponse,
 } from "@/hooks/use-courses";
 import { useSetStep } from "@/hooks/use-setup";
-
-const LANGUAGES = ["Chinese", "English", "Japanese", "Korean"] as const;
-
-interface BasicsForm {
-  readonly name: string;
-  readonly code: string;
-  readonly language: string;
-  readonly semester: string;
-  readonly description: string;
-}
 
 interface StepBasicsProps {
   readonly courseId: string;
@@ -72,7 +56,7 @@ function BasicsForm({ courseId, course, onComplete }: BasicsFormProps) {
   const updateCourse = useUpdateCourse(courseId);
   const setStep = useSetStep(courseId);
 
-  const [form, setForm] = useState<BasicsForm>({
+  const [form, setForm] = useState<CourseBasicsValue>({
     name: course.name ?? "",
     code: course.code ?? "",
     language: course.language ?? "",
@@ -83,7 +67,7 @@ function BasicsForm({ courseId, course, onComplete }: BasicsFormProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const setField = useCallback(
-    <K extends keyof BasicsForm>(field: K, value: BasicsForm[K]) => {
+    (field: keyof CourseBasicsValue, value: string) => {
       setForm((prev) => ({ ...prev, [field]: value }));
       if (field === "name") setNameError(false);
     },
@@ -128,75 +112,22 @@ function BasicsForm({ courseId, course, onComplete }: BasicsFormProps) {
           {t("title")}
         </h2>
 
-        <div className="grid gap-5 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="basics-name">
-              {t("name")}
-              <span className="ml-0.5 text-[var(--color-error)]">*</span>
-            </Label>
-            <Input
-              id="basics-name"
-              value={form.name}
-              onChange={(e) => setField("name", e.target.value)}
-              aria-invalid={nameError || undefined}
-              aria-describedby={nameError ? "basics-name-error" : undefined}
-            />
-            {nameError ? (
-              <p id="basics-name-error" className="text-[12px] text-[var(--color-error)]">
-                {t("nameRequired")}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="basics-code">{t("code")}</Label>
-            <Input
-              id="basics-code"
-              value={form.code}
-              onChange={(e) => setField("code", e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="basics-semester">{t("semester")}</Label>
-            <Input
-              id="basics-semester"
-              value={form.semester}
-              onChange={(e) => setField("semester", e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="basics-language">{t("language")}</Label>
-            <Select
-              value={form.language}
-              onValueChange={(val) => setField("language", val ?? "")}
-            >
-              <SelectTrigger id="basics-language" className="w-full">
-                <SelectValue placeholder={t("languagePlaceholder")} />
-              </SelectTrigger>
-              <SelectContent>
-                {LANGUAGES.map((lang) => (
-                  <SelectItem key={lang} value={lang}>
-                    {lang}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="basics-description">{t("description")}</Label>
-          <Textarea
-            id="basics-description"
-            rows={3}
-            placeholder={t("descriptionPlaceholder")}
-            value={form.description}
-            onChange={(e) => setField("description", e.target.value)}
-          />
-          <p className="text-[12px] text-[var(--color-text-muted)]">{t("descriptionHint")}</p>
-        </div>
+        <CourseBasicsFields
+          idPrefix="basics"
+          value={form}
+          onValueChange={setField}
+          errors={nameError ? { name: t("nameRequired") } : undefined}
+          labels={{
+            name: t("name"),
+            code: t("code"),
+            semester: t("semester"),
+            language: t("language"),
+            languagePlaceholder: t("languagePlaceholder"),
+            description: t("description"),
+            descriptionPlaceholder: t("descriptionPlaceholder"),
+            descriptionHint: t("descriptionHint"),
+          }}
+        />
 
         {saveError ? (
           <p role="alert" className="text-[13px] text-[var(--color-error)]">
