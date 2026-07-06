@@ -48,6 +48,12 @@ const internalApiUrl =
   process.env.INTERNAL_API_URL ?? "http://localhost:8000/api";
 const internalSecret = process.env.BETTER_AUTH_INTERNAL_SECRET ?? "";
 
+// Single source of truth for the app's own origin — used both as Better
+// Auth's baseURL and as the sole trustedOrigin (defense-in-depth: Better
+// Auth validates callback / redirect origins against this list, so a
+// crafted cross-origin callbackURL is rejected server-side too).
+const baseURL = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
+
 // Fail fast at module load if BETTER_AUTH_SECRET is missing in production.
 // Without it, Better Auth would silently generate a per-process random
 // secret — invalidating sessions on restart and breaking multi-instance
@@ -156,7 +162,12 @@ const hkustOidcProviders = [
 export const auth = betterAuth({
   database: pool,
   secret: process.env.BETTER_AUTH_SECRET,
-  baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
+  baseURL,
+  // Defense-in-depth against open redirects / CSRF: only our own origin may
+  // receive auth callbacks and redirects. The client-side sanitizeRedirect
+  // guard (src/lib/redirect.ts) is the first line; this is the server-side
+  // backstop. Deliberately minimal — one origin, derived from baseURL.
+  trustedOrigins: [baseURL],
 
   emailAndPassword: {
     enabled: true,

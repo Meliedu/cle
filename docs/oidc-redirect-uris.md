@@ -158,6 +158,22 @@ they already do for Microsoft-social and email/password sign-ups:
    claim-mapping step on each generic-OAuth provider plus a check in the
    `user.create.before` hook. Tracked here so it is not forgotten.
 
+3. **PKCE (TO WIRE when providers activate).** Set `pkce: true` on **both**
+   generic-OAuth provider configs in `src/lib/auth.ts` at activation. Entra
+   ID supports (and Microsoft recommends) PKCE on the authorization-code
+   flow even for confidential clients — it hardens against
+   authorization-code interception. One line per provider.
+
+4. **Entra email-claim mapping (TO WIRE when providers activate).** Entra ID
+   tokens do not always populate the `email` claim — the address often
+   arrives only in `preferred_username` (or `upn`). If `user.email` comes
+   through empty or non-address-shaped, the email-domain gate in (1) would
+   misfire. At activation, add an explicit claim-mapping step on each
+   provider (e.g. a `getUserInfo` override that sets
+   `email = email ?? preferred_username`, lowercased) and verify with a real
+   staff + student account that `detectRoleFromEmail()` sees the expected
+   `@ust.hk` / `@connect.ust.hk` value.
+
 ---
 
 ## 7. Change log

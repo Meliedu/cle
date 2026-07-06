@@ -15,6 +15,7 @@ import { MicrosoftButton } from "@/components/auth/microsoft-button";
 import { PrimaryButton } from "@/components/auth/auth-buttons";
 import { TextField } from "@/components/auth/text-field";
 import { authClient } from "@/lib/auth-client";
+import { sanitizeRedirect } from "@/lib/redirect";
 
 const MICROSOFT_SSO_ENABLED =
   process.env.NEXT_PUBLIC_MICROSOFT_SSO_ENABLED === "true";
@@ -33,13 +34,10 @@ interface FieldErrors {
 export default function SignInPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // Only accept internal redirects. Reject "//evil.com" (protocol-relative)
-  // and any absolute URL — both can be exploited as open redirects.
-  const rawRedirect = searchParams.get("redirect") ?? "/dashboard";
-  const redirectTo =
-    rawRedirect.startsWith("/") && !rawRedirect.startsWith("//")
-      ? rawRedirect
-      : "/dashboard";
+  // Only accept internal redirects — see sanitizeRedirect for the threat
+  // model (absolute URLs, protocol-relative "//", and backslash "/\" escapes
+  // all fall back to /dashboard).
+  const redirectTo = sanitizeRedirect(searchParams.get("redirect"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
