@@ -32,6 +32,11 @@ class CourseResponse(BaseModel):
     instructor_id: uuid.UUID
     enroll_code: str
     settings: dict
+    setup_status: str
+    setup_checklist: dict
+    join_mode: str
+    enroll_code_active: bool
+    context_status: str
     created_at: datetime
     updated_at: datetime
 
