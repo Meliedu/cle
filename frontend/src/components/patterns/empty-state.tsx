@@ -1,13 +1,14 @@
 import { Inbox, type LucideIcon } from "lucide-react";
+import * as React from "react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { toneStyles } from "./state-banner";
+import { toneStyles } from "./tones";
 
 export type EmptyStateVariant = "empty" | "waiting";
 
-export interface EmptyStateProps {
+export interface EmptyStateProps extends React.ComponentProps<"div"> {
   /** `empty` = nothing here yet; `waiting` = pending / processing. */
   readonly variant?: EmptyStateVariant;
   /** Headline shown beneath the icon. */
@@ -18,7 +19,6 @@ export interface EmptyStateProps {
   readonly action?: ReactNode;
   /** Override the default icon (`Inbox` for empty, `Clock` for waiting). */
   readonly icon?: LucideIcon;
-  readonly className?: string;
 }
 
 /**
@@ -33,6 +33,7 @@ export function EmptyState({
   action,
   icon,
   className,
+  ...rest
 }: EmptyStateProps) {
   const isWaiting = variant === "waiting";
   const Icon = icon ?? (isWaiting ? toneStyles.waiting.Icon : Inbox);
@@ -50,6 +51,7 @@ export function EmptyState({
         "flex flex-col items-center justify-center gap-4 px-6 py-16 text-center",
         className
       )}
+      {...rest}
     >
       <div
         className={cn(

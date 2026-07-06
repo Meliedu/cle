@@ -1,63 +1,11 @@
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  Info,
-  Lock,
-  type LucideIcon,
-} from "lucide-react";
+import * as React from "react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-export type StateTone = "info" | "waiting" | "warning" | "blocked" | "success";
+import { toneStyles, type StateTone } from "./tones";
 
-interface ToneStyle {
-  /** Icon that carries the tone's identity (decorative — always aria-hidden). */
-  readonly Icon: LucideIcon;
-  /** Container background + border tint for this tone. */
-  readonly container: string;
-  /** Icon color for this tone. */
-  readonly icon: string;
-}
-
-/**
- * Single source of truth for tone → visual treatment. One entry per semantic
- * tone so every waiting / blocked / warning surface across the product reads
- * consistently. `EmptyState` reuses the `waiting` entry for its waiting variant.
- */
-export const toneStyles: Record<StateTone, ToneStyle> = {
-  info: {
-    Icon: Info,
-    container:
-      "border-[var(--color-accent)]/40 bg-[var(--color-accent-light)]",
-    icon: "text-[var(--color-accent)]",
-  },
-  waiting: {
-    Icon: Clock,
-    container: "border-[var(--color-gold)]/45 bg-[var(--color-cream)]",
-    icon: "text-[var(--color-gold)]",
-  },
-  warning: {
-    Icon: AlertTriangle,
-    container:
-      "border-[var(--color-warning)]/45 bg-[var(--color-warning-light)]",
-    icon: "text-[var(--color-warning)]",
-  },
-  blocked: {
-    Icon: Lock,
-    container: "border-[var(--color-error)]/35 bg-[var(--color-error-light)]",
-    icon: "text-[var(--color-error)]",
-  },
-  success: {
-    Icon: CheckCircle2,
-    container:
-      "border-[var(--color-success)]/40 bg-[var(--color-success-light)]",
-    icon: "text-[var(--color-success)]",
-  },
-};
-
-export interface StateBannerProps {
+export interface StateBannerProps extends React.ComponentProps<"div"> {
   /** Semantic tone; drives icon + color treatment. */
   readonly tone: StateTone;
   /** Short headline describing the state. */
@@ -66,13 +14,13 @@ export interface StateBannerProps {
   readonly reason?: string;
   /** Optional trailing action (link, button). Focus styling is the caller's job. */
   readonly action?: ReactNode;
-  readonly className?: string;
 }
 
 /**
- * Horizontal status banner: tone icon | title + reason | action slot. Announced
- * via `role="status"`; the `waiting` tone adds `aria-live="polite"` so async
- * progress is read out to assistive tech.
+ * Horizontal status banner: tone icon | title + reason | action slot.
+ * Announced via `role="alert"` for warning/blocked tones and `role="status"`
+ * otherwise; the `waiting` tone adds `aria-live="polite"` so async progress is
+ * read out to assistive tech.
  */
 export function StateBanner({
   tone,
@@ -80,12 +28,14 @@ export function StateBanner({
   reason,
   action,
   className,
+  ...rest
 }: StateBannerProps) {
   const { Icon, container, icon } = toneStyles[tone];
+  const isUrgent = tone === "warning" || tone === "blocked";
 
   return (
     <div
-      role="status"
+      role={isUrgent ? "alert" : "status"}
       aria-live={tone === "waiting" ? "polite" : undefined}
       data-tone={tone}
       className={cn(
@@ -93,6 +43,7 @@ export function StateBanner({
         container,
         className
       )}
+      {...rest}
     >
       <Icon
         aria-hidden="true"
