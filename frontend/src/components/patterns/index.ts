@@ -7,5 +7,12 @@ export type { StateBannerProps } from "./state-banner";
 export { EmptyState } from "./empty-state";
 export type { EmptyStateProps, EmptyStateVariant } from "./empty-state";
 
+export { StepWizard, stepStatus } from "./step-wizard";
+export type {
+  StepWizardProps,
+  WizardStep,
+  WizardStepStatus,
+} from "./step-wizard";
+
 export { toneStyles } from "./tones";
 export type { StateTone, ToneStyle } from "./tones";

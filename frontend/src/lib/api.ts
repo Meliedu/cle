@@ -18,13 +18,61 @@ export interface PaginatedEnvelope<T> extends ApiEnvelope<readonly T[]> {
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string | undefined;
+  /**
+   * Machine-readable error code lifted from the response body when present.
+   * Backend gate/validation errors carry a typed `code` either in the standard
+   * `{ error: { code, message } }` envelope or in FastAPI's raw
+   * `{ detail: { code, message } }` HTTPException shape. Callers switch on this
+   * to branch the UI (e.g. `SETUP_INCOMPLETE`, `SETUP_NOT_OPEN`).
+   */
+  readonly code: string | undefined;
 
-  constructor(status: number, userMessage: string, detail?: string) {
+  constructor(
+    status: number,
+    userMessage: string,
+    detail?: string,
+    code?: string
+  ) {
     super(userMessage);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
+}
+
+/**
+ * Pull a `{ code?, message? }` pair out of an error response body, tolerating
+ * both the app envelope (`{ error: { code, message } }`) and FastAPI's native
+ * `{ detail: ... }` shape (object with `code`/`message`, or a bare string).
+ */
+function extractError(payload: unknown): {
+  code?: string;
+  message?: string;
+} {
+  if (!payload || typeof payload !== "object") return {};
+  const body = payload as Record<string, unknown>;
+
+  const envelope = body.error;
+  if (envelope && typeof envelope === "object") {
+    const e = envelope as Record<string, unknown>;
+    return {
+      code: typeof e.code === "string" ? e.code : undefined,
+      message: typeof e.message === "string" ? e.message : undefined,
+    };
+  }
+
+  const detail = body.detail;
+  if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+    const d = detail as Record<string, unknown>;
+    return {
+      code: typeof d.code === "string" ? d.code : undefined,
+      message: typeof d.message === "string" ? d.message : undefined,
+    };
+  }
+  if (typeof detail === "string") return { message: detail };
+
+  return {};
 }
 
 export function isAuthError(err: unknown): boolean {
@@ -85,14 +133,13 @@ export async function apiFetch<T>(
   });
 
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as
-      | { error?: { message?: string } }
-      | null;
-    const backendMessage = payload?.error?.message;
+    const payload = await response.json().catch(() => null);
+    const { code, message } = extractError(payload);
     throw new ApiError(
       response.status,
-      userFacingMessage(response.status, backendMessage),
-      backendMessage
+      userFacingMessage(response.status, message),
+      message,
+      code
     );
   }
 

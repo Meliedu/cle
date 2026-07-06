@@ -56,5 +56,39 @@
     "overallScore": "Overall Score",
     "accuracy": "Accuracy",
     "fluency": "Fluency"
+  },
+  "patterns": {
+    "wizard": {
+      "back": "Back",
+      "next": "Next",
+      "save": "Save",
+      "progress": "Step {current} of {total}"
+    }
+  },
+  "teacher": {
+    "setup": {
+      "title": "Course setup",
+      "steps": {
+        "basics": "Basics",
+        "syllabus": "Syllabus",
+        "materials": "Materials",
+        "schedule": "Schedule & venue",
+        "analyzer_review": "Analyzer review",
+        "ilo_map": "Learning outcomes",
+        "checkpoints": "Checkpoints",
+        "score_policy": "Score policy",
+        "class_code": "Class code"
+      },
+      "publish": "Publish course",
+      "reopen": "Reopen setup",
+      "errors": {
+        "SETUP_INCOMPLETE": "Finish every setup step before publishing.",
+        "SETUP_NOT_OPEN": "This course is not open yet.",
+        "UNKNOWN_STEP": "That setup step is not recognized.",
+        "FINAL_CARD_FIXED": "The final comments card cannot be removed.",
+        "REVIEW_REQUIRED": "This checkpoint can only be edited while it is a draft.",
+        "REMOVE_REASON_REQUIRED": "Choose a reason before removing this card."
+      }
+    }
   }
 }
