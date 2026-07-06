@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ScoreCategoryCreate(BaseModel):
@@ -24,6 +24,20 @@ class ScoreCategoryUpdate(BaseModel):
     # Included so the teacher can reorder categories via PATCH (no separate
     # reorder endpoint in the P1 subset).
     sort: int | None = Field(default=None, ge=0)
+
+    @field_validator("name")
+    @classmethod
+    def _name_present_and_non_empty(cls, v: str | None) -> str:
+        # ``name`` maps to a NOT NULL column. Omitting it entirely is a valid
+        # partial update (this validator does not run on the default), but an
+        # explicit ``null`` or blank string must be rejected at the boundary
+        # (422) rather than reaching the DB as a NULL and 500-ing.
+        if v is None:
+            raise ValueError("name may not be null")
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("name may not be empty")
+        return stripped
 
 
 class ScoreCategoryResponse(BaseModel):

@@ -130,6 +130,46 @@ async def test_update_missing_category_404(
     assert r.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_patch_null_name_rejected(
+    async_client: AsyncClient, owned_course: Course, db_session: AsyncSession
+):
+    """Explicit ``{"name": null}`` must be a 422 boundary rejection, not a 500
+    from writing NULL to the NOT NULL column."""
+    cat = (
+        await db_session.execute(
+            select(ScoreCategory).where(
+                ScoreCategory.course_id == owned_course.id,
+                ScoreCategory.name == "Participation",
+            )
+        )
+    ).scalar_one()
+    r = await async_client.patch(
+        f"/api/courses/{owned_course.id}/score-categories/{cat.id}",
+        json={"name": None},
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_patch_empty_name_rejected(
+    async_client: AsyncClient, owned_course: Course, db_session: AsyncSession
+):
+    cat = (
+        await db_session.execute(
+            select(ScoreCategory).where(
+                ScoreCategory.course_id == owned_course.id,
+                ScoreCategory.name == "Participation",
+            )
+        )
+    ).scalar_one()
+    r = await async_client.patch(
+        f"/api/courses/{owned_course.id}/score-categories/{cat.id}",
+        json={"name": "   "},
+    )
+    assert r.status_code == 422
+
+
 # ----- delete (soft) -----
 
 @pytest.mark.asyncio
