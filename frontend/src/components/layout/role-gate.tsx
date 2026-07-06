@@ -3,10 +3,10 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import { roleHomePath, useRole } from "@/hooks/use-role";
+import { roleHomePath, useRole, type Role } from "@/hooks/use-role";
 
 interface RoleGateProps {
-  readonly allow: "instructor" | "student";
+  readonly allow: Role;
   readonly children: React.ReactNode;
 }
 

@@ -4,20 +4,12 @@ import { useCallback, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import {
-  ChevronsLeft,
-  ChevronsRight,
-  GraduationCap,
-  LayoutDashboard,
-  LogOut,
-  Waypoints,
-  X,
-} from "lucide-react";
+import { ChevronsLeft, ChevronsRight, LogOut, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useRole } from "@/hooks/use-role";
+import { roleHomePath, useRole } from "@/hooks/use-role";
 import { useCourses } from "@/hooks/use-courses";
-import { CANVAS_ENABLED } from "@/lib/features";
+import { navForRole } from "@/components/layout/nav-config";
 import { SidebarSectionNav } from "@/components/layout/sidebar-section-nav";
 
 interface SidebarProps {
@@ -35,7 +27,9 @@ interface RailItem {
 
 const RAIL_WIDTH_COLLAPSED = 72;
 const RAIL_WIDTH_EXPANDED = 248;
-const RAIL_STATE_KEY = "meli:rail-expanded";
+// Persisted as the collapsed flag ("true" = collapsed). Default (absent key)
+// is expanded, matching the Figma teacher/student shells (T003/S014).
+const RAIL_COLLAPSED_KEY = "meli.sidebar.collapsed";
 
 function extractCourseId(pathname: string): string | null {
   const match = pathname.match(/\/courses\/([^/]+)/);
@@ -62,7 +56,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { signOut } = useAuth();
-  const { isInstructor } = useRole();
+  const { role, isInstructor } = useRole();
 
   const courseId = extractCourseId(pathname);
   const activeTab = resolveActiveTab(pathname, searchParams.get("tab"));
@@ -75,15 +69,16 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   // Persist rail expand/collapse between navigations. Initializer runs on the
   // client (this is a "use client" component that only mounts after the auth
   // gate, so there's no SSR hydration mismatch for the sidebar itself).
+  // Default is expanded — collapsed only when the flag is explicitly stored.
   const [expanded, setExpanded] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(RAIL_STATE_KEY) === "true";
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem(RAIL_COLLAPSED_KEY) !== "true";
   });
   const toggleExpanded = useCallback(() => {
     setExpanded((prev) => {
       const next = !prev;
       if (typeof window !== "undefined") {
-        window.localStorage.setItem(RAIL_STATE_KEY, String(next));
+        window.localStorage.setItem(RAIL_COLLAPSED_KEY, String(!next));
       }
       return next;
     });
@@ -93,31 +88,17 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
     void signOut({ redirectUrl: "/sign-in" });
   }, [signOut]);
 
-  // These hrefs intentionally point at legacy /dashboard/* until P0 Task 7 wires config-driven per-lane nav.
-  const primaryItems: readonly RailItem[] = [
-    {
-      id: "home",
-      label: "Dashboard",
-      icon: LayoutDashboard,
-      href: "/dashboard",
-    },
-    {
-      id: "courses",
-      label: "Courses",
-      icon: GraduationCap,
-      href: "/dashboard/courses",
-    },
-    ...(isInstructor && CANVAS_ENABLED
-      ? [
-          {
-            id: "canvas",
-            label: "Canvas sync",
-            icon: Waypoints,
-            href: "/dashboard/canvas",
-          } satisfies RailItem,
-        ]
-      : []),
-  ];
+  // Per-lane primary nav, config-driven from the role (see nav-config.ts).
+  // While the role query is in flight `role` is null — the sidebar only mounts
+  // inside AppShell's loaded gate, but render no items defensively if so.
+  const primaryItems: readonly RailItem[] = role
+    ? navForRole(role).map((item) => ({
+        id: item.href,
+        label: item.label,
+        icon: item.icon,
+        href: item.href,
+      }))
+    : [];
 
   const bottomItems: readonly RailItem[] = [
     {
@@ -128,13 +109,15 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
     },
   ];
 
+  // Exact match, or a subpage of the item (e.g. /teacher/courses/:id
+  // highlights "Courses"). Each nav href is a distinct lane segment, so
+  // startsWith never over-matches a sibling item.
   const isActive = (item: RailItem): boolean => {
     if (!item.href) return false;
-    if (item.href === "/dashboard") {
-      return pathname === "/dashboard";
-    }
     return pathname === item.href || pathname.startsWith(`${item.href}/`);
   };
+
+  const brandHref = role ? roleHomePath(role) : "/dashboard";
 
   const buildRail = (forceExpanded = false) => {
     const isExpanded = forceExpanded || expanded;
@@ -152,7 +135,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           )}
         >
           <Link
-            href="/dashboard"
+            href={brandHref}
             aria-label="Meli home"
             onClick={onMobileClose}
             className="group flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-primary)]/90 transition-transform duration-[var(--duration-normal)] hover:scale-105"

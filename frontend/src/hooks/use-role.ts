@@ -2,7 +2,7 @@
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 
-type Role = "instructor" | "student";
+export type Role = "instructor" | "student";
 
 /** Landing page for a role's lane — single source of truth for lane redirects. */
 export function roleHomePath(role: Role): string {

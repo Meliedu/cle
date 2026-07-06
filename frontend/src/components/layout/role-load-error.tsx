@@ -8,8 +8,10 @@ import { useAuth } from "@/hooks/use-auth";
 /**
  * Full-screen fallback shown when the backend-authoritative role query
  * (`GET /api/auth/me`) fails and settles. Offers a retry (re-fetch) and a
- * sign-out escape hatch. Rendered by both the legacy dashboard layout shell
- * and the `RoleGate` so the affordance lives in exactly one place.
+ * sign-out escape hatch. Rendered only by `AppShell` (which every role-scoped
+ * route tree mounts), so the affordance lives in exactly one place. `RoleGate`
+ * never renders it — by the time a gate mounts, `AppShell` has already resolved
+ * the role query.
  */
 export function RoleLoadError() {
   const queryClient = useQueryClient();
