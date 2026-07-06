@@ -320,6 +320,138 @@
           }
         }
       },
+      "analyzer": {
+        "title": "Review course context",
+        "subtitle": "Meli reads your materials, sessions, and outcomes to check everything a checkpoint could ground on is in place before you continue.",
+        "run": {
+          "title": "Analyze course materials",
+          "reason": "We map your uploaded materials to sessions and learning outcomes, then flag anything that isn't grounded on a source yet.",
+          "action": "Run analysis"
+        },
+        "running": {
+          "title": "Analyzing your course…",
+          "reason": "This runs in the background. Results appear here as soon as it finishes."
+        },
+        "counts": {
+          "documents": "Materials indexed",
+          "meetings": "Sessions",
+          "objectives": "Learning outcomes"
+        },
+        "ready": {
+          "title": "Everything is grounded",
+          "reason": "Each session and outcome maps to your course materials. You're ready to continue."
+        },
+        "missing": {
+          "title": "{count, plural, one {# item needs a source} other {# items need a source}}",
+          "reason": "These outcomes or sessions aren't grounded on any material yet. You can continue for now, but publishing is blocked until every source is in place.",
+          "listLabel": "Missing sources",
+          "fix": "Fix",
+          "kind": {
+            "objective_without_source": "Outcome without a source",
+            "session_without_material": "Session without materials"
+          }
+        },
+        "continue": "Continue",
+        "rerun": "Re-run analysis",
+        "runError": "We couldn't start the analysis. Please try again.",
+        "continueError": "We couldn't save this step. Please try again."
+      },
+      "sessions": {
+        "title": "Review sessions",
+        "subtitle": "Confirm the sessions generated from your schedule and materials. You can still tweak a topic summary or visibility before approving.",
+        "listLabel": "Generated sessions",
+        "loading": "Loading sessions…",
+        "approve": "Approve sessions",
+        "edit": "Edit sessions",
+        "saveError": "We couldn't save that change. Please try again.",
+        "releaseError": "We couldn't update session visibility. Please try again.",
+        "sessionLabel": "Session {index}",
+        "released": "Released",
+        "locked": "Locked",
+        "release": "Release to students",
+        "lock": "Hide from students",
+        "topicLabel": "Topic summary for session {index}",
+        "topicPlaceholder": "What this session covers (optional).",
+        "topicEmpty": "Add a topic summary…",
+        "saveTopic": "Save",
+        "cancel": "Cancel",
+        "empty": {
+          "title": "No sessions yet",
+          "reason": "Go back to the schedule step to add your class sessions."
+        },
+        "aside": {
+          "title": "After approval",
+          "folders": {
+            "title": "Session folders are created",
+            "description": "Each session gets an organized space for its materials."
+          },
+          "calendar": {
+            "title": "Calendar events are added",
+            "description": "Sessions appear on the course calendar for students."
+          },
+          "checkpoints": {
+            "title": "Checkpoints are drafted",
+            "description": "Each session gets grounded learning-check prompts to review next."
+          }
+        }
+      },
+      "checkpoints": {
+        "title": "Review checkpoint drafts",
+        "subtitle": "Meli drafts a checkpoint for each session, grounded on your materials. Review the draft review points and final comments card before continuing. Nothing is shared with students yet.",
+        "generate": "Generate checkpoints",
+        "regenerate": "Regenerate",
+        "generateError": "We couldn't start checkpoint generation. Please try again.",
+        "continue": "Approve checkpoint drafts",
+        "continueError": "We couldn't save this step. Please try again.",
+        "draft": "Draft",
+        "draftNotice": {
+          "title": "These checkpoints are drafts",
+          "reason": "Nothing here is visible to students. Scheduling and sharing checkpoints comes later."
+        },
+        "generating": {
+          "title": "Drafting checkpoints…",
+          "reason": "This runs in the background. Drafts appear here as soon as they're ready."
+        },
+        "empty": {
+          "title": "No checkpoints yet",
+          "reason": "Generate grounded checkpoint drafts for your sessions to review them here."
+        },
+        "cardsLoading": "Loading cards…",
+        "noCards": "This checkpoint has no cards yet.",
+        "promptLabel": "Review point {position} prompt",
+        "removeReason": "Reason for removing",
+        "confirmRemove": "Remove card",
+        "save": "Save",
+        "cancel": "Cancel",
+        "edit": "Edit",
+        "remove": "Remove",
+        "fixed": "Fixed card",
+        "kind": {
+          "review_point": "Review point",
+          "final_comments": "Final comments"
+        },
+        "reason": {
+          "not_needed": "Not needed",
+          "duplicate": "Duplicate",
+          "not_covered": "Not covered this session",
+          "other": "Other"
+        },
+        "errors": {
+          "FINAL_CARD_FIXED": "The final comments card cannot be removed.",
+          "REVIEW_REQUIRED": "This checkpoint can only be edited while it is a draft.",
+          "REMOVE_REASON_REQUIRED": "Choose a reason before removing this card.",
+          "SETUP_INCOMPLETE": "Finish every setup step before publishing.",
+          "SETUP_NOT_OPEN": "This course is not open yet.",
+          "UNKNOWN_STEP": "That step is not recognized.",
+          "generic": "We couldn't save that change. Please try again."
+        },
+        "aside": {
+          "title": "Confidence scale",
+          "description": "Students rate their confidence on each review point from 1 to 5.",
+          "low": "Not clear",
+          "high": "Clear"
+        }
+      },
       "wizard": {
         "subtitle": "Complete each step, then publish to open your course.",
         "breadcrumb": "Courses",

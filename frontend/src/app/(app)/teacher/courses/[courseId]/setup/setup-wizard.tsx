@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
@@ -11,7 +11,10 @@ import { StepBasics } from "@/components/setup/step-basics";
 import { StepSyllabus } from "@/components/setup/step-syllabus";
 import { StepMaterials } from "@/components/setup/step-materials";
 import { StepSchedule } from "@/components/setup/step-schedule";
+import { StepSessions } from "@/components/setup/step-sessions";
+import { StepAnalyzer } from "@/components/setup/step-analyzer";
 import { StepIlo } from "@/components/setup/step-ilo";
+import { StepCheckpoints } from "@/components/setup/step-checkpoints";
 import {
   SETUP_STEP_KEYS,
   useSetupState,
@@ -25,7 +28,9 @@ const IMPLEMENTED_STEPS: ReadonlySet<SetupStepKey> = new Set([
   "syllabus",
   "materials",
   "schedule",
+  "analyzer_review",
   "ilo_map",
+  "checkpoints",
 ]);
 
 function isStepKey(value: string | null): value is SetupStepKey {
@@ -153,9 +158,17 @@ export function SetupWizard({ courseId }: SetupWizardProps) {
         ) : currentId === "materials" ? (
           <StepMaterials courseId={courseId} onComplete={handleNext} />
         ) : currentId === "schedule" ? (
-          <StepSchedule courseId={courseId} onComplete={handleNext} />
+          <ScheduleStep courseId={courseId} onComplete={handleNext} />
+        ) : currentId === "analyzer_review" ? (
+          <StepAnalyzer
+            courseId={courseId}
+            onComplete={handleNext}
+            onNavigate={goToStep}
+          />
         ) : currentId === "ilo_map" ? (
           <StepIlo courseId={courseId} onComplete={handleNext} />
+        ) : currentId === "checkpoints" ? (
+          <StepCheckpoints courseId={courseId} onComplete={handleNext} />
         ) : (
           <StateBanner
             tone="waiting"
@@ -166,6 +179,34 @@ export function SetupWizard({ courseId }: SetupWizardProps) {
       </StepWizard>
     </div>
   );
+}
+
+interface ScheduleStepProps {
+  readonly courseId: string;
+  readonly onComplete: () => void;
+}
+
+/**
+ * The `schedule` wizard step is two Figma screens under one `SETUP_STEP_KEYS`
+ * entry: T018 (schedule-and-venue editor, `StepSchedule`) then T021
+ * (session-generation-review, `StepSessions`). There is deliberately no separate
+ * `sessions` step key — the editor flips the `schedule` flag, and the review is
+ * an informational confirm that folds under it. "Edit sessions" returns to the
+ * editor; "Approve sessions" advances the wizard.
+ */
+function ScheduleStep({ courseId, onComplete }: ScheduleStepProps) {
+  const [phase, setPhase] = useState<"edit" | "review">("edit");
+
+  if (phase === "review") {
+    return (
+      <StepSessions
+        courseId={courseId}
+        onEdit={() => setPhase("edit")}
+        onComplete={onComplete}
+      />
+    );
+  }
+  return <StepSchedule courseId={courseId} onComplete={() => setPhase("review")} />;
 }
 
 function SetupWizardSkeleton() {
