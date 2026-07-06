@@ -21,11 +21,14 @@ interface MeResponse {
  * `users.role` column (GET /api/auth/me), rather than guessing from the
  * email domain client-side. While the query is in flight `role` is null
  * and `isLoaded` is false so consumers never flash the wrong lane.
+ * `isError` is true once the /me query has failed and settled (retries
+ * exhausted), so gates on `isLoaded` can surface a retry affordance
+ * instead of an eternal loading state.
  */
 export function useRole() {
   const { getToken, isSignedIn } = useAuth();
 
-  const { data } = useQuery({
+  const { data, isError } = useQuery({
     queryKey: ["auth", "me"],
     queryFn: async () => {
       const token = await getToken({ template: "backend" });
@@ -53,5 +56,6 @@ export function useRole() {
     isInstructor: role === "instructor",
     isStudent: role === "student",
     isLoaded: role !== null,
+    isError,
   } as const;
 }
