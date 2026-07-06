@@ -6,10 +6,12 @@ import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 
 type AuthedQueryOptions<T> = Omit<
   UseQueryOptions<T>,
-  "queryKey" | "queryFn"
+  "queryKey" | "queryFn" | "enabled"
 > & {
   queryKey: readonly unknown[];
   path: string;
+  /** Only boolean is supported — TanStack's functional `enabled` form does not compose through this helper. */
+  enabled?: boolean;
 };
 
 /**
