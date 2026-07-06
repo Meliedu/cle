@@ -364,6 +364,12 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
     elif task.task_type == "draft_learning_notes":
         from app.services.adaptive_jobs import run_draft_learning_notes
         return await run_draft_learning_notes(session, task.payload)
+    elif task.task_type == "analyze_course_setup":
+        # Read-only course-map + missing-source aggregation (setup wizard
+        # T019/T028). Result is returned so complete_task stores it under
+        # tasks.payload['result'] for GET .../setup/analysis to read back.
+        from app.services.setup_analysis import run_analyze_course_setup
+        return await run_analyze_course_setup(session, task.payload)
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
 
