@@ -10,6 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StepBasics } from "@/components/setup/step-basics";
 import { StepSyllabus } from "@/components/setup/step-syllabus";
 import { StepMaterials } from "@/components/setup/step-materials";
+import { StepSchedule } from "@/components/setup/step-schedule";
+import { StepIlo } from "@/components/setup/step-ilo";
 import {
   SETUP_STEP_KEYS,
   useSetupState,
@@ -17,11 +19,13 @@ import {
   type SetupStepKey,
 } from "@/hooks/use-setup";
 
-/** Steps that already have wizard content this phase (P1 Tasks 12–13). */
+/** Steps that already have wizard content this phase (P1 Tasks 12–14). */
 const IMPLEMENTED_STEPS: ReadonlySet<SetupStepKey> = new Set([
   "basics",
   "syllabus",
   "materials",
+  "schedule",
+  "ilo_map",
 ]);
 
 function isStepKey(value: string | null): value is SetupStepKey {
@@ -148,6 +152,10 @@ export function SetupWizard({ courseId }: SetupWizardProps) {
           <StepSyllabus courseId={courseId} onComplete={handleNext} />
         ) : currentId === "materials" ? (
           <StepMaterials courseId={courseId} onComplete={handleNext} />
+        ) : currentId === "schedule" ? (
+          <StepSchedule courseId={courseId} onComplete={handleNext} />
+        ) : currentId === "ilo_map" ? (
+          <StepIlo courseId={courseId} onComplete={handleNext} />
         ) : (
           <StateBanner
             tone="waiting"

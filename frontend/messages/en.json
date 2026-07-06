@@ -231,6 +231,95 @@
           }
         }
       },
+      "schedule": {
+        "title": "Schedule & venue",
+        "subtitle": "Add each class session with its date, venue, and topic. Meli builds the calendar and grounds session checkpoints on these.",
+        "continue": "Continue",
+        "continueError": "We couldn't save this step. Please try again.",
+        "deleteError": "We couldn't remove that session. Please try again.",
+        "releaseError": "We couldn't update session visibility. Please try again.",
+        "loading": "Loading sessions…",
+        "sessionsLabel": "Scheduled sessions",
+        "sessionsTitle": "Sessions",
+        "sessionLabel": "Session {index}",
+        "sessionsNote": "Folders and checkpoints are created from these sessions after setup.",
+        "editSession": "Edit session",
+        "deleteSession": "Delete session",
+        "release": "Release to students",
+        "lock": "Hide from students",
+        "empty": {
+          "title": "No sessions yet",
+          "reason": "Add your first class session using the form on the left."
+        },
+        "form": {
+          "addTitle": "Add a session",
+          "editTitle": "Edit session",
+          "index": "Session number",
+          "duration": "Duration (minutes)",
+          "date": "Date & time",
+          "venue": "Venue",
+          "venuePlaceholder": "e.g. Room 2503A",
+          "topic": "Topic summary",
+          "topicPlaceholder": "What this session covers (optional).",
+          "add": "Add session",
+          "saveEdit": "Save changes",
+          "cancel": "Cancel",
+          "indexRequired": "Enter a session number of 1 or more.",
+          "dateRequired": "Pick a date and time for this session.",
+          "saveError": "We couldn't save this session. Please try again."
+        }
+      },
+      "ilo": {
+        "title": "ILO map",
+        "subtitle": "Define the intended learning outcomes for this course. Meli maps them to sessions, checkpoints, and practice questions.",
+        "approve": "Approve ILO map",
+        "continueError": "We couldn't save this step. Please try again.",
+        "deleteError": "We couldn't remove that outcome. Please try again.",
+        "loading": "Loading outcomes…",
+        "listLabel": "Intended learning outcomes",
+        "editIlo": "Edit outcome",
+        "deleteIlo": "Delete outcome",
+        "empty": {
+          "title": "No learning outcomes yet",
+          "reason": "Add your first intended learning outcome using the form above."
+        },
+        "bloom": {
+          "remember": "Remember",
+          "understand": "Understand",
+          "apply": "Apply",
+          "analyze": "Analyze",
+          "evaluate": "Evaluate",
+          "create": "Create"
+        },
+        "form": {
+          "addTitle": "Add an outcome",
+          "editTitle": "Edit outcome",
+          "statement": "Outcome statement",
+          "statementPlaceholder": "e.g. Order food and drinks in Mandarin.",
+          "statementRequired": "Enter an outcome statement.",
+          "bloom": "Bloom level",
+          "bloomNone": "No level",
+          "add": "Add outcome",
+          "saveEdit": "Save changes",
+          "cancel": "Cancel",
+          "saveError": "We couldn't save this outcome. Please try again."
+        },
+        "aside": {
+          "title": "Used for",
+          "sessions": {
+            "title": "Session topics",
+            "description": "Outcomes anchor what each session teaches."
+          },
+          "checkpoints": {
+            "title": "Checkpoint review points",
+            "description": "Generated checkpoints check confidence against outcomes."
+          },
+          "practice": {
+            "title": "Practice questions",
+            "description": "Quizzes and flashcards target the outcomes you set."
+          }
+        }
+      },
       "wizard": {
         "subtitle": "Complete each step, then publish to open your course.",
         "breadcrumb": "Courses",
