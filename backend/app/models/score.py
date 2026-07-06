@@ -6,7 +6,21 @@ from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, JSON, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, UUIDPrimaryKeyMixin
+from app.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
+
+
+class ScoreCategory(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
+    """Teacher-defined score categories for the course (T024 score-policy step)."""
+
+    __tablename__ = "score_categories"
+
+    course_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    weight: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    points_pool: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    sort: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class PronunciationScore(UUIDPrimaryKeyMixin, Base):

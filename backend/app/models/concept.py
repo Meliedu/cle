@@ -106,7 +106,7 @@ class ConceptTag(Base):
     __table_args__ = (
         CheckConstraint(
             "target_kind IN ('chunk','question','flashcard_card','pronunciation_item',"
-            "'pool_item','objective','meeting','assignment')",
+            "'pool_item','objective','meeting','assignment','checkpoint_card')",
             name="ck_concept_tags_target_kind_valid",
         ),
         CheckConstraint(

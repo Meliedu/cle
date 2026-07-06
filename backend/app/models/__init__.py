@@ -3,6 +3,7 @@ from app.models.base import Base
 from app.models.cron_run import CronRun
 from app.models.canvas import CanvasSyncEvent, CanvasUserCredential, PendingEnrollment
 from app.models.integration import CanvasIntegration
+from app.models.checkpoint import Checkpoint, CheckpointCard
 from app.models.chunk import Chunk
 from app.models.course import Course, Enrollment
 from app.models.document import Document
@@ -21,7 +22,7 @@ from app.models.pronunciation import (
     PronunciationSet,
     PronunciationSetDocument,
 )
-from app.models.score import PronunciationScore, StudentProgress
+from app.models.score import PronunciationScore, ScoreCategory, StudentProgress
 from app.models.live_answer import LiveAnswer
 from app.models.session import LiveSession, SessionSummary
 from app.models.summary import CourseSummary
@@ -65,6 +66,9 @@ __all__ = [
     "User",
     "Course",
     "Enrollment",
+    "Checkpoint",
+    "CheckpointCard",
+    "ScoreCategory",
     "Document",
     "Chunk",
     "Quiz",
