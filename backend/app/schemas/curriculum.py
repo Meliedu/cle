@@ -79,6 +79,18 @@ class CourseMeetingResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+ReleaseState = Literal["locked", "released", "completed", "archived"]
+
+
+class MeetingReleaseStateRequest(BaseModel):
+    """Schedule-and-venue step (T018): transition the visibility axis and,
+    optionally, set the session topic summary in the same call. ``release_state``
+    is validated at the boundary; the endpoint enforces legal transitions."""
+
+    release_state: ReleaseState
+    topic_summary: str | None = None
+
+
 # ----- Objectives -----
 
 BloomLevel = Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]

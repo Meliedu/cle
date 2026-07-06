@@ -13,11 +13,23 @@ from app.schemas.curriculum import (
     CourseMeetingCreate,
     CourseMeetingResponse,
     CourseMeetingUpdate,
+    MeetingReleaseStateRequest,
 )
 
 router = APIRouter(prefix="/courses/{course_id}", tags=["curriculum"])
 
 MAX_CALENDAR_DAYS = 366
+
+# release_state visibility axis (Decision 2). Legal transitions only — a
+# terminal ``archived`` and no jumping straight from locked to completed.
+# locked<->released is reversible (unrelease a session); released->completed
+# marks it taught-and-visible; completed->archived retires it.
+_RELEASE_TRANSITIONS: dict[str, set[str]] = {
+    "locked": {"released"},
+    "released": {"completed", "locked"},
+    "completed": {"archived"},
+    "archived": set(),
+}
 
 
 async def _accessible_course(
@@ -104,6 +116,57 @@ async def update_meeting(
             status_code=status.HTTP_409_CONFLICT,
             detail="meeting_index already used in this course",
         )
+    await db.refresh(meeting)
+    return APIResponse(success=True, data=CourseMeetingResponse.model_validate(meeting))
+
+
+@router.patch(
+    "/meetings/{meeting_id}/release-state",
+    response_model=APIResponse[CourseMeetingResponse],
+)
+async def set_release_state(
+    meeting_id: uuid.UUID,
+    body: MeetingReleaseStateRequest,
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+) -> APIResponse[CourseMeetingResponse]:
+    """Transition a meeting's ``release_state`` (student visibility axis) and,
+    optionally, set its ``topic_summary`` (schedule-and-venue step, T018).
+
+    Instructor + ownership enforced via ``get_owned_course`` (404 on non-owner).
+    Only the legal transitions in ``_RELEASE_TRANSITIONS`` are allowed; anything
+    else returns a typed 409 the UI maps.
+    """
+    result = await db.execute(
+        select(CourseMeeting).where(
+            CourseMeeting.id == meeting_id,
+            CourseMeeting.course_id == course.id,
+            CourseMeeting.deleted_at.is_(None),
+        )
+    )
+    meeting = result.scalar_one_or_none()
+    if not meeting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
+        )
+
+    target = body.release_state
+    if target not in _RELEASE_TRANSITIONS.get(meeting.release_state, set()):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "ILLEGAL_RELEASE_TRANSITION",
+                "message": (
+                    f"Illegal release_state transition "
+                    f"{meeting.release_state}->{target}"
+                ),
+            },
+        )
+
+    meeting.release_state = target
+    if body.topic_summary is not None:
+        meeting.topic_summary = body.topic_summary
+    await db.commit()
     await db.refresh(meeting)
     return APIResponse(success=True, data=CourseMeetingResponse.model_validate(meeting))
 
