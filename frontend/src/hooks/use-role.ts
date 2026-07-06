@@ -4,6 +4,11 @@ import { useAuthedQuery } from "@/hooks/use-authed-query";
 
 type Role = "instructor" | "student";
 
+/** Landing page for a role's lane — single source of truth for lane redirects. */
+export function roleHomePath(role: Role): string {
+  return role === "instructor" ? "/teacher/dashboard" : "/student/dashboard";
+}
+
 interface MeResponse {
   readonly id: string;
   readonly better_auth_id: string;

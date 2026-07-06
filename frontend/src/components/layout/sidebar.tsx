@@ -93,6 +93,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
     void signOut({ redirectUrl: "/sign-in" });
   }, [signOut]);
 
+  // These hrefs intentionally point at legacy /dashboard/* until P0 Task 7 wires config-driven per-lane nav.
   const primaryItems: readonly RailItem[] = [
     {
       id: "home",
