@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, String
+from sqlalchemy import JSON, CheckConstraint, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -20,3 +20,6 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     full_name: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String(500))
+    notification_prefs: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict, server_default=text("'{}'")
+    )

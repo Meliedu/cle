@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { LogOut, Settings as SettingsIcon, User as UserIcon } from "lucide-react";
+import { Bell, LogOut, User as UserIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useAuth, useUser } from "@/hooks/use-auth";
+import { useRole } from "@/hooks/use-role";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,8 +17,14 @@ import { cn } from "@/lib/utils";
 export function UserButton() {
   const { user } = useUser();
   const { signOut } = useAuth();
+  const { isStudent } = useRole();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+
+  // Link into the caller's role lane. Falls back to the instructor lane while
+  // the role is still resolving; both lanes are RoleGate-guarded so a wrong
+  // guess redirects rather than 404s.
+  const lane = isStudent ? "student" : "teacher";
 
   useEffect(() => {
     if (!open) return;
@@ -87,7 +94,7 @@ export function UserButton() {
           <div className="h-px bg-[var(--color-border)]/60" />
           <Link
             role="menuitem"
-            href="/dashboard/settings"
+            href={`/${lane}/profile`}
             onClick={() => setOpen(false)}
             className={cn(
               "flex w-full items-center gap-2 px-3 py-2 text-left text-sm",
@@ -95,8 +102,21 @@ export function UserButton() {
               "hover:bg-[var(--color-surface-hover)] focus-visible:bg-[var(--color-surface-hover)] focus-visible:outline-none",
             )}
           >
-            <SettingsIcon className="size-4" />
-            Account settings
+            <UserIcon className="size-4" />
+            Profile
+          </Link>
+          <Link
+            role="menuitem"
+            href={`/${lane}/notifications`}
+            onClick={() => setOpen(false)}
+            className={cn(
+              "flex w-full items-center gap-2 px-3 py-2 text-left text-sm",
+              "text-[var(--color-text)] transition-colors duration-[var(--duration-fast)]",
+              "hover:bg-[var(--color-surface-hover)] focus-visible:bg-[var(--color-surface-hover)] focus-visible:outline-none",
+            )}
+          >
+            <Bell className="size-4" />
+            Notifications
           </Link>
           <button
             role="menuitem"
