@@ -11,7 +11,12 @@ export interface CourseResponse {
   readonly semester: string | null;
   readonly instructor_id: string;
   readonly enroll_code: string;
+  readonly enroll_code_active: boolean;
   readonly settings: Record<string, unknown>;
+  readonly setup_status: string;
+  readonly setup_checklist: Record<string, boolean>;
+  readonly join_mode: string;
+  readonly context_status: string;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -115,6 +120,57 @@ export function useCourse(courseId: string) {
     retry: (count, error) => {
       if (isAuthError(error)) return false;
       return count < 3;
+    },
+  });
+}
+
+/**
+ * POST `/courses/{id}/enroll-code/rotate` — mint a fresh join code and
+ * reactivate joining (T025 class-code step). Writes the returned course row
+ * back into the caches so the revealed code updates immediately.
+ */
+export function useRotateEnrollCode(courseId: string) {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation<CourseResponse, Error, void>({
+    mutationFn: async () => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const response = await apiFetch<ApiEnvelope<CourseResponse>>(
+        `/courses/${courseId}/enroll-code/rotate`,
+        { method: "POST", token }
+      );
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["courses", courseId], data);
+      queryClient.invalidateQueries({ queryKey: ["courses"] });
+    },
+  });
+}
+
+/**
+ * POST `/courses/{id}/enroll-code/deactivate` — stop accepting joins on the
+ * current code without discarding it (T025 class-code step).
+ */
+export function useDeactivateEnrollCode(courseId: string) {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation<CourseResponse, Error, void>({
+    mutationFn: async () => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const response = await apiFetch<ApiEnvelope<CourseResponse>>(
+        `/courses/${courseId}/enroll-code/deactivate`,
+        { method: "POST", token }
+      );
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["courses", courseId], data);
+      queryClient.invalidateQueries({ queryKey: ["courses"] });
     },
   });
 }

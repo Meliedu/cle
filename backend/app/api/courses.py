@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db, require_instructor
+from app.api.deps import get_current_user, get_db, get_owned_course, require_instructor
 from app.models.course import Course, Enrollment
 from app.models.score import ScoreCategory
 from app.models.user import User
@@ -241,6 +241,57 @@ async def enroll_by_code(
     enrollment = Enrollment(course_id=course.id, user_id=user.id, role=user.role)
     db.add(enrollment)
     await db.commit()
+    return APIResponse(success=True, data=CourseResponse.model_validate(course))
+
+
+@router.post(
+    "/{course_id}/enroll-code/rotate",
+    response_model=APIResponse[CourseResponse],
+)
+async def rotate_enroll_code(
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+):
+    """Mint a fresh, unique enrollment code and (re)activate joining (T025).
+
+    Rotating invalidates the previous code (it will no longer resolve via
+    ``enroll-by-code``) and always leaves the course open to joins, so this
+    doubles as the "reactivate with a new code" action after a deactivate.
+    """
+    for _ in range(5):
+        course.enroll_code = _generate_enroll_code()
+        course.enroll_code_active = True
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            continue
+        await db.refresh(course)
+        return APIResponse(success=True, data=CourseResponse.model_validate(course))
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Could not allocate enrollment code, please retry",
+    )
+
+
+@router.post(
+    "/{course_id}/enroll-code/deactivate",
+    response_model=APIResponse[CourseResponse],
+)
+async def deactivate_enroll_code(
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+):
+    """Stop accepting joins on the current code without discarding it (T025).
+
+    The code string is preserved so the teacher can still reveal it or rotate
+    to a fresh one later. The P2 join flow reads ``enroll_code_active`` to
+    refuse joins; here we only flip the column.
+    """
+    course.enroll_code_active = False
+    await db.commit()
+    await db.refresh(course)
     return APIResponse(success=True, data=CourseResponse.model_validate(course))
 
 

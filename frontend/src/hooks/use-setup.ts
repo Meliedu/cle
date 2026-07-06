@@ -177,6 +177,89 @@ export function useScoreCategories(courseId: string) {
   });
 }
 
+// ----- score-category mutations (T024 score-policy step) -----
+
+/** Create/update payload for a score category (mirrors `ScoreCategoryCreate`). */
+export interface ScoreCategoryInput {
+  readonly name: string;
+  /** Percentage weight toward the course record; `null` = ungraded. */
+  readonly weight?: number | null;
+  readonly points_pool?: number | null;
+  readonly sort?: number;
+}
+
+/** POST `/courses/{id}/score-categories` — add a category, invalidate the list. */
+export function useCreateScoreCategory(courseId: string) {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation<ScoreCategory, Error, ScoreCategoryInput>({
+    mutationFn: async (input) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const response = await apiFetch<ApiEnvelope<ScoreCategory>>(
+        `/courses/${courseId}/score-categories`,
+        { method: "POST", token, body: JSON.stringify(input) }
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: setupKeys.scoreCategories(courseId),
+      });
+    },
+  });
+}
+
+interface UpdateScoreCategoryInput extends Partial<ScoreCategoryInput> {
+  readonly id: string;
+}
+
+/** PATCH `/courses/{id}/score-categories/{categoryId}` — edit name/weight. */
+export function useUpdateScoreCategory(courseId: string) {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation<ScoreCategory, Error, UpdateScoreCategoryInput>({
+    mutationFn: async ({ id, ...patch }) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const response = await apiFetch<ApiEnvelope<ScoreCategory>>(
+        `/courses/${courseId}/score-categories/${id}`,
+        { method: "PATCH", token, body: JSON.stringify(patch) }
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: setupKeys.scoreCategories(courseId),
+      });
+    },
+  });
+}
+
+/** DELETE `/courses/{id}/score-categories/{categoryId}` — soft-remove. */
+export function useDeleteScoreCategory(courseId: string) {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, string>({
+    mutationFn: async (categoryId) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      await apiFetch<ApiEnvelope<null>>(
+        `/courses/${courseId}/score-categories/${categoryId}`,
+        { method: "DELETE", token }
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: setupKeys.scoreCategories(courseId),
+      });
+    },
+  });
+}
+
 // ----- mutations -----
 
 interface StepUpdate {

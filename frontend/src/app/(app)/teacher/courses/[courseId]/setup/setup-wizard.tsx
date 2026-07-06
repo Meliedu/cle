@@ -15,6 +15,9 @@ import { StepSessions } from "@/components/setup/step-sessions";
 import { StepAnalyzer } from "@/components/setup/step-analyzer";
 import { StepIlo } from "@/components/setup/step-ilo";
 import { StepCheckpoints } from "@/components/setup/step-checkpoints";
+import { StepScorePolicy } from "@/components/setup/step-score-policy";
+import { StepClassCode } from "@/components/setup/step-class-code";
+import { StepMemoryImport } from "@/components/setup/step-memory-import";
 import {
   SETUP_STEP_KEYS,
   useSetupState,
@@ -22,7 +25,7 @@ import {
   type SetupStepKey,
 } from "@/hooks/use-setup";
 
-/** Steps that already have wizard content this phase (P1 Tasks 12–14). */
+/** Steps that already have wizard content this phase (P1 Tasks 12–16). */
 const IMPLEMENTED_STEPS: ReadonlySet<SetupStepKey> = new Set([
   "basics",
   "syllabus",
@@ -31,6 +34,8 @@ const IMPLEMENTED_STEPS: ReadonlySet<SetupStepKey> = new Set([
   "analyzer_review",
   "ilo_map",
   "checkpoints",
+  "score_policy",
+  "class_code",
 ]);
 
 function isStepKey(value: string | null): value is SetupStepKey {
@@ -169,13 +174,20 @@ export function SetupWizard({ courseId }: SetupWizardProps) {
           <StepIlo courseId={courseId} onComplete={handleNext} />
         ) : currentId === "checkpoints" ? (
           <StepCheckpoints courseId={courseId} onComplete={handleNext} />
-        ) : (
-          <StateBanner
-            tone="waiting"
-            title={t(`steps.${currentId}`)}
-            reason={t("wizard.comingSoon")}
-          />
-        )}
+        ) : currentId === "score_policy" ? (
+          <StepScorePolicy courseId={courseId} onComplete={handleNext} />
+        ) : currentId === "class_code" ? (
+          <div className="space-y-8">
+            <StepClassCode courseId={courseId} onComplete={handleNext} />
+            {/*
+              T023 previous-term memory import is not a `SETUP_STEP_KEYS` entry —
+              it never gates publish. It surfaces here as a flag-gated, skippable
+              teaser at the end of setup and renders nothing unless
+              `NEXT_PUBLIC_MEMORY_IMPORT=enabled` (real import ships in P7).
+            */}
+            <StepMemoryImport />
+          </div>
+        ) : null}
       </StepWizard>
     </div>
   );

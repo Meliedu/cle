@@ -452,6 +452,86 @@
           "high": "Clear"
         }
       },
+      "scorePolicy": {
+        "title": "Score policy",
+        "subtitle": "Choose how each kind of Meli activity counts toward the course record. You can rename categories, set a weight, add your own, or remove the ones you don't use.",
+        "categoriesTitle": "Score categories",
+        "addCategory": "Add category",
+        "newCategoryName": "New category",
+        "loading": "Loading score categories…",
+        "nameLabel": "Name",
+        "weightLabel": "Weight",
+        "ungraded": "Ungraded",
+        "save": "Save",
+        "removeCategory": "Remove {name}",
+        "continue": "Save policy",
+        "nameRequired": "Give this category a name.",
+        "weightInvalid": "Weight must be a number of 0 or more.",
+        "addError": "We couldn't add a category. Please try again.",
+        "saveError": "We couldn't save this category. Please try again.",
+        "removeError": "We couldn't remove this category. Please try again.",
+        "continueError": "We couldn't save this step. Please try again.",
+        "empty": {
+          "title": "No score categories yet",
+          "reason": "Add a category to describe how activities count toward the course record."
+        },
+        "aside": {
+          "title": "Student motivation",
+          "grounded": {
+            "title": "Weights shape effort",
+            "description": "Categories that count toward the record steer where students spend time."
+          },
+          "visible": {
+            "title": "Shown in checklists",
+            "description": "Students see clearly which activities are graded and which are practice."
+          },
+          "flexible": {
+            "title": "Adjust anytime",
+            "description": "Rename, reweight, or remove categories as the course evolves."
+          }
+        }
+      },
+      "classCode": {
+        "title": "Course join code",
+        "subtitle": "Share this code only when students should join. It stays hidden here until you reveal it.",
+        "loading": "Loading join code…",
+        "loadErrorTitle": "Couldn't load the join code",
+        "loadError": "We couldn't load this course's join code. Please try again.",
+        "codeHiddenLabel": "Course join code (hidden)",
+        "codeVisibleLabel": "Course join code",
+        "codeLabel": "Course join code",
+        "active": "Active",
+        "inactive": "Inactive",
+        "reveal": "Reveal code",
+        "hide": "Hide code",
+        "copy": "Copy",
+        "copied": "Copied",
+        "rotate": "New code",
+        "reactivate": "Reactivate with new code",
+        "deactivate": "Deactivate join access",
+        "activeHint": "Students who enter this code can join the course.",
+        "inactiveHint": "Joining is turned off. Rotate to a fresh code to reopen it.",
+        "copyError": "We couldn't copy the code. Reveal it and copy manually.",
+        "rotateError": "We couldn't rotate the code. Please try again.",
+        "deactivateError": "We couldn't deactivate the code. Please try again.",
+        "continue": "Continue",
+        "continueError": "We couldn't save this step. Please try again.",
+        "aside": {
+          "title": "Join access",
+          "created": "This code was created during setup.",
+          "share": "Students enter this code to access the course.",
+          "deactivate": "Deactivate it once the students you expected have joined."
+        }
+      },
+      "memoryImport": {
+        "title": "Previous course memory",
+        "comingSoonBadge": "Coming in P7",
+        "skip": "Skip for now",
+        "stub": {
+          "title": "Reuse a prior term's evidence — coming later",
+          "reason": "Importing improvement notes, reusable activities, and weak-concept patterns from a previous offering arrives in a later release. This step is optional and never blocks publishing."
+        }
+      },
       "wizard": {
         "subtitle": "Complete each step, then publish to open your course.",
         "breadcrumb": "Courses",
