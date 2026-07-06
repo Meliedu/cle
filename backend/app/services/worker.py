@@ -370,6 +370,12 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
         # tasks.payload['result'] for GET .../setup/analysis to read back.
         from app.services.setup_analysis import run_analyze_course_setup
         return await run_analyze_course_setup(session, task.payload)
+    elif task.task_type == "generate_checkpoints":
+        # Grounded, DRAFT-only checkpoint drafting (setup wizard T022). Creates
+        # one draft Checkpoint + review-point/final cards per meeting and
+        # enqueues concept-tag inheritance for chunk-anchored cards.
+        from app.services.checkpoint_generation import run_generate_checkpoints
+        return await run_generate_checkpoints(session, task.payload)
     else:
         raise ValueError(f"Unknown task type: {task.task_type}")
 
