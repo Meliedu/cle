@@ -13,10 +13,14 @@ import { levelHintLabel } from "./level-hint";
 interface StepReadinessSummaryProps {
   readonly courseId: string;
   readonly code: string;
-  /** Trigger the terminal join (Task 12 builds the actual enroll action). */
+  /** Trigger the terminal join (the funnel runs `enroll-by-code` + branches). */
   readonly onJoin: () => void;
   /** Return to the deep preview (S010). */
   readonly onBack?: () => void;
+  /** True while the enroll request is in flight (disables the CTA). */
+  readonly isJoining?: boolean;
+  /** A non-branch join error (network/server) to surface inline at the CTA. */
+  readonly joinError?: string | null;
 }
 
 /** Phases we render a friendly label for; anything else falls back to its id. */
@@ -58,6 +62,8 @@ export function StepReadinessSummary({
   code,
   onJoin,
   onBack,
+  isJoining = false,
+  joinError = null,
 }: StepReadinessSummaryProps) {
   const t = useTranslations("student.join");
   const summary = useReadinessSummary(courseId, code);
@@ -148,16 +154,28 @@ export function StepReadinessSummary({
         />
       ) : null}
 
+      {joinError ? (
+        <p role="alert" className="text-[13px] text-[var(--color-error)]">
+          {joinError}
+        </p>
+      ) : null}
+
       <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
         {onBack ? (
-          <Button type="button" variant="outline" size="lg" onClick={onBack}>
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            onClick={onBack}
+            disabled={isJoining}
+          >
             {t("summary.back")}
           </Button>
         ) : (
           <span />
         )}
-        <Button type="button" size="lg" onClick={onJoin}>
-          {t("summary.join")}
+        <Button type="button" size="lg" onClick={onJoin} disabled={isJoining}>
+          {isJoining ? t("summary.joining") : t("summary.join")}
         </Button>
       </div>
     </div>

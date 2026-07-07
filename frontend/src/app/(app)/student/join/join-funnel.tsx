@@ -4,8 +4,7 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 
-import { PageHeader, StateBanner } from "@/components/patterns";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/patterns";
 import { StepCodeEntry } from "@/components/join/step-code-entry";
 import { StepShortPreview } from "@/components/join/step-short-preview";
 import { StepReadinessPhase } from "@/components/join/step-readiness-phase";
@@ -13,24 +12,27 @@ import { StepDiagnostic } from "@/components/join/step-diagnostic";
 import { StepRecommendation } from "@/components/join/step-recommendation";
 import { StepDeepPreview } from "@/components/join/step-deep-preview";
 import { StepReadinessSummary } from "@/components/join/step-readiness-summary";
+import { StateJoinSuccess } from "@/components/join/state-join-success";
+import { StatePendingApproval } from "@/components/join/state-pending-approval";
+import { StateCourseNotOpen } from "@/components/join/state-course-not-open";
 import {
   StateInvalidCode,
   type InvalidCodeReason,
 } from "@/components/join/state-invalid-code";
 import {
+  branchFromEnroll,
   branchFromLookup,
   joinErrorReason,
+  useEnrollByCode,
   useLookupCode,
   type CourseLookup,
 } from "@/hooks/use-enrollment";
 
 /**
- * The full join funnel steps (S003 → … → terminal). Tasks 9–10 wire `code`
- * (S003), `invalid_code` (S004), `preview` (S005 short preview), `survey`
- * (S006 eligibility survey) and `ready_check` (S007) — all config-driven from
- * the pilot readiness definitions. The later steps (diagnostic / recommendation
- * / deep_preview / summary / success / pending) are declared here so the
- * container's shape is stable as Tasks 11–12 fill them in.
+ * The full join funnel steps (S003 → … → terminal). Tasks 9–11 wire `code`
+ * (S003) through `summary` (S011); Task 12 lands the terminal states: `success`
+ * (S013), `pending` (awaiting approval), and `not_open` (S012). `invalid_code`
+ * (S004) doubles as the terminal for a deactivated code discovered at join time.
  */
 export type FunnelStep =
   | "code"
@@ -43,7 +45,8 @@ export type FunnelStep =
   | "deep_preview"
   | "summary"
   | "success"
-  | "pending";
+  | "pending"
+  | "not_open";
 
 interface FunnelState {
   readonly step: FunnelStep;
@@ -51,6 +54,8 @@ interface FunnelState {
   readonly courseId: string | null;
   readonly lookup: CourseLookup | null;
   readonly invalidReason: InvalidCodeReason;
+  /** The joined course's name, captured from the enroll result for S012/S013. */
+  readonly courseName: string;
 }
 
 const INITIAL_STATE: FunnelState = {
@@ -59,22 +64,31 @@ const INITIAL_STATE: FunnelState = {
   courseId: null,
   lookup: null,
   invalidReason: "not_found",
+  courseName: "",
 };
 
+interface JoinFunnelProps {
+  /** Deep-link prefill from `/student/join?code=XXXX` (emailed invite link). */
+  readonly initialCode?: string;
+}
+
 /**
- * Client orchestrator for the student join funnel. Owns the funnel step state
- * and the code-lookup mutation; S003 hands it a normalized code, it resolves
- * the code and either advances (valid + active) or drops to S004
- * (invalid/inactive). A `pending` student never reaches the workspace here —
- * enrollment is the funnel's terminal step (Task 12), not this scaffold.
+ * Client orchestrator for the student join funnel. Owns the funnel step state,
+ * the code-lookup mutation, and the terminal `enroll-by-code` action. S003 hands
+ * it a normalized code; it resolves and either advances (valid + active) or
+ * drops to S004. The summary's "Join course" CTA runs the real enroll and
+ * branches to a terminal screen — a `pending` student is NEVER routed into the
+ * workspace (a code_plus_approval course is unreadable until approved).
  */
-export function JoinFunnel() {
+export function JoinFunnel({ initialCode }: JoinFunnelProps) {
   const t = useTranslations("student.join");
   const router = useRouter();
   const lookup = useLookupCode();
+  const enroll = useEnrollByCode();
 
   const [state, setState] = useState<FunnelState>(INITIAL_STATE);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   const goToInvalid = useCallback((reason: InvalidCodeReason) => {
     setState((prev) => ({ ...prev, step: "invalid_code", invalidReason: reason }));
@@ -100,6 +114,7 @@ export function JoinFunnel() {
           courseId: branch.courseId,
           lookup: branch.lookup,
           invalidReason: "not_found",
+          courseName: branch.lookup.name,
         });
       } catch (error: unknown) {
         const reason = joinErrorReason(error);
@@ -115,14 +130,62 @@ export function JoinFunnel() {
     [goToInvalid, lookup, t]
   );
 
+  /**
+   * Terminal join. Runs `enroll-by-code` and branches identically to the dialog:
+   * active → S013, pending → awaiting-approval. Gate errors map to their state:
+   * SETUP_NOT_OPEN → S012, JOIN_CODE_INACTIVE → S004; anything else stays on the
+   * summary with an inline retry message.
+   */
+  const handleJoin = useCallback(async () => {
+    setJoinError(null);
+    try {
+      const result = await enroll.mutateAsync(state.code);
+      const branch = branchFromEnroll(result);
+      setState((prev) => ({
+        ...prev,
+        step: branch.kind === "pending" ? "pending" : "success",
+        courseId: branch.course.id,
+        courseName: branch.course.name,
+      }));
+    } catch (error: unknown) {
+      const reason = joinErrorReason(error);
+      if (reason === "not_open") {
+        goTo("not_open");
+        return;
+      }
+      if (reason === "inactive") {
+        goToInvalid("inactive");
+        return;
+      }
+      if (reason === "invalid") {
+        goToInvalid("not_found");
+        return;
+      }
+      setJoinError(t("joinError"));
+    }
+  }, [enroll, goTo, goToInvalid, state.code, t]);
+
   const resetToCode = useCallback(() => {
     setSubmitError(null);
+    setJoinError(null);
     setState(INITIAL_STATE);
     lookup.reset();
-  }, [lookup]);
+    enroll.reset();
+  }, [enroll, lookup]);
 
   const backToCourses = useCallback(() => {
     router.push("/student/courses");
+  }, [router]);
+
+  const openCourse = useCallback(() => {
+    // The per-course workspace route is not built in this phase; land the
+    // student on their courses list (the joined, active course now appears
+    // there) rather than a `/student/courses/{id}` 404.
+    router.push("/student/courses");
+  }, [router]);
+
+  const goToDashboard = useCallback(() => {
+    router.push("/student/dashboard");
   }, [router]);
 
   return (
@@ -134,6 +197,7 @@ export function JoinFunnel() {
           onSubmit={handleCodeSubmit}
           isSubmitting={lookup.isPending}
           submitError={submitError}
+          initialCode={initialCode}
         />
       ) : state.step === "invalid_code" ? (
         <StateInvalidCode
@@ -189,27 +253,34 @@ export function JoinFunnel() {
         <StepReadinessSummary
           courseId={state.courseId}
           code={state.code}
-          onJoin={() => goTo("success")}
+          onJoin={handleJoin}
           onBack={() => goTo("deep_preview")}
+          isJoining={enroll.isPending}
+          joinError={joinError}
+        />
+      ) : state.step === "success" ? (
+        <StateJoinSuccess
+          courseName={state.courseName}
+          onOpenCourse={openCourse}
+          onDashboard={goToDashboard}
+        />
+      ) : state.step === "pending" ? (
+        <StatePendingApproval
+          courseName={state.courseName}
+          onBackToCourses={backToCourses}
+        />
+      ) : state.step === "not_open" ? (
+        <StateCourseNotOpen
+          courseName={state.courseName || state.lookup?.name || ""}
+          onTryAgain={resetToCode}
+          onBackToCourses={backToCourses}
         />
       ) : (
-        <div className="space-y-6">
-          {/*
-            Placeholder for the terminal join states (S012/S013) that Task 12
-            fills in: course-not-open, pending-approval, and join-success. The
-            readiness summary's "Join course" CTA advances here; until Task 12
-            wires the enroll action the funnel parks on this state rather than
-            dead-ending on a blank div.
-          */}
-          <StateBanner
-            tone="info"
-            title={t("comingSoon.title")}
-            reason={t("comingSoon.reason")}
-          />
-          <Button type="button" variant="outline" size="lg" onClick={resetToCode}>
-            {t("comingSoon.back")}
-          </Button>
-        </div>
+        <StepCodeEntry
+          onSubmit={handleCodeSubmit}
+          isSubmitting={lookup.isPending}
+          submitError={submitError}
+        />
       )}
     </div>
   );

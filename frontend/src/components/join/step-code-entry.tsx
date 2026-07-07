@@ -26,6 +26,11 @@ interface StepCodeEntryProps {
    * validation is handled locally and takes precedence.
    */
   readonly submitError?: string | null;
+  /**
+   * Prefill value for a deep-linked invite (`/student/join?code=XXXX`) so an
+   * emailed link lands the student on S003 with the code already filled in.
+   */
+  readonly initialCode?: string;
 }
 
 /**
@@ -39,9 +44,10 @@ export function StepCodeEntry({
   onSubmit,
   isSubmitting,
   submitError,
+  initialCode,
 }: StepCodeEntryProps) {
   const t = useTranslations("student.join");
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(() => normalizeCode(initialCode ?? ""));
   const [lengthError, setLengthError] = useState(false);
 
   const handleSubmit = useCallback(

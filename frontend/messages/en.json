@@ -709,13 +709,27 @@
         "errorTitle": "We couldn't load your summary",
         "errorReason": "Your readiness summary is unavailable right now. Please try again.",
         "back": "Back",
-        "join": "Join course"
+        "join": "Join course",
+        "joining": "Joining…"
       },
-      "comingSoon": {
-        "title": "Finishing your join",
-        "reason": "The final join step is on its way.",
-        "back": "Enter a different code"
-      }
+      "success": {
+        "title": "You joined {course}",
+        "reason": "Your course workspace is ready.",
+        "openCourse": "Open course",
+        "dashboard": "Go to dashboard"
+      },
+      "pending": {
+        "title": "Waiting for instructor approval",
+        "reason": "Your request to join {course} was sent. You'll get access once your instructor approves it.",
+        "backToCourses": "Back to courses"
+      },
+      "notOpen": {
+        "title": "Course not open yet",
+        "reason": "{course} isn't ready for student access yet. You'll be able to join once your instructor publishes it — check back when access opens.",
+        "tryAgain": "Try code again",
+        "backToCourses": "Back to courses"
+      },
+      "joinError": "We couldn't complete your join. Please try again."
     }
   }
 }

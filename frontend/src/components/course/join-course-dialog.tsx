@@ -15,7 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StateBanner } from "@/components/patterns";
-import { useEnrollByCode, joinErrorReason } from "@/hooks/use-enrollment";
+import {
+  useEnrollByCode,
+  joinErrorReason,
+  branchFromEnroll,
+} from "@/hooks/use-enrollment";
 import { StudentCanvasCourses } from "@/components/canvas/student-canvas-courses";
 import { CANVAS_ENABLED } from "@/lib/features";
 
@@ -74,11 +78,13 @@ export function JoinCourseDialog({ open, onOpenChange }: JoinCourseDialogProps) 
       try {
         const result = await enroll.mutateAsync(normalized);
         // The endpoint returns `{ course, enrollment_status }` (P2 Task 5).
-        // Branch on status: active → workspace; pending → awaiting approval
-        // (never route a pending student into a course they can't read yet).
-        if (result.enrollment_status === "active") {
+        // Branch via the shared helper so the dialog and the join funnel behave
+        // identically: active → workspace; pending → awaiting approval (never
+        // route a pending student into a course they can't read yet).
+        const branch = branchFromEnroll(result);
+        if (branch.kind === "active") {
           handleOpenChange(false);
-          router.push(`/dashboard/courses/${result.course.id}?tab=overview`);
+          router.push(`/dashboard/courses/${branch.course.id}?tab=overview`);
           return;
         }
         setPending(true);

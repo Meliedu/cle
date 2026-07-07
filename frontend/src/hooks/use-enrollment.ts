@@ -130,3 +130,24 @@ export function branchFromLookup(lookup: CourseLookup): CodeBranch {
   if (!lookup.code_active) return { kind: "invalid", reason: "inactive" };
   return { kind: "advance", courseId: lookup.course_id, lookup };
 }
+
+/** Terminal outcome of a successful `enroll-by-code` (Task 12). */
+export type EnrollBranch =
+  | { readonly kind: "active"; readonly course: CourseResponse }
+  | { readonly kind: "pending"; readonly course: CourseResponse };
+
+/**
+ * Pure branch from a successful enroll result — the single authority both the
+ * join funnel (S013 / pending-approval) and `JoinCourseDialog` use so they
+ * behave identically. `active` → the workspace is readable (S013 success);
+ * `pending` → awaiting instructor approval, and the caller MUST NOT route the
+ * student into the workspace (a `code_plus_approval` course is unreadable until
+ * approved). Gate ERRORS (SETUP_NOT_OPEN / JOIN_CODE_INACTIVE) are thrown, not
+ * returned — map those with `joinErrorReason`.
+ */
+export function branchFromEnroll(result: EnrollByCodeResult): EnrollBranch {
+  if (result.enrollment_status === "pending") {
+    return { kind: "pending", course: result.course };
+  }
+  return { kind: "active", course: result.course };
+}

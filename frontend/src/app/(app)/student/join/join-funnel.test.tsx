@@ -10,9 +10,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import messages from "../../../../../messages/en.json";
 import { JoinFunnel } from "./join-funnel";
-import { useLookupCode, type CourseLookup } from "@/hooks/use-enrollment";
+import {
+  useEnrollByCode,
+  useLookupCode,
+  type CourseLookup,
+} from "@/hooks/use-enrollment";
 import {
   useCoursePreview,
+  useReadinessSummary,
   useSubmitPhase,
   type CoursePreview,
 } from "@/hooks/use-readiness";
@@ -28,11 +33,12 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/hooks/use-enrollment", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@/hooks/use-enrollment")>();
-  return { ...actual, useLookupCode: vi.fn() };
+  return { ...actual, useLookupCode: vi.fn(), useEnrollByCode: vi.fn() };
 });
 
 vi.mock("@/hooks/use-readiness", () => ({
   useCoursePreview: vi.fn(),
+  useReadinessSummary: vi.fn(),
   useSubmitPhase: vi.fn(),
 }));
 
@@ -41,7 +47,9 @@ vi.mock("@/hooks/use-pilot-config", () => ({
 }));
 
 const mockUseLookupCode = vi.mocked(useLookupCode);
+const mockUseEnrollByCode = vi.mocked(useEnrollByCode);
 const mockUseCoursePreview = vi.mocked(useCoursePreview);
+const mockUseReadinessSummary = vi.mocked(useReadinessSummary);
 const mockUseSubmitPhase = vi.mocked(useSubmitPhase);
 const mockUsePilotConfig = vi.mocked(usePilotConfig);
 
@@ -205,6 +213,21 @@ beforeEach(() => {
     isLoaded: true,
     isError: false,
   });
+  // Default enroll stub — terminal-state tests override `mutateAsync` per case.
+  mockUseEnrollByCode.mockReturnValue({
+    mutateAsync: vi.fn(),
+    isPending: false,
+    reset: vi.fn(),
+  } as unknown as ReturnType<typeof useEnrollByCode>);
+  mockUseReadinessSummary.mockReturnValue({
+    data: {
+      completed_phases: ["eligibility_survey", "ready_check"],
+      recommendation: { level_hint: "intermediate", claim_limit: "" },
+      answers: {},
+    },
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof useReadinessSummary>);
 });
 
 afterEach(() => {
@@ -362,6 +385,124 @@ describe("JoinFunnel — S006 eligibility survey (config-driven)", () => {
     );
     // Advanced to S007 ready check.
     await screen.findByText("Rate your confidence in each skill.");
+  });
+});
+
+/** Stub the terminal enroll mutation; returns the captured `mutateAsync` spy. */
+function stubEnroll(impl: (code: string) => Promise<unknown>) {
+  const mutateAsync = vi.fn(impl);
+  mockUseEnrollByCode.mockReturnValue({
+    mutateAsync,
+    isPending: false,
+    reset: vi.fn(),
+  } as unknown as ReturnType<typeof useEnrollByCode>);
+  return mutateAsync;
+}
+
+/**
+ * Walk the funnel S003 → … → S011 summary with a valid, active `code` course so
+ * the terminal tests can exercise the join CTA. Recommendation needs a computed
+ * `data.result`, so we stub `useSubmitPhase` with both `mutate` (recommendation
+ * POST-on-mount) and `data` here.
+ */
+async function advanceToSummary() {
+  stubLookup(async () => makeLookup());
+  mockUseSubmitPhase.mockReturnValue({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(async () => ({
+      phase: "recommendation",
+      status: "completed",
+      answers: {},
+      result: {},
+    })),
+    isPending: false,
+    isError: false,
+    data: {
+      phase: "recommendation",
+      status: "completed",
+      answers: {},
+      result: {
+        level_hint: "intermediate",
+        confidence_average: 0.5,
+        claim_limit: "",
+      },
+    },
+  } as unknown as ReturnType<typeof useSubmitPhase>);
+
+  renderFunnel();
+  submitCode("abcd2345");
+  fireEvent.click(await screen.findByRole("button", { name: "Start readiness" }));
+  // survey → ready check
+  fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
+  await screen.findByText("Rate your confidence in each skill.");
+  // ready check → diagnostic (no def in config → skip card)
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByText("No diagnostic for this course");
+  // diagnostic → recommendation
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByText("Intermediate level");
+  // recommendation → deep preview
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByText("What's inside");
+  // deep preview → summary
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("button", { name: "Join course" });
+}
+
+describe("JoinFunnel — terminal join states (S012/S013)", () => {
+  it("active enrollment → S013 join success, only routes on the CTA", async () => {
+    const mutateAsync = stubEnroll(async () => ({
+      course: { id: "course-1", name: "LANG1511" },
+      enrollment_status: "active",
+    }));
+    await advanceToSummary();
+
+    fireEvent.click(screen.getByRole("button", { name: "Join course" }));
+
+    await screen.findByText("You joined LANG1511");
+    expect(mutateAsync).toHaveBeenCalledWith("ABCD2345");
+    // Not auto-routed — the student chooses when to enter the workspace.
+    expect(push).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Open course" }));
+    expect(push).toHaveBeenCalledWith("/student/courses");
+  });
+
+  it("pending enrollment → awaiting-approval, NEVER routes into the workspace", async () => {
+    stubEnroll(async () => ({
+      course: { id: "course-1", name: "LANG1511" },
+      enrollment_status: "pending",
+    }));
+    await advanceToSummary();
+
+    fireEvent.click(screen.getByRole("button", { name: "Join course" }));
+
+    await screen.findByText("Waiting for instructor approval");
+    // A pending student can't read the course — no navigation whatsoever.
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("SETUP_NOT_OPEN error → S012 course-not-open", async () => {
+    stubEnroll(async () => {
+      throw new ApiError(409, "not open", undefined, "SETUP_NOT_OPEN");
+    });
+    await advanceToSummary();
+
+    fireEvent.click(screen.getByRole("button", { name: "Join course" }));
+
+    await screen.findByText("Course not open yet");
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("JOIN_CODE_INACTIVE error → S004 invalid/inactive", async () => {
+    stubEnroll(async () => {
+      throw new ApiError(409, "inactive", undefined, "JOIN_CODE_INACTIVE");
+    });
+    await advanceToSummary();
+
+    fireEvent.click(screen.getByRole("button", { name: "Join course" }));
+
+    await screen.findByText("This code is invalid or inactive");
+    expect(screen.getByText(/no longer active/i)).toBeTruthy();
   });
 });
 
