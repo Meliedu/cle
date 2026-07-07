@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 
+import { ConfidenceScaleInput } from "@/components/patterns/confidence-scale-input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { ConfidenceScale, ReadinessQuestion } from "@/lib/pilot-config";
@@ -29,15 +30,6 @@ interface ReadinessQuestionFieldProps {
   readonly value: ReadinessAnswer;
   readonly onChange: (value: ReadinessAnswer) => void;
   readonly disabled?: boolean;
-}
-
-/** Ordered scale points from `min`..`max`, paired with their config labels. */
-function scalePoints(scale: ConfidenceScale): { value: number; label: string }[] {
-  const points: { value: number; label: string }[] = [];
-  for (let v = scale.min; v <= scale.max; v += 1) {
-    points.push({ value: v, label: scale.labels[String(v)] ?? String(v) });
-  }
-  return points;
 }
 
 const OPTION_BASE =
@@ -94,33 +86,18 @@ export function ReadinessQuestionField({
   }
 
   if (question.kind === "scale") {
-    const points = scalePoints(confidenceScale);
     return (
       <fieldset className="space-y-2.5" disabled={disabled}>
         <legend className="text-[14px] font-medium leading-snug text-[var(--color-text)]">
           {question.prompt}
         </legend>
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-          {points.map((point) => {
-            const selected = value === point.value;
-            return (
-              <label
-                key={point.value}
-                className={cn(OPTION_BASE, selected ? OPTION_ON : OPTION_OFF)}
-              >
-                <input
-                  type="radio"
-                  name={`rq-${question.id}`}
-                  className="sr-only"
-                  checked={selected}
-                  disabled={disabled}
-                  onChange={() => onChange(point.value)}
-                />
-                <span>{point.label}</span>
-              </label>
-            );
-          })}
-        </div>
+        <ConfidenceScaleInput
+          scale={confidenceScale}
+          name={`rq-${question.id}`}
+          value={typeof value === "number" ? value : null}
+          onChange={onChange}
+          disabled={disabled}
+        />
       </fieldset>
     );
   }
