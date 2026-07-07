@@ -104,6 +104,10 @@ Phases must run in order: P1 depends on P0's config/shell; P2 on P1's setup gate
 
 ---
 
+## Security findings for final /security-review (tracked, address in P7 hardening)
+
+- **Pooled-connection RLS GUC persistence** (found in P2 Task 8, affects ALL RLS tables since P0). `deps.py::get_current_user` sets `app.current_user_id` with `is_local=false` (session-level), so it persists on the pooled connection across requests. Risk is LOW/fail-closed: every authenticated request calls `get_current_user` which overwrites the GUC before any RLS-table access, and a blank/reset GUC makes `current_setting(...,true)::uuid` raise (fails closed, doesn't leak). Residual risk: a code path borrowing a pooled connection and touching an RLS table WITHOUT going through `get_current_user`. Recommended fix (defense-in-depth): `is_local=true` (transaction-scoped GUC) or explicit `RESET app.current_user_id` on connection check-in. Verify no flow depends on the GUC surviving across transactions on one connection before changing.
+
 ## Handoff Log (append-only; newest first)
 
 ### 2026-07-07 — P1 COMPLETE (Course setup wizard & gates)
