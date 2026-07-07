@@ -44,3 +44,61 @@ class LearningProfileResponse(BaseModel):
     concept_count: int
     groups: LearningProfileGroups
     disclaimer: str
+
+
+class IloMapEntry(BaseModel):
+    """One ``learning_objective`` row on the caller's ILO strength map (B5).
+
+    ``strength`` is the mean ``concept_mastery.mastery_score`` over the concepts
+    tagged to this objective (``concept_tags`` ``target_kind='objective'``) that
+    have a mastery row for the CALLER — read as-is, never recomputed. It is
+    ``None`` (and ``has_evidence=False``) when no tagged concept has caller
+    evidence: the frontend renders the designed no-evidence cell, NEVER a
+    fabricated 0 (Decision 7). ``concept_count`` is the number of live tagged
+    concepts; ``evidence_concept_count`` how many of those the caller has attempted.
+    """
+
+    objective_id: uuid.UUID
+    statement: str
+    bloom_level: str | None
+    has_evidence: bool
+    strength: float | None
+    concept_count: int
+    evidence_concept_count: int
+
+
+class IloMapResponse(BaseModel):
+    """The caller's ILO strength map for one course (one entry per objective)."""
+
+    course_id: uuid.UUID
+    has_evidence: bool
+    objectives: list[IloMapEntry]
+
+
+class CohortIloMapEntry(BaseModel):
+    """One ``learning_objective`` row on the cohort ILO strength map (B5, teacher).
+
+    ``avg_strength`` is the row-level mean ``mastery_score`` over every student's
+    mastery on this objective's tagged concepts (mirrors ``cohort_mastery``'s
+    ``func.avg``); ``None`` with ``has_evidence=False`` when no student has
+    evidence — never a fabricated 0. ``weak_students`` reuses the
+    ``cohort_mastery`` weak definition (mastery < 0.5 among confidence >= 0.5),
+    counted as DISTINCT students weak on any tagged concept.
+    """
+
+    objective_id: uuid.UUID
+    statement: str
+    bloom_level: str | None
+    has_evidence: bool
+    avg_strength: float | None
+    weak_students: int
+    students_with_evidence: int
+    concept_count: int
+
+
+class CohortIloMapResponse(BaseModel):
+    """The cohort ILO strength map for one owned course (one entry per objective)."""
+
+    course_id: uuid.UUID
+    has_evidence: bool
+    objectives: list[CohortIloMapEntry]
