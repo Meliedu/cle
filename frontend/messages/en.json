@@ -2447,6 +2447,56 @@
         "backToSession": "Back to session",
         "viewResponse": "View response"
       }
+    },
+    "followUp": {
+      "title": "Follow-up",
+      "subtitle": "A next step your instructor set based on your recent work.",
+      "backToChecklist": "Back to checklist",
+      "checklistBadge": "From your instructor",
+      "observedSignal": "What we noticed",
+      "interpretation": "Your instructor's note",
+      "limitation": "Worth keeping in mind",
+      "outcome": {
+        "label": "Did it move?",
+        "pending": "Not checked yet",
+        "completed": "Done",
+        "improved": "Improved",
+        "persistent": "Still working on it",
+        "resolved": "Resolved",
+        "needs_review": "Needs another look",
+        "carried_forward": "Carried forward"
+      },
+      "markViewed": "Mark as viewed",
+      "marking": "Saving…",
+      "viewed": "Viewed",
+      "revisit": {
+        "title": "Revisit this checkpoint",
+        "reason": "Re-answer the checkpoint to see if your understanding has moved.",
+        "cta": "Start revisit"
+      },
+      "waiting": {
+        "title": "Your instructor is reviewing this",
+        "reason": "This follow-up is still being reviewed. It will appear here once your instructor has checked it — you never see an unreviewed draft."
+      },
+      "error": {
+        "title": "We couldn't load this follow-up",
+        "reason": "Refresh the page to try again."
+      },
+      "signal": {
+        "title": "Where did this come from",
+        "anchor": "In context: {anchor}",
+        "sourceKind": "Source",
+        "occurredAt": "When",
+        "noSource": "No linked source signal.",
+        "waiting": {
+          "title": "Your instructor is reviewing this signal",
+          "reason": "The underlying signal is still under review, so its details are not shown yet."
+        },
+        "error": {
+          "title": "We couldn't load the signal",
+          "reason": "Refresh the page to try again."
+        }
+      }
     }
   }
 }
