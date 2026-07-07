@@ -114,10 +114,13 @@ async def submit_readiness(
             db, user=user, course=course, phase=phase, answers=body.answers
         )
     except ReadinessError as exc:
-        # UNKNOWN_PHASE + INVALID_ANSWERS are both client-input faults; the UI
-        # maps the typed ``code`` to funnel copy. 422 = unprocessable input.
+        # MISSING_CLAIM_LIMIT is a server misconfiguration (a required pilot
+        # config key is absent) — never a client fault — so it must surface as
+        # 500. UNKNOWN_PHASE + INVALID_ANSWERS are genuine client-input faults;
+        # the UI maps the typed ``code`` to funnel copy. 422 = unprocessable input.
+        status_code = 500 if exc.code == "MISSING_CLAIM_LIMIT" else 422
         raise HTTPException(
-            422, detail={"code": exc.code, "message": exc.message}
+            status_code, detail={"code": exc.code, "message": exc.message}
         )
     return APIResponse(success=True, data=ReadinessResponseOut.model_validate(row))
 

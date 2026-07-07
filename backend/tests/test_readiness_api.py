@@ -117,6 +117,51 @@ async def test_deep_preview_returns_detail(db_session, test_instructor, test_stu
 
 
 @pytest.mark.asyncio
+async def test_missing_claim_limit_is_500_not_422(
+    db_session, test_instructor, test_student, monkeypatch
+):
+    # A missing recommendation claim-limit is a server misconfiguration, not a
+    # client fault: it must surface as 500 (with the typed code) — never 4xx.
+    import app.services.readiness as readiness_svc
+
+    c = await _course(db_session, test_instructor)
+    profile = readiness_svc.get_pilot_profile()
+    stripped = profile.model_copy(
+        update={
+            "claim_limits": {
+                k: v
+                for k, v in profile.claim_limits.items()
+                if k != "recommendation"
+            }
+        }
+    )
+    monkeypatch.setattr(readiness_svc, "get_pilot_profile", lambda: stripped)
+    async with _student_client(db_session, test_student) as ac:
+        r = await ac.post(
+            f"/api/courses/{c.id}/readiness/recommendation?code=ABCD2345",
+            json={"answers": {}},
+        )
+    app.dependency_overrides.clear()
+    assert r.status_code == 500
+    assert r.json()["detail"]["code"] == "MISSING_CLAIM_LIMIT"
+
+
+@pytest.mark.asyncio
+async def test_short_preview_ungated_on_draft_course(
+    db_session, test_instructor, test_student
+):
+    # Short preview (S005) is intentionally ungated pre-open: a not-open course
+    # with a valid active code still returns the short teaser.
+    c = await _course(db_session, test_instructor, code="ABCD2345", open_=False)
+    async with _student_client(db_session, test_student) as ac:
+        r = await ac.get(f"/api/courses/{c.id}/preview?code=ABCD2345&depth=short")
+    app.dependency_overrides.clear()
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["depth"] == "short"
+    assert r.json()["data"]["is_open"] is False
+
+
+@pytest.mark.asyncio
 async def test_deep_preview_not_open_409(db_session, test_instructor, test_student):
     # Decision 3: deep preview is gated behind assert_course_open -> S012.
     c = await _course(db_session, test_instructor, code="ABCD2345", open_=False)
