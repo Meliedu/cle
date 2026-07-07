@@ -75,9 +75,20 @@ const KIND_ICON: Readonly<Record<MaterialKind, LucideIcon>> = {
   file: FileIcon,
 };
 
-/** Lucide icon for a file kind (used by the table, detail panel, preview). */
-export function materialIcon(kind: MaterialKind): LucideIcon {
-  return KIND_ICON[kind];
+/**
+ * Decorative Lucide icon for a file kind. A module-scope component (rather than
+ * `const Icon = pick(kind)` at each call site) so it reads as a stable
+ * component to the React Compiler, and is always `aria-hidden`.
+ */
+export function MaterialKindIcon({
+  kind,
+  className,
+}: {
+  readonly kind: MaterialKind;
+  readonly className?: string;
+}) {
+  const Icon = KIND_ICON[kind];
+  return <Icon aria-hidden="true" className={className} />;
 }
 
 /** Processing-status → i18n key (`teacher.materials.docStatus.*`) + chip tone. */

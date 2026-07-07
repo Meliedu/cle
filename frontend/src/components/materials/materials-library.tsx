@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Upload, LinkIcon } from "lucide-react";
 
@@ -78,11 +78,6 @@ export function MaterialsLibrary({ courseId }: MaterialsLibraryProps) {
     () => (library ? indexMaterials(library) : new Map<string, MaterialEntry>()),
     [library]
   );
-
-  // Drop a selection whose document has vanished (e.g. after a delete).
-  useEffect(() => {
-    if (selectedId && !byId.has(selectedId)) setSelectedId(null);
-  }, [byId, selectedId]);
 
   const sessionOptions = useMemo<readonly LinkSessionOption[]>(
     () =>

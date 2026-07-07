@@ -9,7 +9,7 @@ import type { DocumentResponse, MaterialsLibrary } from "@/hooks/use-documents";
 import { ALL_FOLDER, UNASSIGNED_FOLDER } from "./materials-folder-nav";
 import {
   materialKind,
-  materialIcon,
+  MaterialKindIcon,
   materialStatus,
   formatFileSize,
 } from "./material-format";
@@ -133,7 +133,6 @@ function MaterialTableRow({
 }: MaterialTableRowProps) {
   const t = useTranslations("teacher.materials");
   const kind = materialKind(doc);
-  const Icon = materialIcon(kind);
   const status = materialStatus(doc.status);
   const size = formatFileSize(doc.file_size);
   const interactive = Boolean(onSelect);
@@ -162,8 +161,8 @@ function MaterialTableRow({
     >
       <td className="py-2.5 pl-4 pr-3">
         <div className="flex items-center gap-2.5">
-          <Icon
-            aria-hidden="true"
+          <MaterialKindIcon
+            kind={kind}
             className="size-4 shrink-0 text-[var(--color-primary)]"
           />
           <div className="min-w-0">

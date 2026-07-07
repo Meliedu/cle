@@ -8,7 +8,7 @@ import { StatusChip } from "@/components/course/session-status";
 import type { DocumentResponse } from "@/hooks/use-documents";
 import {
   materialKind,
-  materialIcon,
+  MaterialKindIcon,
   materialStatus,
   formatFileSize,
 } from "./material-format";
@@ -36,7 +36,6 @@ export function MaterialDetailPanel({
 }: MaterialDetailPanelProps) {
   const t = useTranslations("teacher.materials");
   const kind = materialKind(doc);
-  const Icon = materialIcon(kind);
   const status = materialStatus(doc.status);
   const size = formatFileSize(doc.file_size);
   const uploaded = new Date(doc.created_at).toLocaleDateString(undefined, {
@@ -52,7 +51,10 @@ export function MaterialDetailPanel({
     >
       <div className="flex items-start gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)]">
-          <Icon aria-hidden="true" className="size-5 text-[var(--color-primary)]" />
+          <MaterialKindIcon
+            kind={kind}
+            className="size-5 text-[var(--color-primary)]"
+          />
         </div>
         <div className="min-w-0 space-y-1">
           <p className="break-words text-[13px] font-semibold leading-snug text-[var(--color-text)]">
