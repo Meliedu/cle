@@ -1800,6 +1800,109 @@
         "confirmUnassign": "Move to Unassigned",
         "confirmDelete": "Delete permanently"
       }
+    },
+    "insights": {
+      "title": "Course insights",
+      "subtitle": "What your class's evidence shows — reviewed by you before anything reaches a student.",
+      "loadErrorTitle": "We couldn't load these insights",
+      "loadErrorReason": "Please check your connection and try again.",
+      "picker": {
+        "label": "Course",
+        "placeholder": "Select a course",
+        "empty": "You don't have any courses yet."
+      },
+      "empty": {
+        "title": "No evidence yet",
+        "reason": "Insights appear here once students start completing checkpoints and practice. Their responses build a source-linked picture of what your class has understood — reviewed by you before anything reaches a student."
+      },
+      "mastery": {
+        "title": "Cohort mastery",
+        "subtitle": "Aggregated from your students' practice — a snapshot, not a grade.",
+        "conceptsCovered": "Concepts with evidence",
+        "conceptsCoveredValue": "{withEvidence} of {total}",
+        "avgMastery": "Average mastery",
+        "noAvg": "Not enough evidence",
+        "weakSignals": "Weak-spot signals"
+      },
+      "alerts": {
+        "title": "Signals to check",
+        "subtitle": "Open alerts your class's evidence raised, most urgent first.",
+        "critical": "Critical",
+        "warning": "Warning",
+        "info": "Info",
+        "total": "{count, plural, one {# open signal} other {# open signals}}",
+        "none": "No open signals right now."
+      },
+      "reviewQueue": {
+        "title": "Review queue",
+        "subtitle": "Waiting for your review before students see anything.",
+        "openAlerts": "Open alerts",
+        "pendingNotes": "Drafts to review",
+        "clear": "Your review queue is clear."
+      },
+      "signals": {
+        "title": "Signals to review",
+        "cohort": "Whole class",
+        "student": "Individual student",
+        "needsReview": "Needs review",
+        "empty": "No signals to review yet.",
+        "loadError": "We couldn't load these signals.",
+        "status": {
+          "draft": "Draft",
+          "queued": "Queued",
+          "in_review": "In review",
+          "reviewed": "Reviewed",
+          "edited": "Edited",
+          "published": "Published",
+          "dismissed": "Dismissed",
+          "archived": "Archived"
+        }
+      },
+      "drawer": {
+        "title": "Signal detail",
+        "close": "Close",
+        "scopeCohort": "Whole-class signal",
+        "scopeStudent": "Individual student",
+        "observed": "What we observed",
+        "interpretation": "Draft interpretation",
+        "limitation": "What this doesn't tell us",
+        "anchor": "Where in the course",
+        "waitingTitle": "Waiting for your review",
+        "waitingReason": "This signal is still a draft. Its interpretation stays hidden from students until you review it.",
+        "loadError": "We couldn't load this signal."
+      },
+      "evidence": {
+        "title": "Where this came from",
+        "subtitle": "The learning event this signal traces back to.",
+        "source": "Source",
+        "stage": "Stage",
+        "eventType": "Event",
+        "occurredAt": "Occurred",
+        "anchor": "Anchor",
+        "value": "Recorded value",
+        "empty": "No source event is linked to this signal.",
+        "loadErrorTitle": "We couldn't load this evidence source",
+        "loadErrorReason": "Please check your connection and try again.",
+        "sourceKind": {
+          "checkpoint": "Checkpoint",
+          "quiz": "Quiz",
+          "practice": "Practice",
+          "flashcard": "Flashcard",
+          "pronunciation": "Pronunciation",
+          "activity": "Activity",
+          "follow_up": "Follow-up",
+          "revision": "Revision"
+        }
+      },
+      "outcomeStatus": {
+        "pending": "Pending",
+        "completed": "Completed",
+        "improved": "Improved",
+        "persistent": "Still persisting",
+        "resolved": "Resolved",
+        "needs_review": "Needs review",
+        "carried_forward": "Carried forward"
+      }
     }
   },
   "student": {
