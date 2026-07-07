@@ -506,6 +506,109 @@ describe("JoinFunnel — terminal join states (S012/S013)", () => {
   });
 });
 
+describe("JoinFunnel — end-to-end happy path (S003 → S013)", () => {
+  // The claim-limit copy the backend sources from `pilot.claim_limits`. It is a
+  // trust boundary and MUST render VERBATIM at both the recommendation (S009)
+  // and the summary (S011) surfaces on the happy path.
+  const CLAIM_LIMIT =
+    "This is guidance to help you get oriented, not a placement decision.";
+
+  it("walks code → preview → survey → ready check → recommendation (claim-limit visible) → summary → join success", async () => {
+    // code-mode course, active code, setup open.
+    const lookupSpy = stubLookup(async () => makeLookup());
+    // Recommendation is computed with the visible claim limit.
+    mockUseSubmitPhase.mockReturnValue({
+      mutate: vi.fn(),
+      mutateAsync: submitMutate,
+      isPending: false,
+      isError: false,
+      data: {
+        phase: "recommendation",
+        status: "completed",
+        answers: {},
+        result: {
+          level_hint: "intermediate",
+          confidence_average: 0.5,
+          claim_limit: CLAIM_LIMIT,
+        },
+      },
+    } as unknown as ReturnType<typeof useSubmitPhase>);
+    mockUseReadinessSummary.mockReturnValue({
+      data: {
+        completed_phases: ["eligibility_survey", "ready_check"],
+        recommendation: { level_hint: "intermediate", claim_limit: CLAIM_LIMIT },
+        answers: {},
+      },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useReadinessSummary>);
+    const enrollSpy = stubEnroll(async () => ({
+      course: { id: "course-1", name: "LANG1511" },
+      enrollment_status: "active",
+    }));
+
+    renderFunnel();
+
+    // S003 → S005 short preview (normalized, code-gated).
+    submitCode("abcd2345");
+    await screen.findByRole("button", { name: "Start readiness" });
+    expect(lookupSpy).toHaveBeenCalledWith("ABCD2345");
+    expect(screen.getByText("An academic Chinese course.")).toBeTruthy();
+
+    // S005 → S006 eligibility survey (config-driven questions).
+    fireEvent.click(screen.getByRole("button", { name: "Start readiness" }));
+    await screen.findByText("How long have you studied?");
+    fireEvent.click(screen.getByRole("radio", { name: "Never" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Everyday conversation" })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(submitMutate).toHaveBeenCalledWith({
+        phase: "eligibility_survey",
+        answers: { prior_study: "Never", goals: ["Everyday conversation"] },
+      })
+    );
+
+    // S006 → S007 ready check (config-driven confidence scale).
+    await screen.findByText("Rate your confidence in each skill.");
+    fireEvent.click(screen.getByRole("radio", { name: "Confident" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(submitMutate).toHaveBeenLastCalledWith({
+        phase: "ready_check",
+        answers: { conf_listening: 1 },
+      })
+    );
+
+    // S007 → S008 diagnostic (CLE ships no diagnostic set → skip card).
+    await screen.findByText("No diagnostic for this course");
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    // S008 → S009 recommendation — the coarse level hint plus the claim limit
+    // rendered VERBATIM in an info banner (the trust boundary).
+    await screen.findByText("Intermediate level");
+    const recBanner = screen.getByText(CLAIM_LIMIT).closest("[data-tone]");
+    expect(recBanner?.getAttribute("data-tone")).toBe("info");
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    // S009 → S010 deep preview.
+    await screen.findByText("What's inside");
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    // S010 → S011 readiness summary — claim limit repeated VERBATIM at the CTA.
+    await screen.findByRole("button", { name: "Join course" });
+    expect(screen.getByText(CLAIM_LIMIT)).toBeTruthy();
+
+    // Terminal join — active enrollment lands on S013 join success.
+    fireEvent.click(screen.getByRole("button", { name: "Join course" }));
+    await screen.findByText("You joined LANG1511");
+    expect(enrollSpy).toHaveBeenCalledWith("ABCD2345");
+    // No auto-navigation: the student chooses when to enter the workspace.
+    expect(push).not.toHaveBeenCalled();
+  });
+});
+
 describe("JoinFunnel — S007 ready check (config-driven scale)", () => {
   it("renders the confidence-scale inputs from config and can advance", async () => {
     await advanceToSurvey();
