@@ -797,6 +797,81 @@
         }
       }
     },
+    "studio": {
+      "eyebrow": "Checkpoint studio",
+      "backToSession": "Back to session",
+      "subtitle": "Review the drafted cards, edit a review point, or remove one with a reason before you approve and publish this check-in.",
+      "subtitleLocked": "This checkpoint has left draft, so its cards are locked. It moves through its lifecycle from here.",
+      "notFound": {
+        "title": "We couldn't find this checkpoint",
+        "reason": "It may have been removed or belongs to another session. Return to the session."
+      },
+      "status": {
+        "draft": "Draft",
+        "teacher_editing": "Editing",
+        "approved": "Approved",
+        "scheduled": "Scheduled",
+        "published": "Published",
+        "live": "Live",
+        "closed": "Closed",
+        "archived": "Archived"
+      },
+      "cards": {
+        "title": "Cards",
+        "count": "{count, plural, one {# card} other {# cards}}",
+        "emptyTitle": "No cards yet",
+        "emptyReason": "This checkpoint has no cards. Draft cards are generated from your materials in setup."
+      },
+      "promptLabel": "Review point {position}",
+      "kind": {
+        "review_point": "Review point",
+        "final_comments": "Final comments"
+      },
+      "removed": {
+        "not_needed": "Removed — not needed",
+        "duplicate": "Removed — duplicate",
+        "not_covered": "Removed — not covered",
+        "other": "Removed"
+      },
+      "edit": "Edit",
+      "save": "Save",
+      "cancel": "Cancel",
+      "remove": "Remove",
+      "restore": "Restore",
+      "fixed": "Fixed card",
+      "errors": {
+        "generic": "Something went wrong. Please try again.",
+        "REVIEW_REQUIRED": "This checkpoint has left draft, so its cards can no longer be edited.",
+        "FINAL_CARD_FIXED": "The final-comments card is fixed and can't be removed.",
+        "REMOVE_REASON_REQUIRED": "Choose a reason before removing this card."
+      },
+      "removeDialog": {
+        "title": "Remove this card?",
+        "subtitle": "Removed cards stay on record with your reason so the check-in is explainable later.",
+        "reasonLabel": "Reason",
+        "reason": {
+          "not_needed": "Not needed",
+          "duplicate": "Duplicate of another card",
+          "not_covered": "Not covered this session",
+          "other": "Other"
+        },
+        "noteLabel": "Note (optional)",
+        "notePlaceholder": "Add context for this removal",
+        "cancel": "Cancel",
+        "confirm": "Remove card"
+      },
+      "carryOver": {
+        "bannerTitle": "This is a follow-up checkpoint",
+        "bannerReason": "Its review points were carried forward from an earlier checkpoint students found difficult.",
+        "review": "Review carry-over",
+        "title": "Carried-over review points",
+        "subtitle": "This follow-up revisits the weak points from a previous checkpoint. Compare them before you publish.",
+        "carriedFrom": "Carried forward from “{title}”.",
+        "carriedFromUnknown": "Carried forward from an earlier checkpoint.",
+        "dismiss": "Close",
+        "viewSource": "Open source checkpoint"
+      }
+    },
     "enrollment": {
       "title": "Enrollment",
       "subtitle": "Control who can join this course and review who has enrolled.",
