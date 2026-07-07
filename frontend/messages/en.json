@@ -637,9 +637,29 @@
         "tryAgain": "Try again",
         "backToCourses": "Back to courses"
       },
-      "preview": {
-        "comingSoonTitle": "Course preview",
-        "comingSoonReason": "The course preview and readiness steps are coming soon.",
+      "shortPreview": {
+        "eyebrow": "Course preview",
+        "language": "Taught in {language}",
+        "noDescription": "Your instructor hasn't added a description yet.",
+        "notOpenTitle": "Not open for joining yet",
+        "notOpenReason": "You can join once your instructor opens course access. You can still review the readiness steps now.",
+        "start": "Start readiness",
+        "back": "Back to join code",
+        "errorTitle": "We couldn't load this course",
+        "errorReason": "The preview is unavailable right now. Check your code and try again."
+      },
+      "phase": {
+        "loadingTitle": "Loading questions",
+        "loadingReason": "Fetching the readiness questions for this course.",
+        "errorTitle": "We couldn't save your answers",
+        "errorReason": "Something went wrong submitting this step. Please try again.",
+        "back": "Back",
+        "continue": "Continue",
+        "submitting": "Saving…"
+      },
+      "comingSoon": {
+        "title": "More readiness steps coming soon",
+        "reason": "The recommendation and summary steps are on their way.",
         "back": "Enter a different code"
       }
     }

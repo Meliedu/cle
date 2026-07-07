@@ -7,6 +7,8 @@ import { useTranslations } from "next-intl";
 import { PageHeader, StateBanner } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { StepCodeEntry } from "@/components/join/step-code-entry";
+import { StepShortPreview } from "@/components/join/step-short-preview";
+import { StepReadinessPhase } from "@/components/join/step-readiness-phase";
 import {
   StateInvalidCode,
   type InvalidCodeReason,
@@ -19,12 +21,12 @@ import {
 } from "@/hooks/use-enrollment";
 
 /**
- * The full join funnel steps (S003 → … → terminal). This scaffold implements
- * only `code` (S003) and `invalid_code` (S004), advancing a valid code to a
- * `preview` placeholder that Task 10 replaces with S005. The later readiness
- * steps (survey / ready_check / diagnostic / recommendation / deep_preview /
- * summary / success / pending) are declared here so the container's shape is
- * stable as Tasks 10–12 fill them in.
+ * The full join funnel steps (S003 → … → terminal). Tasks 9–10 wire `code`
+ * (S003), `invalid_code` (S004), `preview` (S005 short preview), `survey`
+ * (S006 eligibility survey) and `ready_check` (S007) — all config-driven from
+ * the pilot readiness definitions. The later steps (diagnostic / recommendation
+ * / deep_preview / summary / success / pending) are declared here so the
+ * container's shape is stable as Tasks 11–12 fill them in.
  */
 export type FunnelStep =
   | "code"
@@ -72,6 +74,10 @@ export function JoinFunnel() {
 
   const goToInvalid = useCallback((reason: InvalidCodeReason) => {
     setState((prev) => ({ ...prev, step: "invalid_code", invalidReason: reason }));
+  }, []);
+
+  const goTo = useCallback((step: FunnelStep) => {
+    setState((prev) => ({ ...prev, step }));
   }, []);
 
   const handleCodeSubmit = useCallback(
@@ -131,23 +137,47 @@ export function JoinFunnel() {
           onTryAgain={resetToCode}
           onBackToCourses={backToCourses}
         />
-      ) : state.step === "preview" ? (
+      ) : state.step === "preview" && state.courseId ? (
+        <StepShortPreview
+          courseId={state.courseId}
+          code={state.code}
+          onStart={() => goTo("survey")}
+          onBack={resetToCode}
+        />
+      ) : state.step === "survey" && state.courseId ? (
+        <StepReadinessPhase
+          phase="eligibility_survey"
+          courseId={state.courseId}
+          code={state.code}
+          onDone={() => goTo("ready_check")}
+          onBack={() => goTo("preview")}
+        />
+      ) : state.step === "ready_check" && state.courseId ? (
+        <StepReadinessPhase
+          phase="ready_check"
+          courseId={state.courseId}
+          code={state.code}
+          onDone={() => goTo("recommendation")}
+          onBack={() => goTo("survey")}
+        />
+      ) : (
         <div className="space-y-6">
           {/*
-            Placeholder for S005 short-course-preview (Task 10). The code
-            resolved cleanly; the readiness funnel picks up from the captured
-            `courseId` + `code`.
+            Placeholder for the post-ready-check steps (S008–S013) that Task 11
+            and Task 12 fill in: recommendation, deep preview, summary, and the
+            terminal join states. Until then the funnel parks here rather than
+            dead-ending on a blank div.
           */}
           <StateBanner
             tone="info"
-            title={t("preview.comingSoonTitle")}
-            reason={t("preview.comingSoonReason")}
+            title={t("comingSoon.title")}
+            reason={t("comingSoon.reason")}
           />
           <Button type="button" variant="outline" size="lg" onClick={resetToCode}>
-            {t("preview.back")}
+            {t("comingSoon.back")}
           </Button>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
