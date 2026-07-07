@@ -32,6 +32,7 @@ from app.models.checkpoint import Checkpoint, CheckpointCard
 from app.models.chunk import Chunk
 from app.models.curriculum import CourseMeeting
 from app.models.task import Task
+from app.services.carry_forward_memory import load_carry_forward_memory
 from app.services.embedder import embed_query
 from app.services.retriever import RetrievedChunk, retrieve_chunks
 from app.services.syllabus_grounding import load_syllabus_grounding
@@ -135,6 +136,18 @@ async def _build_context(
     grounding = await load_syllabus_grounding(db, course_id)
     if grounding:
         parts.append(grounding)
+    # Prior-term carry-forward memory (T023, Decision 6). Best-effort: a missing
+    # or empty import must never break generation. Course-bound — the block holds
+    # ONLY instructor summaries, never a student ``user_id``.
+    try:
+        memory_block = await load_carry_forward_memory(db, course_id)
+    except Exception:  # noqa: BLE001 — grounding is best-effort
+        logger.warning(
+            "load_carry_forward_memory failed during checkpoint gen", exc_info=True
+        )
+        memory_block = None
+    if memory_block:
+        parts.append(memory_block)
     if meeting.topic_summary:
         parts.append(f"Session topic: {meeting.topic_summary}")
     query = meeting.topic_summary or meeting.title or "session review"

@@ -32,7 +32,13 @@ from app.models.course import Course
 from app.models.evidence import CourseRecordItem, ReviewAction
 from app.models.user import User
 from app.schemas.common import APIResponse
-from app.schemas.memory import MemoryDecideRequest, MemoryItemResponse
+from app.schemas.memory import (
+    MemoryDecideRequest,
+    MemoryDecisionCounts,
+    MemoryItemResponse,
+    MemorySummaryResponse,
+    NextTermSuggestionResponse,
+)
 
 router = APIRouter(prefix="/courses/{course_id}/memory", tags=["memory"])
 # Per-item routes are NOT nested under a course — a record-item id is globally
@@ -126,6 +132,79 @@ async def list_memory(
     )
     rows = (await db.execute(stmt)).scalars().all()
     return APIResponse(success=True, data=[_to_response(r) for r in rows])
+
+
+@router.get(
+    "/next-term-suggestions",
+    response_model=APIResponse[list[NextTermSuggestionResponse]],
+)
+async def next_term_suggestions(
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+) -> APIResponse[list[NextTermSuggestionResponse]]:
+    """Carry-forward memory from PRIOR-term courses of the same lineage (T023).
+
+    Lineage = the SAME ``courses.code`` + the SAME ``instructor_id`` on a
+    DIFFERENT (prior) course — NEVER matched on student identity (Decision 6). A
+    course with no ``code`` has no lineage → empty. Only ``decision='carry_forward'``
+    items are suggested; undecided / ``reject`` / ``keep`` are excluded.
+    """
+    if not course.code:
+        return APIResponse(success=True, data=[])
+
+    stmt = (
+        select(CourseRecordItem, Course)
+        .join(Course, Course.id == CourseRecordItem.course_id)
+        .where(
+            Course.code == course.code,
+            Course.instructor_id == course.instructor_id,
+            Course.id != course.id,
+            Course.deleted_at.is_(None),
+            CourseRecordItem.decision == "carry_forward",
+        )
+        .order_by(CourseRecordItem.created_at.desc())
+    )
+    rows = (await db.execute(stmt)).all()
+    data = [
+        NextTermSuggestionResponse(
+            **_to_response(item).model_dump(),
+            source_course_id=src.id,
+            source_course_code=src.code,
+            source_course_name=src.name,
+        )
+        for item, src in rows
+    ]
+    return APIResponse(success=True, data=data)
+
+
+@router.get("/summary", response_model=APIResponse[MemorySummaryResponse])
+async def memory_summary(
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+) -> APIResponse[MemorySummaryResponse]:
+    """Counts-by-decision + the carry-forward roster for the teacher overview (T036)."""
+    rows = (
+        await db.execute(
+            select(CourseRecordItem)
+            .where(CourseRecordItem.course_id == course.id)
+            .order_by(CourseRecordItem.created_at.desc())
+        )
+    ).scalars().all()
+
+    counts = MemoryDecisionCounts()
+    for item in rows:
+        key = item.decision or "undecided"
+        setattr(counts, key, getattr(counts, key) + 1)
+
+    roster = [
+        _to_response(item) for item in rows if item.decision == "carry_forward"
+    ]
+    return APIResponse(
+        success=True,
+        data=MemorySummaryResponse(
+            total=len(rows), counts=counts, carry_forward_roster=roster
+        ),
+    )
 
 
 @item_router.get("/{item_id}", response_model=APIResponse[MemoryItemResponse])

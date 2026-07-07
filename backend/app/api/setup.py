@@ -10,15 +10,23 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_owned_course
+from app.api.deps import get_owned_course, require_instructor
 from app.database import get_db
 from app.models.course import Course
+from app.models.evidence import CourseRecordItem
 from app.models.task import Task
+from app.models.user import User
 from app.schemas.common import APIResponse
+from app.schemas.memory import ImportMemoryRequest, ImportMemoryResponse
 from app.schemas.setup import (
     SetupAnalysisResponse,
     SetupStateResponse,
     SetupStepUpdate,
+)
+from app.services.audit import record_audit_event
+from app.services.carry_forward_memory import (
+    build_import_blocks,
+    merge_imported_blocks,
 )
 from app.services.setup import (
     SETUP_STEP_KEYS,
@@ -122,6 +130,79 @@ async def publish(
     except SetupGateError as exc:
         raise _gate_http(exc)
     return APIResponse(success=True, data=_state(course))
+
+
+@router.post(
+    "/import-memory", response_model=APIResponse[ImportMemoryResponse]
+)
+async def import_memory(
+    body: ImportMemoryRequest,
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+    user: User = Depends(require_instructor),
+) -> APIResponse[ImportMemoryResponse]:
+    """Import prior-term ``carry_forward`` memory into this course (T023 unstub).
+
+    NOT a publish-gate step (mirrors the P1 stub decision) — it's a standalone
+    owner-guarded action. Each item must resolve to one the caller owns whose
+    ``decision`` is ``carry_forward``; an undecided / ``reject`` / ``keep`` item is
+    refused with 409 ``MEMORY_UNDECIDED`` (Decision 6). Accepted items' reviewed
+    instructor summaries (NO student ``user_id``) are copied onto the new course's
+    ``setup_checklist`` and threaded into checkpoint-generation grounding; the
+    import is audited (``memory.import``).
+    """
+    items: list[CourseRecordItem] = []
+    for item_id in body.item_ids:
+        item = await db.get(CourseRecordItem, item_id)
+        if item is None:
+            raise HTTPException(
+                status_code=404, detail="Memory item not found"
+            )
+        # The source item must belong to a course the caller owns — memory never
+        # crosses instructors (Decision 6). 404 (not 403) so existence isn't leaked.
+        source = await db.get(Course, item.course_id)
+        if (
+            source is None
+            or source.deleted_at is not None
+            or source.instructor_id != user.id
+        ):
+            raise HTTPException(
+                status_code=404, detail="Memory item not found"
+            )
+        if item.decision != "carry_forward":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "MEMORY_UNDECIDED",
+                    "message": (
+                        "Only items decided 'carry_forward' can be imported; "
+                        f"item {item_id} is '{item.decision or 'undecided'}'."
+                    ),
+                },
+            )
+        items.append(item)
+
+    if items:
+        course.setup_checklist = merge_imported_blocks(
+            course, build_import_blocks(items)
+        )
+        await record_audit_event(
+            db,
+            course_id=course.id,
+            actor_id=user.id,
+            event_type="memory.import",
+            target_kind="course",
+            target_id=course.id,
+            metadata={"item_ids": [str(i.id) for i in items]},
+        )
+    await db.commit()
+    return APIResponse(
+        success=True,
+        data=ImportMemoryResponse(
+            imported_count=len(items),
+            imported_item_ids=[i.id for i in items],
+        ),
+    )
 
 
 @router.post("/reopen", response_model=APIResponse[SetupStateResponse])

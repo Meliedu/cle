@@ -53,3 +53,59 @@ class MemoryDecideRequest(BaseModel):
     decision: MemoryDecision
 
     model_config = {"extra": "forbid"}
+
+
+class NextTermSuggestionResponse(MemoryItemResponse):
+    """A ``carry_forward`` record item from a PRIOR-term course of the same
+    course-code lineage (T023 / Decision 6).
+
+    Extends ``MemoryItemResponse`` with the source-course provenance the setup
+    picker needs. Matched on ``courses.code`` + the SAME ``instructor_id`` — NEVER
+    on student identity; the item itself carries only instructor-authored
+    summaries (no student ``user_id``).
+    """
+
+    source_course_id: uuid.UUID
+    source_course_code: str | None
+    source_course_name: str
+
+
+class ImportMemoryRequest(BaseModel):
+    """Accept a set of prior-term ``carry_forward`` items into the new course.
+
+    Each id must resolve to an item the caller owns whose ``decision`` is
+    ``carry_forward`` — an undecided / ``reject`` / ``keep`` item is refused with
+    a typed 409 ``MEMORY_UNDECIDED`` (Decision 6). Empty lists are a no-op.
+    """
+
+    item_ids: list[uuid.UUID]
+
+    model_config = {"extra": "forbid"}
+
+
+class ImportMemoryResponse(BaseModel):
+    """Result of a successful ``import-memory`` — the count + ids threaded into
+    the new course's checkpoint-generation grounding context."""
+
+    imported_count: int
+    imported_item_ids: list[uuid.UUID]
+
+
+class MemoryDecisionCounts(BaseModel):
+    """Counts-by-decision for the teacher overview (T036). ``undecided`` counts
+    rows whose ``decision`` is still NULL."""
+
+    keep: int = 0
+    revise: int = 0
+    reject: int = 0
+    carry_forward: int = 0
+    undecided: int = 0
+
+
+class MemorySummaryResponse(BaseModel):
+    """Teacher course-overview memory summary (T036): counts-by-decision, total,
+    and the carry-forward roster (the items destined for next-term import)."""
+
+    total: int
+    counts: MemoryDecisionCounts
+    carry_forward_roster: list[MemoryItemResponse]
