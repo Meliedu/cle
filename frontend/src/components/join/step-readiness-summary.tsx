@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReadinessSummary } from "@/hooks/use-readiness";
 
+import { levelHintLabel } from "./level-hint";
+
 interface StepReadinessSummaryProps {
   readonly courseId: string;
   readonly code: string;
@@ -131,7 +133,7 @@ export function StepReadinessSummary({
         {levelHint ? (
           <p className="text-[13px] text-[var(--color-text-secondary)]">
             {t("summary.recommendationEcho", {
-              level: levelHint,
+              level: levelHintLabel(t, levelHint),
             })}
           </p>
         ) : null}

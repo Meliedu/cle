@@ -7,6 +7,8 @@ import { StateBanner } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { useSubmitPhase } from "@/hooks/use-readiness";
 
+import { levelHintLabel } from "./level-hint";
+
 interface StepRecommendationProps {
   readonly courseId: string;
   readonly code: string;
@@ -32,19 +34,6 @@ function readNumber(
 ): number | null {
   const value = result?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-/** The coarse buckets the backend emits for `level_hint`. */
-const LEVEL_HINTS = ["foundation", "intermediate", "advanced"] as const;
-
-function levelHintLabel(
-  t: ReturnType<typeof useTranslations>,
-  hint: string
-): string {
-  if ((LEVEL_HINTS as readonly string[]).includes(hint)) {
-    return t(`recommendation.levels.${hint}`);
-  }
-  return hint || t("recommendation.levels.unknown");
 }
 
 /**
@@ -117,7 +106,9 @@ export function StepRecommendation({
   const levelHint = readString(result, "level_hint");
   const confidence = readNumber(result, "confidence_average");
   // Rendered VERBATIM — the backend guarantees this key (a missing claim limit
-  // is a 500, not an empty string), so it is always present on success.
+  // is a 500, not an empty string), so it is always present on success. No
+  // hardcoded fallback: if it is somehow absent we render nothing rather than
+  // substitute inconsistent disclaimer copy.
   const claimLimit = readString(result, "claim_limit");
 
   return (
@@ -144,12 +135,15 @@ export function StepRecommendation({
         ) : null}
       </div>
 
-      {/* The claim-limit surface: shown prominently and VERBATIM. */}
-      <StateBanner
-        tone="info"
-        title={t("recommendation.claimLimitTitle")}
-        reason={claimLimit || t("recommendation.claimLimitFallback")}
-      />
+      {/* The claim-limit surface: shown prominently and VERBATIM, only when
+          the config-sourced copy is present. */}
+      {claimLimit ? (
+        <StateBanner
+          tone="info"
+          title={t("recommendation.claimLimitTitle")}
+          reason={claimLimit}
+        />
+      ) : null}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
         {onBack ? (

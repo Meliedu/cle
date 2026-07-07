@@ -674,7 +674,6 @@
           "unknown": "Suggested starting point"
         },
         "claimLimitTitle": "About this recommendation",
-        "claimLimitFallback": "This is guidance to help you get started, not a placement decision.",
         "loadingTitle": "Preparing your recommendation",
         "loadingReason": "We're reviewing your readiness answers.",
         "errorTitle": "We couldn't prepare your recommendation",
