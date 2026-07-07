@@ -1208,6 +1208,225 @@
         }
       }
     },
+    "practice": {
+      "status": {
+        "published": "Published",
+        "draft": "Draft"
+      },
+      "typeLabel": {
+        "multiple_choice": "Multiple choice",
+        "true_false": "True / False",
+        "matching": "Matching",
+        "ordering": "Ordering",
+        "short_answer": "Short answer",
+        "other": "Question"
+      },
+      "list": {
+        "title": "Practice",
+        "subtitle": "Low-stakes question sets students can retry as often as they like. Practice never counts toward a grade.",
+        "generate": "Generate practice",
+        "questionCount": "{count, plural, one {# question} other {# questions}}",
+        "justNow": "Just now",
+        "loadErrorTitle": "Couldn't load practice",
+        "loadError": "Something went wrong loading this course's practice sets. Try again in a moment.",
+        "empty": {
+          "title": "No practice yet",
+          "reason": "Generate a focused set of questions from your course materials so students can rehearse before class.",
+          "action": "Generate practice"
+        }
+      },
+      "builder": {
+        "subtitle": "Review and refine the questions, then publish when it's ready for students.",
+        "viewResults": "View results",
+        "back": "Back to practice",
+        "notFoundTitle": "Practice not found",
+        "notFound": "This practice set may have been deleted, or you don't have access to it.",
+        "questionsTitle": "Practice questions",
+        "generate": "Generate questions",
+        "addQuestion": "Add question",
+        "editQuestion": "Edit question",
+        "deleteQuestion": "Delete question",
+        "empty": {
+          "title": "No questions yet",
+          "reason": "Generate questions from your materials, or add one by hand to get started."
+        },
+        "deleteConfirm": {
+          "title": "Delete question",
+          "body": "This removes the question from the practice set. This can't be undone.",
+          "cancel": "Cancel",
+          "confirm": "Delete"
+        }
+      },
+      "publish": {
+        "title": "Ready to publish",
+        "subtitle": "Practice publishes straight to students — no scoring setup required.",
+        "checklist": {
+          "questions": "{count, plural, =0 {No questions yet} one {# question ready} other {# questions ready}}",
+          "noScore": "Practice doesn't need a score category or a due date. It appears on the checklist as optional and is never marked missed."
+        },
+        "publishedTitle": "Published to students",
+        "publishedReason": "Students can find this practice in their activities. Re-publish to push edits.",
+        "publishError": "Couldn't publish this practice. Try again in a moment.",
+        "publishing": "Publishing…",
+        "publish": "Publish practice",
+        "republish": "Re-publish"
+      },
+      "results": {
+        "back": "Back to builder",
+        "title": "Practice results",
+        "subtitle": "How students are doing on this practice set.",
+        "loadErrorTitle": "Couldn't load results",
+        "loadError": "Something went wrong loading this practice. Try again in a moment.",
+        "unpublished": {
+          "title": "Publish to collect attempts",
+          "reason": "This practice hasn't been published yet, so there are no student attempts to report on.",
+          "action": "Go to builder"
+        },
+        "awaiting": {
+          "title": "Waiting for attempts",
+          "reason": "Results appear here as students work through this practice. Check back once they've started."
+        }
+      }
+    },
+    "quiz": {
+      "status": {
+        "published": "Published",
+        "draft": "Draft"
+      },
+      "typeLabel": {
+        "multiple_choice": "Multiple choice",
+        "true_false": "True / False",
+        "matching": "Matching",
+        "ordering": "Ordering",
+        "short_answer": "Short answer",
+        "other": "Question"
+      },
+      "list": {
+        "title": "Graded quizzes",
+        "subtitle": "Score-bearing quizzes that count toward the course record. Each needs a score policy before it can go live.",
+        "generate": "Generate quiz",
+        "gradedBadge": "Graded",
+        "questionCount": "{count, plural, one {# question} other {# questions}}",
+        "justNow": "Just now",
+        "loadErrorTitle": "Couldn't load quizzes",
+        "loadError": "Something went wrong loading this course's quizzes. Try again in a moment.",
+        "empty": {
+          "title": "No graded quizzes yet",
+          "reason": "Generate a graded quiz from your course materials, then set its score category, points, and due date before publishing.",
+          "action": "Generate quiz"
+        }
+      },
+      "builder": {
+        "subtitle": "Review the questions and set the score policy, then publish when it's ready.",
+        "viewResults": "View results",
+        "back": "Back to quizzes",
+        "notFoundTitle": "Quiz not found",
+        "notFound": "This quiz may have been deleted, or you don't have access to it.",
+        "questionsTitle": "Quiz questions",
+        "generate": "Generate questions",
+        "addQuestion": "Add question",
+        "editQuestion": "Edit question",
+        "deleteQuestion": "Delete question",
+        "empty": {
+          "title": "No questions yet",
+          "reason": "Generate questions from your materials, or add one by hand to get started."
+        },
+        "deleteConfirm": {
+          "title": "Delete question",
+          "body": "This removes the question from the quiz. This can't be undone.",
+          "cancel": "Cancel",
+          "confirm": "Delete"
+        }
+      },
+      "policy": {
+        "category": {
+          "label": "Score category",
+          "placeholder": "Choose a category",
+          "hint": "Which part of the course record this quiz counts toward."
+        },
+        "points": {
+          "label": "Points",
+          "placeholder": "e.g. 10"
+        },
+        "grading": {
+          "label": "Grading",
+          "placeholder": "Choose grading",
+          "mode": {
+            "auto": "Auto-graded",
+            "manual": "Manual review",
+            "participation": "Participation"
+          }
+        },
+        "deadline": {
+          "label": "Deadline",
+          "due": "Due",
+          "close": "Closes",
+          "hint": "Set at least a due or close date. Attempts after close follow the late rule."
+        },
+        "late": {
+          "label": "Late submissions",
+          "placeholder": "Choose a late rule",
+          "hint": "How the quiz handles attempts after the due date.",
+          "rule": {
+            "accept_late": "Accept late",
+            "reject_late": "Reject late",
+            "accept_with_flag": "Accept, flag as late"
+          }
+        }
+      },
+      "publish": {
+        "title": "Score policy & publish",
+        "subtitle": "Graded quizzes need a score category, points, grading mode, and a deadline before they go live.",
+        "checklist": {
+          "questions": "{count, plural, =0 {No questions yet} one {# question ready} other {# questions ready}}"
+        },
+        "publishedTitle": "Published to students",
+        "publishedReason": "Students can attempt this graded quiz. Re-publish to push edits or policy changes.",
+        "publishError": "Couldn't publish this quiz. Try again in a moment.",
+        "publishing": "Publishing…",
+        "publish": "Publish quiz",
+        "republish": "Re-publish"
+      },
+      "blocked": {
+        "title": "Finish the score policy to publish",
+        "reason": "This graded quiz can't go live until every scoring field is set.",
+        "fix": "Fix",
+        "field": {
+          "score_category_id": {
+            "label": "Score category",
+            "hint": "Pick the category this quiz counts toward."
+          },
+          "points": {
+            "label": "Points",
+            "hint": "Set how many points this quiz is worth."
+          },
+          "grading_mode": {
+            "label": "Grading mode",
+            "hint": "Choose how attempts are graded."
+          },
+          "deadline": {
+            "label": "Deadline",
+            "hint": "Set a due or close date for the quiz."
+          }
+        }
+      },
+      "results": {
+        "back": "Back to builder",
+        "title": "Quiz results",
+        "subtitle": "How students are doing on this graded quiz.",
+        "loadErrorTitle": "Couldn't load results",
+        "loadError": "Something went wrong loading this quiz. Try again in a moment.",
+        "unpublished": {
+          "title": "Publish to collect attempts",
+          "reason": "This quiz hasn't been published yet, so there are no student attempts to report on.",
+          "action": "Go to builder"
+        },
+        "awaiting": {
+          "title": "Waiting for attempts",
+          "reason": "Results appear here as students attempt this quiz. Check back once they've started."
+        }
+      }
+    },
     "activities": {
       "empty": {
         "title": "Activities workspace",
