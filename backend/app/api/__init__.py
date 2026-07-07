@@ -25,6 +25,7 @@ from app.api.courses import router as courses_router
 from app.api.documents import materials_router as materials_router
 from app.api.documents import router as documents_router
 from app.api.flashcards import router as flashcards_router
+from app.api.insights import router as insights_router
 from app.api.instructor_alerts import router as instructor_alerts_router
 from app.api.internal import router as internal_router
 from app.api.live import router as live_router
@@ -77,6 +78,7 @@ api_router.include_router(concept_clusters_router)
 api_router.include_router(concept_tags_router)
 api_router.include_router(internal_router)
 api_router.include_router(mastery_router)
+api_router.include_router(insights_router)
 api_router.include_router(instructor_alerts_router)
 api_router.include_router(review_router)
 api_router.include_router(scores_router)
