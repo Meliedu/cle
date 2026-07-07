@@ -20,7 +20,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_owned_course, require_instructor
+from app.api._helpers import verify_enrollment as _verify_enrollment
+from app.api.deps import (
+    get_current_user,
+    get_owned_course,
+    require_instructor,
+    require_student,
+)
 from app.database import get_db
 from app.models.checkpoint import (
     Checkpoint,
@@ -36,13 +42,22 @@ from app.schemas.checkpoint import (
     CheckpointCardResult,
     CheckpointCardUpdate,
     CheckpointGenerateRequest,
+    CheckpointIntroResponse,
     CheckpointPublishRequest,
     CheckpointResponse,
+    CheckpointResponseResult,
+    CheckpointResponseSubmit,
     CheckpointResults,
     CheckpointScheduleRequest,
+    StudentCheckpointCard,
     CheckpointWithCardsResponse,
 )
 from app.schemas.common import APIResponse
+from app.services.checkpoint_responses import (
+    OPEN_STATUSES,
+    is_within_window,
+    submit_checkpoint_response,
+)
 from app.services.checkpoints import IllegalTransition, assert_transition
 
 # Card mutations (edit/remove/add) are only legal while the teacher is still
@@ -609,3 +624,105 @@ async def close_checkpoint(
     await db.commit()
     await db.refresh(cp)
     return APIResponse(success=True, data=CheckpointResponse.model_validate(cp))
+
+
+# ----- student intro + response submission (P3 T7, S034–S036) -----
+#
+# Student-facing, enrollment-scoped (NOT owner). The evidence seam lives in
+# ``services/checkpoint_responses.py`` and mirrors ``quizzes.py`` exactly
+# (Decision 5): one LearningEvent(during_class) + an update_concept_mastery
+# Task for concept-tagged review_point cards, best-effort.
+
+
+def _qr_not_available(message: str) -> HTTPException:
+    """A typed ``QR_NOT_AVAILABLE`` gate refusal (§3.4), HTTP 409.
+
+    The mobile flow (S034/S038) switches on this to render the "not open yet /
+    missed" states rather than a generic error.
+    """
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={"code": "QR_NOT_AVAILABLE", "message": message},
+    )
+
+
+async def _open_checkpoint_for_student(
+    checkpoint_id: uuid.UUID, user: User, db: AsyncSession
+) -> Checkpoint:
+    """Resolve a checkpoint a student may currently answer.
+
+    404 when it doesn't exist; 403 when the student isn't actively enrolled;
+    ``QR_NOT_AVAILABLE`` (409) when it isn't ``published``/``live``.
+    """
+    cp = await db.get(Checkpoint, checkpoint_id)
+    if cp is None or cp.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Checkpoint not found")
+    await _verify_enrollment(db, cp.course_id, user.id)
+    if cp.status not in OPEN_STATUSES:
+        raise _qr_not_available("This checkpoint is not open.")
+    return cp
+
+
+@router.get(
+    "/{checkpoint_id}/intro",
+    response_model=APIResponse[CheckpointIntroResponse],
+)
+async def get_checkpoint_intro(
+    checkpoint_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_student),
+) -> APIResponse[CheckpointIntroResponse]:
+    """Student intro: the ordered live cards, only while open + in window."""
+    cp = await _open_checkpoint_for_student(checkpoint_id, user, db)
+    if not is_within_window(cp, _utcnow()):
+        raise _qr_not_available("This checkpoint is not open right now.")
+    cards = await _load_cards(db, cp.id)
+    return APIResponse(
+        success=True,
+        data=CheckpointIntroResponse(
+            checkpoint_id=cp.id,
+            title=cp.title,
+            status=cp.status,
+            close_at=cp.close_at,
+            cards=[StudentCheckpointCard.model_validate(c) for c in cards],
+        ),
+    )
+
+
+@router.post(
+    "/{checkpoint_id}/responses",
+    response_model=APIResponse[CheckpointResponseResult],
+    status_code=201,
+)
+async def submit_response(
+    checkpoint_id: uuid.UUID,
+    body: CheckpointResponseSubmit,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_student),
+) -> APIResponse[CheckpointResponseResult]:
+    """Upsert one card's answer + fire the evidence seam (service layer).
+
+    A card_id that belongs to a *different* checkpoint is a 404 (the T2
+    consistency check) — never silently accepted against this checkpoint.
+    """
+    cp = await _open_checkpoint_for_student(checkpoint_id, user, db)
+
+    card = await db.get(CheckpointCard, body.card_id)
+    if (
+        card is None
+        or card.deleted_at is not None
+        or card.checkpoint_id != cp.id
+    ):
+        raise HTTPException(status_code=404, detail="Card not found")
+
+    response = await submit_checkpoint_response(
+        db,
+        checkpoint=cp,
+        card=card,
+        user_id=user.id,
+        confidence=body.confidence,
+        text_response=body.text_response,
+    )
+    return APIResponse(
+        success=True, data=CheckpointResponseResult.model_validate(response)
+    )

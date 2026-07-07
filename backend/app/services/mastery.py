@@ -41,6 +41,10 @@ class AttemptKind(enum.Enum):
     FLASHCARD = "flashcard"
     REVISION = "revision"
     PRONUNCIATION = "pronunciation"
+    # A checkpoint review-point confidence rating (P3 T7). The confidence
+    # (−2..+2) is mapped to an outcome (c+2)/4 by the submission service before
+    # enqueue; the worker applies it exactly like any other attempt kind.
+    CHECKPOINT = "checkpoint"
 
 
 def compute_confidence(alpha: Decimal, beta: Decimal) -> Decimal:

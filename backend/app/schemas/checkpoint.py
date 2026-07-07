@@ -130,6 +130,54 @@ class CheckpointCardResult(BaseModel):
     text_response_count: int = 0
 
 
+class StudentCheckpointCard(BaseModel):
+    """A single card as the student sees it (no removal/audit fields, no
+    answer key — cards carry only a prompt)."""
+
+    id: uuid.UUID
+    position: int
+    kind: CardKind
+    prompt: str
+
+    model_config = {"from_attributes": True}
+
+
+class CheckpointIntroResponse(BaseModel):
+    """Student intro payload (P3 T7, S034) — the ordered live cards plus the
+    minimal checkpoint context the mobile flow needs to render + submit."""
+
+    checkpoint_id: uuid.UUID
+    title: str
+    status: str
+    close_at: datetime | None = None
+    cards: list[StudentCheckpointCard] = Field(default_factory=list)
+
+
+class CheckpointResponseSubmit(BaseModel):
+    """Submit one card's answer (P3 T7). ``confidence`` is the −2..+2 scale for
+    ``review_point`` cards; ``text_response`` is the free-text answer for the
+    ``final_comments`` card. Exactly one is supplied, enforced server-side
+    against the card's ``kind``."""
+
+    card_id: uuid.UUID
+    confidence: int | None = Field(default=None, ge=-2, le=2)
+    text_response: str | None = Field(default=None, max_length=2000)
+
+
+class CheckpointResponseResult(BaseModel):
+    """The persisted response row echoed back to the student."""
+
+    id: uuid.UUID
+    checkpoint_id: uuid.UUID
+    card_id: uuid.UUID
+    confidence: int | None
+    text_response: str | None
+    status: str
+    submitted_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class CheckpointResults(BaseModel):
     """Teacher results payload for a single checkpoint (P3 T6).
 
