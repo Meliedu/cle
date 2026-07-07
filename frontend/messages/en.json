@@ -2573,6 +2573,118 @@
         "backToSession": "Back to session",
         "viewResponse": "View response"
       }
+    },
+    "profile": {
+      "title": "Your learning profile",
+      "subtitle": "A source-linked picture of what you have been building — reviewed before it reaches you.",
+      "back": "Back to course",
+      "viewInsights": "View insights",
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "groups": {
+        "strong": "Strong",
+        "developing": "Developing",
+        "weak": "Needs work"
+      },
+      "empty": {
+        "title": "No profile yet",
+        "reason": "Your learning profile builds as you complete checkpoints and practice. Once there is enough reviewed evidence, your strengths and gaps appear here."
+      },
+      "error": {
+        "title": "We couldn't load your profile",
+        "reason": "Refresh the page to try again."
+      },
+      "evidence": {
+        "mastery": "Mastery",
+        "confidence": "Confidence",
+        "attempts": "Attempts",
+        "lastSeen": "Last seen",
+        "never": "—",
+        "note": "Based on your reviewed attempts so far. This is an estimate, not a grade."
+      }
+    },
+    "insights": {
+      "title": "Your insights",
+      "subtitle": "How your work maps to the course objectives — reviewed evidence only.",
+      "back": "Back to course",
+      "viewProfile": "View profile",
+      "ilo": {
+        "title": "Objective strength",
+        "subtitle": "Your strength across each course learning objective.",
+        "bloom": "Bloom: {level}",
+        "strength": "Strength",
+        "coverage": "{evidence} of {total} concepts have evidence",
+        "noEvidence": "No evidence yet",
+        "noEvidenceReason": "complete work tagged to this objective to build evidence here.",
+        "empty": {
+          "title": "No objective evidence yet",
+          "reason": "As you complete checkpoints and practice tagged to the course objectives, your strength across each one appears here."
+        },
+        "error": {
+          "title": "We couldn't load your objectives",
+          "reason": "Refresh the page to try again."
+        }
+      },
+      "skills": {
+        "title": "Skill patterns",
+        "subtitle": "The pilot skill areas we track.",
+        "noEvidence": "No evidence yet",
+        "reason": "We do not have skill-level evidence yet. Skill patterns need a concept-to-skill mapping that is not in place for this pilot, so we will not show a score we cannot back up.",
+        "error": {
+          "title": "We couldn't load the skill map",
+          "reason": "Refresh the page to try again."
+        }
+      }
+    },
+    "followUp": {
+      "title": "Follow-up",
+      "subtitle": "A next step your instructor set based on your recent work.",
+      "backToChecklist": "Back to checklist",
+      "checklistBadge": "From your instructor",
+      "observedSignal": "What we noticed",
+      "interpretation": "Your instructor's note",
+      "limitation": "Worth keeping in mind",
+      "outcome": {
+        "label": "Did it move?",
+        "pending": "Not checked yet",
+        "completed": "Done",
+        "improved": "Improved",
+        "persistent": "Still working on it",
+        "resolved": "Resolved",
+        "needs_review": "Needs another look",
+        "carried_forward": "Carried forward"
+      },
+      "markViewed": "Mark as viewed",
+      "marking": "Saving…",
+      "viewed": "Viewed",
+      "revisit": {
+        "title": "Revisit this checkpoint",
+        "reason": "Re-answer the checkpoint to see if your understanding has moved.",
+        "cta": "Start revisit"
+      },
+      "waiting": {
+        "title": "Your instructor is reviewing this",
+        "reason": "This follow-up is still being reviewed. It will appear here once your instructor has checked it — you never see an unreviewed draft."
+      },
+      "error": {
+        "title": "We couldn't load this follow-up",
+        "reason": "Refresh the page to try again."
+      },
+      "signal": {
+        "title": "Where did this come from",
+        "anchor": "In context: {anchor}",
+        "sourceKind": "Source",
+        "occurredAt": "When",
+        "noSource": "No linked source signal.",
+        "waiting": {
+          "title": "Your instructor is reviewing this signal",
+          "reason": "The underlying signal is still under review, so its details are not shown yet."
+        },
+        "error": {
+          "title": "We couldn't load the signal",
+          "reason": "Refresh the page to try again."
+        }
+      }
     }
   }
 }

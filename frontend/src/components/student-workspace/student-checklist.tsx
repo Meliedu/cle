@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ListTodo } from "lucide-react";
+import { ChevronRight, ListTodo } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, StateBanner } from "@/components/patterns";
 import { StatusChip } from "@/components/course/session-status";
@@ -114,6 +116,7 @@ export function StudentChecklist({ courseId }: StudentChecklistProps) {
         buckets[bucket].length > 0 ? (
           <ChecklistGroup
             key={bucket}
+            courseId={courseId}
             heading={t(`groups.${bucket}`)}
             items={buckets[bucket]}
           />
@@ -124,11 +127,12 @@ export function StudentChecklist({ courseId }: StudentChecklistProps) {
 }
 
 interface ChecklistGroupProps {
+  readonly courseId: string;
   readonly heading: string;
   readonly items: readonly ChecklistItem[];
 }
 
-function ChecklistGroup({ heading, items }: ChecklistGroupProps) {
+function ChecklistGroup({ courseId, heading, items }: ChecklistGroupProps) {
   return (
     <div className="space-y-2">
       <h3 className="text-[12px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
@@ -136,22 +140,45 @@ function ChecklistGroup({ heading, items }: ChecklistGroupProps) {
       </h3>
       <ul className="space-y-2">
         {items.map((item) => (
-          <ChecklistRow key={item.id} item={item} />
+          <ChecklistRow key={item.id} courseId={courseId} item={item} />
         ))}
       </ul>
     </div>
   );
 }
 
-function ChecklistRow({ item }: { readonly item: ChecklistItem }) {
+interface ChecklistRowProps {
+  readonly courseId: string;
+  readonly item: ChecklistItem;
+}
+
+function ChecklistRow({ courseId, item }: ChecklistRowProps) {
   const t = useTranslations("student.checklist");
   const tk = useTranslations("student.checklist.kind");
   const ts = useTranslations("student.checklist.status");
+  const tf = useTranslations("student.followUp");
   const when = item.due_at ?? item.close_at;
 
-  return (
-    <li className="flex items-center gap-3 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary)]">
+  // S060 — a reviewed follow-up gets its own visual treatment: an accent-toned
+  // icon + "assigned by your instructor" badge, and the whole row links to the
+  // action detail (`follow_up` work_items carry the FollowUpAction id in
+  // `source_id`). Every other source_kind keeps the plain static row.
+  const isFollowUp = item.source_kind === "follow_up";
+  const followUpHref =
+    isFollowUp && item.source_id
+      ? `/student/courses/${courseId}/follow-ups/${item.source_id}`
+      : null;
+
+  const body = (
+    <>
+      <div
+        className={cn(
+          "flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-md)]",
+          isFollowUp
+            ? "bg-[var(--color-accent-light)] text-[var(--color-accent)]"
+            : "bg-[var(--color-primary-light)] text-[var(--color-primary)]"
+        )}
+      >
         <SourceKindIcon kind={item.source_kind} className="size-5" />
       </div>
 
@@ -160,7 +187,11 @@ function ChecklistRow({ item }: { readonly item: ChecklistItem }) {
           <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
             {tk(item.source_kind)}
           </span>
-          {item.required ? (
+          {isFollowUp ? (
+            <span className="rounded-[var(--radius-pill)] bg-[var(--color-accent-light)] px-2 text-[11px] font-medium text-[var(--color-accent-hover)]">
+              {tf("checklistBadge")}
+            </span>
+          ) : item.required ? (
             <span className="text-[11px] font-medium text-[var(--color-primary)]">
               {t("required")}
             </span>
@@ -181,6 +212,32 @@ function ChecklistRow({ item }: { readonly item: ChecklistItem }) {
         label={ts(item.status)}
         className="self-start"
       />
+
+      {followUpHref ? (
+        <ChevronRight
+          aria-hidden="true"
+          className="size-4 shrink-0 self-center text-[var(--color-text-muted)]"
+        />
+      ) : null}
+    </>
+  );
+
+  if (followUpHref) {
+    return (
+      <li>
+        <Link
+          href={followUpHref}
+          className="flex min-h-16 items-center gap-3 rounded-[var(--radius-xl)] border border-[var(--color-accent)]/35 bg-[var(--color-accent-light)]/40 px-4 py-3 transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-accent-light)]"
+        >
+          {body}
+        </Link>
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex items-center gap-3 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+      {body}
     </li>
   );
 }
