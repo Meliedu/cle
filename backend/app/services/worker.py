@@ -481,6 +481,15 @@ async def _body_decay() -> None:
         logger.info("HLR decay touched %d mastery rows", n)
 
 
+async def _body_close_due() -> None:
+    from app.services.checkpoints import close_due_checkpoints
+
+    async with async_session_factory() as session:
+        n = await close_due_checkpoints(session)
+        if n:
+            logger.info("close_due_checkpoints closed %d checkpoint(s)", n)
+
+
 async def _body_alerts_enqueue() -> None:
     from app.models import Course
 
@@ -560,6 +569,9 @@ async def _run_cron_ticks() -> None:
     await _claim_and_run_cron("overdue", timedelta(hours=24), _body_overdue)
     await _claim_and_run_cron("decay", timedelta(hours=24), _body_decay)
     await _claim_and_run_cron("alert", timedelta(hours=1), _body_alerts_enqueue)
+    await _claim_and_run_cron(
+        "close_due_checkpoints", timedelta(minutes=1), _body_close_due
+    )
 
 
 async def worker_loop(shutdown_event: asyncio.Event) -> None:

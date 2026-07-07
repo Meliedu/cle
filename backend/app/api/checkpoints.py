@@ -79,7 +79,11 @@ from app.services.checkpoint_responses import (
     is_within_window,
     submit_checkpoint_response,
 )
-from app.services.checkpoints import IllegalTransition, assert_transition
+from app.services.checkpoints import (
+    IllegalTransition,
+    assert_transition,
+    walk_to_closed,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -651,10 +655,10 @@ async def close_checkpoint(
     from_status = cp.status
 
     try:
-        if cp.status == "published":
-            _apply_transition(cp, "live", "closed")
-        else:
-            _apply_transition(cp, "closed")
+        # Shared close walk with the T13 cron — the legal edges live in one place
+        # (``walk_to_closed`` in the service), so cron and button never diverge.
+        for target in walk_to_closed(cp.status):
+            _apply_transition(cp, target)
     except IllegalTransition as exc:
         raise _review_required(exc.message) from exc
 
