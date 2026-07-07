@@ -1,3 +1,4 @@
+from app.models.activity import Activity, ActivityResponse
 from app.models.api_usage import ApiUsage
 from app.models.attendance import AttendanceRecord, CheckpointLaunch
 from app.models.base import Base
@@ -139,4 +140,6 @@ __all__ = [
     "ReadinessResponse",
     "WorkItem",
     "WorkItemProgress",
+    "Activity",
+    "ActivityResponse",
 ]
