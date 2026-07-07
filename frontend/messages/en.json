@@ -1261,6 +1261,154 @@
         "backToCourses": "Back to courses"
       },
       "joinError": "We couldn't complete your join. Please try again."
+    },
+    "checkpoint": {
+      "scan": {
+        "scanning": "Checking you in…",
+        "scanningReason": "Recording your attendance for this session.",
+        "error": {
+          "invalid": {
+            "title": "This code isn't valid",
+            "reason": "The check-in code has expired or been rotated. Ask your instructor to show the current QR code, then scan again."
+          },
+          "closed": {
+            "title": "Check-in has closed",
+            "reason": "This session's check-in window is no longer open. If you think this is a mistake, let your instructor know."
+          },
+          "rate_limited": {
+            "title": "Too many attempts",
+            "reason": "You've scanned a few times in quick succession. Wait a moment and try once more."
+          },
+          "generic": {
+            "title": "We couldn't check you in",
+            "reason": "Something went wrong recording your attendance. Please try again in a moment."
+          },
+          "retry": "Try again",
+          "backToCourses": "Back to courses"
+        }
+      },
+      "intro": {
+        "eyebrow": "Checkpoint",
+        "readyChip": "Ready to start",
+        "includes": "This checkpoint includes",
+        "metaCards": "{count, plural, one {# card} other {# cards}}",
+        "metaAttendance": "Attendance is counted when you submit",
+        "metaCloses": "Closes at {time}",
+        "start": "Start checkpoint",
+        "back": "Back to session",
+        "loadErrorTitle": "We couldn't load this checkpoint",
+        "loadErrorReason": "Please check your connection and try again.",
+        "emptyTitle": "Nothing to answer",
+        "emptyReason": "This checkpoint has no live cards right now. Your attendance is already recorded."
+      },
+      "card": {
+        "stepLabel": "Card {current} of {total}",
+        "question": "How clear is this topic to you right now?",
+        "lastTime": "Last time: {value}",
+        "back": "Back",
+        "next": "Next card",
+        "saving": "Saving…",
+        "submitError": "We couldn't save that answer. Please try again."
+      },
+      "final": {
+        "stepLabel": "Card {current} of {total}",
+        "title": "Any questions or comments?",
+        "helper": "Leave anything you want your instructor to know about today's class.",
+        "placeholder": "Type a question or comment…",
+        "optional": "Optional — you can submit without writing.",
+        "attendanceNote": "Attendance is recorded after submission.",
+        "back": "Back",
+        "submit": "Submit checkpoint",
+        "submitting": "Submitting…",
+        "submitError": "We couldn't submit your checkpoint. Please try again."
+      },
+      "complete": {
+        "title": "Checkpoint submitted",
+        "reason": "Your attendance was recorded for this session.",
+        "reviewPoints": "{count, plural, one {# review point completed} other {# review points completed}}",
+        "commentCard": "Comment card completed",
+        "submittedAt": "Submitted {time}",
+        "whatsNext": "What happens next",
+        "next1": "Your responses update your personal progress record.",
+        "next2": "The class summary helps your instructor decide what to revisit.",
+        "backToSession": "Back to session",
+        "viewHistory": "View checkpoint history"
+      },
+      "missed": {
+        "title": "Checkpoint closed",
+        "reason": "The check-in window for this checkpoint has ended.",
+        "attendanceNot": "Attendance was not recorded",
+        "attendanceLate": "Attendance recorded — submitted late",
+        "submitted": "{count} of {total} cards submitted",
+        "closedAt": "Closed {time}",
+        "backToSession": "Back to session",
+        "viewHistory": "View checkpoint history",
+        "help": "If this looks wrong, contact your instructor."
+      },
+      "history": {
+        "title": "Checkpoint history",
+        "subtitle": "Review the core points from each class.",
+        "filterLabel": "Filter checkpoints",
+        "filter": {
+          "all": "All",
+          "needs_revisit": "Needs revisit",
+          "completed": "Completed"
+        },
+        "reviewPoints": "{responded} of {total} review points answered",
+        "review": "Review",
+        "status": {
+          "complete": "Completed",
+          "late": "Late",
+          "missed": "Missed",
+          "upcoming": "Upcoming"
+        },
+        "emptyTitle": "No checkpoints yet",
+        "emptyReason": "Checkpoints from your classes will show up here once your instructor runs them.",
+        "loadErrorTitle": "We couldn't load your history",
+        "loadErrorReason": "Please check your connection and try again."
+      },
+      "followUp": {
+        "eyebrow": "Follow-up suggested",
+        "title": "Strengthen a weak spot",
+        "subtitle": "Focus on one area to feel more confident in your next checkpoint.",
+        "lastConfidence": "Last time you rated this {value}.",
+        "lastConfidenceLabelled": "Last time you said: {value}.",
+        "reason": "This point is likely to come up again in your next checkpoint.",
+        "start": "Start follow-up",
+        "viewHistory": "Back to history",
+        "footer": "Working on this now helps you feel more confident next time.",
+        "emptyTitle": "You're on track",
+        "emptyReason": "Nothing was flagged from your last checkpoint — no revisit needed right now.",
+        "loadErrorTitle": "We couldn't load your follow-up",
+        "loadErrorReason": "Please check your connection and try again."
+      },
+      "revisit": {
+        "question": "How clear is this topic now?",
+        "next": "Next card",
+        "submit": "Submit follow-up",
+        "submitError": "We couldn't save that answer. Please try again.",
+        "loadErrorTitle": "We couldn't load this follow-up",
+        "loadErrorReason": "This follow-up isn't available right now. Please try again later.",
+        "doneTitle": "Follow-up complete",
+        "improved": "Nice — your confidence went up by {delta}.",
+        "same": "Thanks for revisiting this.",
+        "backToHistory": "Back to history"
+      },
+      "confirmed": {
+        "title": "Attendance confirmed",
+        "reason": "Your attendance was recorded from your checkpoint submission.",
+        "statusLabel": "Marked {status}",
+        "statusValue": {
+          "present": "present",
+          "late": "late",
+          "excused": "excused",
+          "absent": "absent"
+        },
+        "checkedInAt": "Checked in {time}",
+        "submittedChip": "Checkpoint submitted",
+        "backToSession": "Back to session",
+        "viewResponse": "View response"
+      }
     }
   }
 }
