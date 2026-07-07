@@ -44,8 +44,16 @@ from app.schemas.evidence import (
     ReviewActionResponse,
     ReviewQueueItem,
 )
+from app.services.work_items import upsert_progress, upsert_work_item
 
 router = APIRouter(tags=["review"])
+
+# Follow-up statuses that still occupy a student's Review Path — a re-review
+# reuses one of these rather than spawning a duplicate follow-up (Decision 3).
+_ACTIVE_FOLLOW_UP_STATUSES = ("suggested", "assigned", "viewed")
+
+# Cap the checklist row title at the work_items.title column width (255).
+_FOLLOW_UP_TITLE_MAX = 255
 
 # Map a ReviewAction.action_type to the LearningNote.review_status it sets.
 # Every value is a member of the learning_notes review_status CHECK constraint
@@ -64,6 +72,17 @@ _ACTION_TO_NOTE_STATUS: dict[str, str] = {
 # FollowUpAction.action_type fallback when a review assigns a follow-up without
 # an explicit inline spec (action_type == 'assign_followup' with no body.follow_up).
 _DEFAULT_FOLLOW_UP_ACTION = "follow_up"
+
+
+def _follow_up_title(note: LearningNote, follow_up: FollowUpAction) -> str:
+    """A short, human title for the follow-up's checklist row.
+
+    Prefers the note's ``observed_signal`` (the concrete thing the student will
+    recognise), falling back to the follow-up's ``action_type`` label. Truncated
+    to the ``work_items.title`` column width.
+    """
+    label = (note.observed_signal or "").strip() or follow_up.action_type
+    return f"Follow-up: {label}"[:_FOLLOW_UP_TITLE_MAX]
 
 
 class ReviewActionResult(BaseModel):
@@ -235,20 +254,72 @@ async def review_learning_note(
                 status_code=400,
                 detail="Follow-up requires a target user (note has no student)",
             )
-        follow_up = FollowUpAction(
-            learning_note_id=note.id,
-            course_id=note.course_id,
-            user_id=target_user_id,
-            action_type=(
-                spec.action_type if spec else _DEFAULT_FOLLOW_UP_ACTION
-            ),
-            target_kind=spec.target_kind if spec else None,
-            target_id=spec.target_id if spec else None,
-            due_at=spec.due_at if spec else None,
-            assignment_status="assigned",
-            assigned_by=actor.id,
+        # Guarded upstream (Decision 3): reuse an existing ACTIVE follow-up for
+        # this (note, student) rather than spawning a duplicate — so a re-review
+        # never creates a second follow-up (and thus a second work_item).
+        follow_up = (
+            await db.execute(
+                select(FollowUpAction).where(
+                    FollowUpAction.learning_note_id == note.id,
+                    FollowUpAction.user_id == target_user_id,
+                    FollowUpAction.assignment_status.in_(
+                        _ACTIVE_FOLLOW_UP_STATUSES
+                    ),
+                )
+            )
+        ).scalars().first()
+        if follow_up is None:
+            follow_up = FollowUpAction(
+                learning_note_id=note.id,
+                course_id=note.course_id,
+                user_id=target_user_id,
+                action_type=(
+                    spec.action_type if spec else _DEFAULT_FOLLOW_UP_ACTION
+                ),
+                target_kind=spec.target_kind if spec else None,
+                target_id=spec.target_id if spec else None,
+                due_at=spec.due_at if spec else None,
+                assignment_status="assigned",
+                assigned_by=actor.id,
+            )
+            db.add(follow_up)
+
+        # Transactional checklist-spine write (P6 B1, Decision 3): a reviewed
+        # follow-up becomes a `follow_up` work_item + a per-student progress row,
+        # riding this endpoint's single commit so the follow-up, its ReviewAction,
+        # the work_item and the progress row all persist (or roll back) atomically.
+        # Idempotent on the (course_id, source_kind='follow_up', source_id) unique
+        # index — the reuse guard above keeps source_id stable across re-reviews.
+        # Mirrors checkpoints.py::publish_checkpoint's publish→work_item seam.
+        await db.flush()  # materialize follow_up.id before the upsert
+        title = _follow_up_title(note, follow_up)
+        work_item = await upsert_work_item(
+            db,
+            course_id=follow_up.course_id,
+            source_kind="follow_up",
+            source_id=follow_up.id,
+            title=title,
+            required=True,
+            score_bearing=False,
+            due_at=follow_up.due_at,
+            close_at=follow_up.due_at,
+            created_by=actor.id,
         )
-        db.add(follow_up)
+        # Keep the checklist row's schedule/title in sync on a re-review (choice
+        # b, mirroring publish): on_conflict_do_nothing returns the existing row
+        # unchanged, so re-apply the current follow-up's timing/title.
+        if work_item.due_at != follow_up.due_at:
+            work_item.due_at = follow_up.due_at
+        if work_item.close_at != follow_up.due_at:
+            work_item.close_at = follow_up.due_at
+        if work_item.title != title:
+            work_item.title = title
+        await upsert_progress(
+            db,
+            work_item_id=work_item.id,
+            user_id=follow_up.user_id,
+            status="follow_up_assigned",
+        )
 
     await db.commit()
     await db.refresh(review_action)
