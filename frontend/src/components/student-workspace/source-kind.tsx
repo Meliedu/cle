@@ -13,8 +13,9 @@ import type { WorkItemSourceKind } from "@/hooks/use-work-items";
 
 /**
  * Icon per work-item `source_kind` (spec §4.6 enum). One glyph per source so a
- * checklist row or the overview next-action reads its kind at a glance. Labels
- * are copy-free — next-intl keys live at `student.checklist.kind.*`.
+ * checklist row or the overview next-action reads its kind at a glance. This is
+ * a static module-level map (mirrors `toneStyles`) so the lookup + render stays
+ * a static-component pattern, not a component created during render.
  */
 const SOURCE_ICON: Record<WorkItemSourceKind, LucideIcon> = {
   checkpoint: ClipboardCheck,
@@ -26,6 +27,15 @@ const SOURCE_ICON: Record<WorkItemSourceKind, LucideIcon> = {
   report: BookOpen,
 };
 
-export function sourceKindIcon(kind: WorkItemSourceKind): LucideIcon {
-  return SOURCE_ICON[kind] ?? FileText;
+interface SourceKindIconProps {
+  readonly kind: WorkItemSourceKind;
+  readonly className?: string;
+}
+
+/** Renders the icon for a work-item source kind. Labels stay copy-free. */
+export function SourceKindIcon({ kind, className }: SourceKindIconProps) {
+  const Icon = SOURCE_ICON[kind];
+  return (
+    <Icon aria-hidden="true" strokeWidth={1.85} className={className} />
+  );
 }

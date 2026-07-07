@@ -1305,6 +1305,44 @@
         "reason": "Refresh the page to try again."
       }
     },
+    "materials": {
+      "title": "Materials",
+      "subtitle": "Readings, guides, and resources for your course, grouped by session.",
+      "open": "Open",
+      "unassigned": "Other materials",
+      "sessionFolder": "Session {index}",
+      "folderEmpty": "No materials in this folder yet.",
+      "release": {
+        "locked": "Not yet open",
+        "released": "Open",
+        "completed": "Completed",
+        "archived": "Archived"
+      },
+      "reader": {
+        "title": "Material",
+        "subtitle": "Read it here, or open it in a new tab to download.",
+        "openTab": "Open in new tab",
+        "download": "Download",
+        "error": {
+          "title": "This material isn't available",
+          "reason": "It may not be released yet, the link may have expired, or you may need to be enrolled. Try reopening it."
+        }
+      },
+      "empty": {
+        "title": "No materials published yet",
+        "reason": "When your instructor releases a session, its readings and resources appear here."
+      },
+      "error": {
+        "title": "We couldn't load your materials",
+        "reason": "Refresh the page to try again."
+      }
+    },
+    "activities": {
+      "empty": {
+        "title": "Activities arrive soon",
+        "reason": "Practice sets, quizzes, and polls for this course will show up here once your instructor sets them up."
+      }
+    },
     "join": {
       "title": "Join a course",
       "subtitle": "Enter the code shown by your instructor.",

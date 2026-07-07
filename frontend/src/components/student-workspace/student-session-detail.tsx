@@ -16,7 +16,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, StateBanner } from "@/components/patterns";
+import { EmptyState } from "@/components/patterns";
 import { StatusChip, releaseTone } from "@/components/course/session-status";
 import { useMeetings, type Meeting } from "@/hooks/use-meetings";
 import {

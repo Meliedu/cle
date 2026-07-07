@@ -22,7 +22,7 @@ import {
   type ChecklistItem,
 } from "@/hooks/use-work-items";
 
-import { sourceKindIcon } from "./source-kind";
+import { SourceKindIcon } from "./source-kind";
 import { isWorkItemDone, workItemTone } from "./work-item-status";
 
 interface StudentCourseOverviewProps {
@@ -167,14 +167,13 @@ function NextActionCard({ courseId, next }: NextActionCardProps) {
     );
   }
 
-  const Icon = sourceKindIcon(next.source_kind);
   const due = next.due_at ?? next.close_at;
 
   return (
     <div className="flex flex-col gap-4 rounded-[var(--radius-xl)] border border-[var(--color-primary)]/30 bg-[var(--color-primary-light)] p-5 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-start gap-3">
         <div className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-surface)] text-[var(--color-primary)]">
-          <Icon aria-hidden="true" strokeWidth={1.85} className="size-5" />
+          <SourceKindIcon kind={next.source_kind} className="size-5" />
         </div>
         <div className="min-w-0 space-y-1">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-primary)]">

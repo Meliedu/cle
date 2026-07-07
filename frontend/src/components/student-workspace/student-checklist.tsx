@@ -2,14 +2,14 @@
 
 import { useMemo } from "react";
 import { useTranslations } from "next-intl";
-import { ListTodo, type LucideIcon } from "lucide-react";
+import { ListTodo } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, StateBanner } from "@/components/patterns";
 import { StatusChip } from "@/components/course/session-status";
 import { useChecklist, type ChecklistItem } from "@/hooks/use-work-items";
 
-import { sourceKindIcon } from "./source-kind";
+import { SourceKindIcon } from "./source-kind";
 import { checklistBucket, workItemTone, type ChecklistBucket } from "./work-item-status";
 
 interface StudentChecklistProps {
@@ -147,13 +147,12 @@ function ChecklistRow({ item }: { readonly item: ChecklistItem }) {
   const t = useTranslations("student.checklist");
   const tk = useTranslations("student.checklist.kind");
   const ts = useTranslations("student.checklist.status");
-  const Icon: LucideIcon = sourceKindIcon(item.source_kind);
   const when = item.due_at ?? item.close_at;
 
   return (
     <li className="flex items-center gap-3 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
       <div className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary)]">
-        <Icon aria-hidden="true" strokeWidth={1.85} className="size-5" />
+        <SourceKindIcon kind={item.source_kind} className="size-5" />
       </div>
 
       <div className="min-w-0 flex-1">
