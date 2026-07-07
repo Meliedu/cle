@@ -77,10 +77,74 @@
         "ilo_map": "學習成果",
         "checkpoints": "檢查點",
         "score_policy": "評分政策",
-        "class_code": "課程代碼"
+        "class_code": "課程代碼",
+        "review": "審閱並發布"
       },
       "publish": "發布課程",
       "reopen": "重新開啟設定",
+      "pollTimeout": {
+        "title": "處理時間比預期長",
+        "reason": "工作仍在執行或可能已停滯。你可以繼續等待或重試。",
+        "retry": "重試"
+      },
+      "review": {
+        "title": "審閱設定",
+        "subtitle": "在學生加入前確認課程已就緒。",
+        "checklistTitle": "設定清單",
+        "statusComplete": "已完成",
+        "statusMissing": "未完成",
+        "edit": "編輯",
+        "fix": "完成步驟",
+        "publish": "發布課程",
+        "publishing": "發布中…",
+        "publishError": "無法發布課程，請再試一次。",
+        "stepDesc": {
+          "basics": "已設定課程名稱、代碼、學期與系所。",
+          "syllabus": "已上傳並解析課程大綱。",
+          "materials": "已建立核心教材索引。",
+          "schedule": "已確認每節課的時間與地點。",
+          "analyzer_review": "已審閱課程情境並完成佐證。",
+          "ilo_map": "已將學習成果對應至教材。",
+          "checkpoints": "已草擬待審閱的檢查點。",
+          "score_policy": "已設定評分政策類別。",
+          "class_code": "加入代碼已可分享給學生。"
+        },
+        "afterPublish": {
+          "title": "發布後會發生什麼",
+          "joinCode": "學生可用你分享的課程代碼加入。",
+          "calendar": "行事曆事件將出現，第一節課解鎖。",
+          "materials": "第一節課教材將開放給學生。"
+        }
+      },
+      "publishSuccess": {
+        "title": "課程已發布",
+        "subtitle": "{name} 已為學生準備就緒。",
+        "publishedBadge": "已發布",
+        "tagline": "學生現在可用課程代碼加入。",
+        "whatsNext": "接下來？",
+        "openCourse": "開啟課程",
+        "openCourseHint": "前往你的課程主頁。",
+        "showCode": "顯示加入代碼",
+        "showCodeHint": "與學生分享代碼。",
+        "viewCalendar": "檢視行事曆",
+        "viewCalendarHint": "查看即將到來的課程。",
+        "footnote": "日後重新開啟設定仍會保留已註冊學生，只會重新標記來源有變動的內容。"
+      },
+      "missingSource": {
+        "title": "發布前請先完成設定",
+        "subtitle": "Meli 需要更多來源才能開放此課程。",
+        "bannerTitle": "設定尚未完成",
+        "bannerReason": "在下列每個步驟完成前，發布會被封鎖。",
+        "stepsLabel": "仍需完成的步驟",
+        "sourcesLabel": "缺少佐證的來源",
+        "fix": "完成步驟",
+        "back": "返回審閱",
+        "saveDraft": "儲存草稿",
+        "kind": {
+          "objective_without_source": "沒有來源的學習成果",
+          "session_without_material": "沒有教材的課堂"
+        }
+      },
       "errors": {
         "SETUP_INCOMPLETE": "請先完成所有設定步驟再發布。",
         "SETUP_NOT_OPEN": "此課程尚未開放。",

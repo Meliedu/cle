@@ -57,13 +57,16 @@ const COUNT_CARDS: readonly CountCard[] = [
  */
 export function StepAnalyzer({ courseId, onComplete, onNavigate }: StepAnalyzerProps) {
   const t = useTranslations("teacher.setup.analyzer");
+  const tw = useTranslations("teacher.setup");
   const analyze = useAnalyzeSetup(courseId);
   const setStep = useSetStep(courseId);
   const [started, setStarted] = useState(false);
+  const [pollKey, setPollKey] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const { data: analysis, isLoading } = useSetupAnalysis(courseId, {
+  const { data: analysis, isLoading, timedOut } = useSetupAnalysis(courseId, {
     poll: started,
+    pollKey,
   });
 
   // If a prior analysis already exists, land straight on the review rather than
@@ -73,6 +76,9 @@ export function StepAnalyzer({ courseId, onComplete, onNavigate }: StepAnalyzerP
   const runAnalysis = useCallback(async () => {
     setActionError(null);
     setStarted(true);
+    // Bump the poll key so a fresh timeout window opens (also covers retry after
+    // a prior poll timed out — see `usePollWindow`).
+    setPollKey((k) => k + 1);
     try {
       await analyze.mutateAsync();
     } catch {
@@ -139,6 +145,23 @@ export function StepAnalyzer({ courseId, onComplete, onNavigate }: StepAnalyzerP
             {t("run.action")}
           </Button>
         </div>
+      ) : timedOut ? (
+        <StateBanner
+          tone="warning"
+          title={tw("pollTimeout.title")}
+          reason={tw("pollTimeout.reason")}
+          action={
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={analyze.isPending}
+              onClick={() => void runAnalysis()}
+            >
+              {tw("pollTimeout.retry")}
+            </Button>
+          }
+        />
       ) : isRunning || isLoading ? (
         <EmptyState variant="waiting" title={t("running.title")} reason={t("running.reason")} />
       ) : result ? (

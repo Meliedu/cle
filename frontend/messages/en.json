@@ -77,7 +77,8 @@
         "ilo_map": "Learning outcomes",
         "checkpoints": "Checkpoints",
         "score_policy": "Score policy",
-        "class_code": "Class code"
+        "class_code": "Class code",
+        "review": "Review & publish"
       },
       "publish": "Publish course",
       "reopen": "Reopen setup",
@@ -542,6 +543,69 @@
         "loadErrorTitle": "Couldn't load setup",
         "loadError": "We couldn't load this course's setup. Please try again.",
         "retry": "Try again"
+      },
+      "pollTimeout": {
+        "title": "This is taking longer than expected",
+        "reason": "The job is still running or may have stalled. You can keep waiting or retry.",
+        "retry": "Retry"
+      },
+      "review": {
+        "title": "Review setup",
+        "subtitle": "Confirm the course is ready before students join.",
+        "checklistTitle": "Setup checklist",
+        "statusComplete": "Complete",
+        "statusMissing": "Not done",
+        "edit": "Edit",
+        "fix": "Finish step",
+        "publish": "Publish course",
+        "publishing": "Publishing…",
+        "publishError": "We couldn't publish the course. Please try again.",
+        "stepDesc": {
+          "basics": "Course name, code, term, and department set.",
+          "syllabus": "Syllabus uploaded and parsed.",
+          "materials": "Core teaching materials indexed.",
+          "schedule": "Schedule and venue confirmed for every session.",
+          "analyzer_review": "Course context reviewed and grounded.",
+          "ilo_map": "Learning outcomes mapped to materials.",
+          "checkpoints": "Checkpoints drafted for review.",
+          "score_policy": "Score policy categories set.",
+          "class_code": "Join code ready to share with students."
+        },
+        "afterPublish": {
+          "title": "What happens after publish",
+          "joinCode": "Students can join with the class code you share.",
+          "calendar": "Calendar events appear and the first session unlocks.",
+          "materials": "First-session materials become available to students."
+        }
+      },
+      "publishSuccess": {
+        "title": "Course published",
+        "subtitle": "{name} is ready for students.",
+        "publishedBadge": "Published",
+        "tagline": "Students can now join with the class code.",
+        "whatsNext": "What's next?",
+        "openCourse": "Open course",
+        "openCourseHint": "Go to your course dashboard.",
+        "showCode": "Show join code",
+        "showCodeHint": "Share the code with students.",
+        "viewCalendar": "View calendar",
+        "viewCalendarHint": "See upcoming sessions.",
+        "footnote": "Reopening setup later keeps enrolled students in — it only re-flags artifacts whose sources changed."
+      },
+      "missingSource": {
+        "title": "Finish setup before publishing",
+        "subtitle": "Meli needs a few more sources before this course can open.",
+        "bannerTitle": "Setup is incomplete",
+        "bannerReason": "Publishing is blocked until every step below is done.",
+        "stepsLabel": "Steps still needed",
+        "sourcesLabel": "Ungrounded sources",
+        "fix": "Finish step",
+        "back": "Back to review",
+        "saveDraft": "Save draft",
+        "kind": {
+          "objective_without_source": "Outcome without a source",
+          "session_without_material": "Session without materials"
+        }
       },
       "errors": {
         "SETUP_INCOMPLETE": "Finish every setup step before publishing.",

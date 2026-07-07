@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { usePollWindow } from "@/hooks/use-setup";
 import { apiFetch, type ApiEnvelope } from "@/lib/api";
 
 /**
@@ -82,18 +83,23 @@ const LIST_POLL_INTERVAL_MS = 3000;
  */
 export function useCheckpoints(
   courseId: string,
-  options: { poll?: boolean } = {}
+  options: { poll?: boolean; pollKey?: number } = {}
 ) {
-  const { poll = false } = options;
-  return useAuthedQuery<readonly Checkpoint[]>({
+  const { poll = false, pollKey = 0 } = options;
+  const { expired, windowRef } = usePollWindow(poll, pollKey);
+  const query = useAuthedQuery<readonly Checkpoint[]>({
     queryKey: checkpointKeys.list(courseId),
     path: `/courses/${courseId}/checkpoints`,
     enabled: Boolean(courseId),
-    refetchInterval: (query) => {
+    refetchInterval: (q) => {
       if (!poll) return false;
-      return (query.state.data?.length ?? 0) > 0 ? false : LIST_POLL_INTERVAL_MS;
+      if ((q.state.data?.length ?? 0) > 0) return false;
+      if (!windowRef.current) return false;
+      return LIST_POLL_INTERVAL_MS;
     },
   });
+  const timedOut = poll && (query.data?.length ?? 0) === 0 && expired;
+  return { ...query, timedOut };
 }
 
 /** GET `/checkpoints/{id}` — a single checkpoint with its ordered cards. */

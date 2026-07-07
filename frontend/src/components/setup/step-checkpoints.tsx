@@ -55,11 +55,16 @@ const SELECT_CLASS =
  */
 export function StepCheckpoints({ courseId, onComplete }: StepCheckpointsProps) {
   const t = useTranslations("teacher.setup.checkpoints");
+  const tw = useTranslations("teacher.setup");
   const setStep = useSetStep(courseId);
   const [started, setStarted] = useState(false);
+  const [pollKey, setPollKey] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const { data: checkpoints, isLoading } = useCheckpoints(courseId, { poll: started });
+  const { data: checkpoints, isLoading, timedOut } = useCheckpoints(courseId, {
+    poll: started,
+    pollKey,
+  });
   const generate = useGenerateCheckpoints(courseId);
 
   const drafts = useMemo(() => checkpoints ?? [], [checkpoints]);
@@ -69,6 +74,8 @@ export function StepCheckpoints({ courseId, onComplete }: StepCheckpointsProps) 
   const runGenerate = useCallback(async () => {
     setActionError(null);
     setStarted(true);
+    // Reopen the timeout window (also covers retry after a prior poll timed out).
+    setPollKey((k) => k + 1);
     try {
       await generate.mutateAsync();
     } catch {
@@ -121,7 +128,24 @@ export function StepCheckpoints({ courseId, onComplete }: StepCheckpointsProps) 
           <StateBanner tone="info" title={t("draftNotice.title")} reason={t("draftNotice.reason")} />
         ) : null}
 
-        {isLoading || isGenerating ? (
+        {timedOut ? (
+          <StateBanner
+            tone="warning"
+            title={tw("pollTimeout.title")}
+            reason={tw("pollTimeout.reason")}
+            action={
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={generate.isPending}
+                onClick={() => void runGenerate()}
+              >
+                {tw("pollTimeout.retry")}
+              </Button>
+            }
+          />
+        ) : isLoading || isGenerating ? (
           <EmptyState variant="waiting" title={t("generating.title")} reason={t("generating.reason")} />
         ) : !hasDrafts ? (
           <EmptyState

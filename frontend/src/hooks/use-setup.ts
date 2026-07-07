@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/hooks/use-auth";
@@ -136,6 +137,55 @@ export const setupKeys = {
 
 const ANALYSIS_POLL_INTERVAL_MS = 3000;
 
+/**
+ * Hard cap on how long a background-job poll runs before giving up (~2 min).
+ * Without it a stalled `analyze_course_setup` / `generate_checkpoints` job would
+ * poll forever; instead we stop and surface a `timedOut` flag so the step can
+ * show a "taking longer than expected — retry" affordance (P1 T17 hardening).
+ */
+const POLL_TIMEOUT_MS = 120_000;
+
+/** Shared timeout window bookkeeping for a bounded background-job poll. */
+interface PollWindow {
+  /** True once the poll window has elapsed (time only — ignores completion). */
+  readonly expired: boolean;
+  /**
+   * Ref mirroring "still within the poll window" — read from inside
+   * `refetchInterval` (a closure that runs after render) so the interval stops
+   * once the window elapses without a use-before-declaration ordering problem.
+   */
+  readonly windowRef: MutableRefObject<boolean>;
+}
+
+/**
+ * Derive a bounded poll window from a monotonically-changing `pollKey`. A
+ * `setTimeout` (reset whenever `poll`/`pollKey` change — e.g. on a retry click)
+ * flips `expired` once the window elapses, which stops the caller's
+ * `refetchInterval` via `windowRef`. Completion (`done`) is checked separately
+ * by each caller's `refetchInterval`. Timer lives in an effect (not render) so
+ * the hook stays pure per `react-hooks/purity`.
+ */
+export function usePollWindow(poll: boolean, pollKey: number): PollWindow {
+  // Store the `pollKey` whose window elapsed rather than a bare boolean, so a
+  // retry (which bumps `pollKey`) resets `expired` by derivation — no reset
+  // setState in an effect body (`react-hooks/set-state-in-effect`).
+  const [expiredKey, setExpiredKey] = useState<number | null>(null);
+  const windowRef = useRef(true);
+  const expired = poll && expiredKey === pollKey;
+
+  useEffect(() => {
+    if (!poll) return;
+    const id = setTimeout(() => setExpiredKey(pollKey), POLL_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [poll, pollKey]);
+
+  useEffect(() => {
+    windowRef.current = poll && !expired;
+  }, [poll, expired]);
+
+  return { expired, windowRef };
+}
+
 // ----- queries -----
 
 /** GET `/courses/{id}/setup` — the wizard's checklist + gate state. */
@@ -154,18 +204,23 @@ export function useSetupState(courseId: string) {
  */
 export function useSetupAnalysis(
   courseId: string,
-  options: { poll?: boolean } = {}
+  options: { poll?: boolean; pollKey?: number } = {}
 ) {
-  const { poll = false } = options;
-  return useAuthedQuery<SetupAnalysis>({
+  const { poll = false, pollKey = 0 } = options;
+  const { expired, windowRef } = usePollWindow(poll, pollKey);
+  const query = useAuthedQuery<SetupAnalysis>({
     queryKey: setupKeys.analysis(courseId),
     path: `/courses/${courseId}/setup/analysis`,
     enabled: Boolean(courseId),
-    refetchInterval: (query) => {
+    refetchInterval: (q) => {
       if (!poll) return false;
-      return query.state.data?.ready ? false : ANALYSIS_POLL_INTERVAL_MS;
+      if (q.state.data?.ready) return false;
+      if (!windowRef.current) return false;
+      return ANALYSIS_POLL_INTERVAL_MS;
     },
   });
+  const timedOut = poll && !query.data?.ready && expired;
+  return { ...query, timedOut };
 }
 
 /** GET `/courses/{id}/score-categories` — the score-policy step's categories. */

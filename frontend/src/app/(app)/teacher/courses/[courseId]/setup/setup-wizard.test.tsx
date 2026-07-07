@@ -63,8 +63,8 @@ describe("SetupWizard", () => {
 
     renderWizard();
 
-    // 9 SETUP_STEP_KEYS → 9 rail items.
-    expect(screen.getAllByRole("listitem")).toHaveLength(9);
+    // 9 SETUP_STEP_KEYS + the terminal review/publish screen → 10 rail items.
+    expect(screen.getAllByRole("listitem")).toHaveLength(10);
     // basics is complete; with no ?step the first incomplete (syllabus) is current.
     expect(
       screen.getByRole("listitem", { name: /Basics/ }).getAttribute("data-status")

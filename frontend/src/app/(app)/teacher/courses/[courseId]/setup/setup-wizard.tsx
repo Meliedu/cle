@@ -18,12 +18,25 @@ import { StepCheckpoints } from "@/components/setup/step-checkpoints";
 import { StepScorePolicy } from "@/components/setup/step-score-policy";
 import { StepClassCode } from "@/components/setup/step-class-code";
 import { StepMemoryImport } from "@/components/setup/step-memory-import";
+import { StepReview } from "@/components/setup/step-review";
 import {
   SETUP_STEP_KEYS,
   useSetupState,
   type SetupState,
   type SetupStepKey,
 } from "@/hooks/use-setup";
+
+/**
+ * The wizard's terminal screen: a review-and-publish checklist. It is NOT a
+ * `SETUP_STEP_KEYS` flag (there are exactly 9 step flags, basics..class_code) —
+ * publishing is the action, not a checklist item — so it lives here as an extra
+ * rail entry appended after `class_code`. T027 (success) / T028 (blocked) are
+ * states of this same screen, owned by `StepReview`.
+ */
+const REVIEW_ID = "review";
+
+/** Ordered wizard screens: the 9 step flags plus the terminal review screen. */
+const WIZARD_IDS: readonly string[] = [...SETUP_STEP_KEYS, REVIEW_ID];
 
 /** Steps that already have wizard content this phase (P1 Tasks 12–16). */
 const IMPLEMENTED_STEPS: ReadonlySet<SetupStepKey> = new Set([
@@ -38,13 +51,22 @@ const IMPLEMENTED_STEPS: ReadonlySet<SetupStepKey> = new Set([
   "class_code",
 ]);
 
-function isStepKey(value: string | null): value is SetupStepKey {
-  return value !== null && (SETUP_STEP_KEYS as readonly string[]).includes(value);
+function isWizardId(value: string | null): value is string {
+  return value !== null && WIZARD_IDS.includes(value);
 }
 
-function firstIncomplete(state: SetupState | undefined): SetupStepKey {
+function isPublished(state: SetupState | undefined): boolean {
+  return (
+    state?.setup_status === "published" && state?.context_status === "approved"
+  );
+}
+
+function firstIncomplete(state: SetupState | undefined): string {
   if (!state) return "basics";
-  return SETUP_STEP_KEYS.find((key) => !state.steps[key]) ?? "basics";
+  // A published course lands on the review/success screen; otherwise the first
+  // outstanding step, falling back to review once every step is done.
+  if (isPublished(state)) return REVIEW_ID;
+  return SETUP_STEP_KEYS.find((key) => !state.steps[key]) ?? REVIEW_ID;
 }
 
 interface SetupWizardProps {
@@ -68,7 +90,7 @@ export function SetupWizard({ courseId }: SetupWizardProps) {
   const { data: state, isLoading, isError, refetch } = useSetupState(courseId);
 
   const paramStep = searchParams.get("step");
-  const currentId: SetupStepKey = isStepKey(paramStep) ? paramStep : firstIncomplete(state);
+  const currentId: string = isWizardId(paramStep) ? paramStep : firstIncomplete(state);
 
   const goToStep = useCallback(
     (id: string) => {
@@ -79,28 +101,37 @@ export function SetupWizard({ courseId }: SetupWizardProps) {
     [pathname, router, searchParams]
   );
 
-  const currentIndex = SETUP_STEP_KEYS.indexOf(currentId);
+  const currentIndex = WIZARD_IDS.indexOf(currentId);
 
   const handleBack = useCallback(() => {
-    if (currentIndex > 0) goToStep(SETUP_STEP_KEYS[currentIndex - 1]);
+    if (currentIndex > 0) goToStep(WIZARD_IDS[currentIndex - 1]);
   }, [currentIndex, goToStep]);
 
   const handleNext = useCallback(() => {
-    if (currentIndex >= 0 && currentIndex < SETUP_STEP_KEYS.length - 1) {
-      goToStep(SETUP_STEP_KEYS[currentIndex + 1]);
+    if (currentIndex >= 0 && currentIndex < WIZARD_IDS.length - 1) {
+      goToStep(WIZARD_IDS[currentIndex + 1]);
     }
   }, [currentIndex, goToStep]);
 
-  const steps: WizardStep[] = useMemo(
-    () =>
-      SETUP_STEP_KEYS.map((key) => ({
-        id: key,
-        label: t(`steps.${key}`),
-        complete: Boolean(state?.steps[key]),
-        blocked: !IMPLEMENTED_STEPS.has(key) && key !== currentId,
-      })),
-    [state, t, currentId]
-  );
+  const steps: WizardStep[] = useMemo(() => {
+    const stepFlags: WizardStep[] = SETUP_STEP_KEYS.map((key) => ({
+      id: key,
+      label: t(`steps.${key}`),
+      complete: Boolean(state?.steps[key]),
+      blocked: !IMPLEMENTED_STEPS.has(key) && key !== currentId,
+    }));
+    return [
+      ...stepFlags,
+      {
+        id: REVIEW_ID,
+        label: t("steps.review"),
+        // The terminal screen reads complete once the course is published; before
+        // that it stays navigable via Next (or the rail once every step is done).
+        complete: isPublished(state) || (state?.missing.length === 0 && !!state),
+        blocked: false,
+      },
+    ];
+  }, [state, t, currentId]);
 
   if (isLoading) {
     return <SetupWizardSkeleton />;
@@ -153,7 +184,7 @@ export function SetupWizard({ courseId }: SetupWizardProps) {
         nextLabel={t("wizard.next")}
         progressLabel={t("wizard.progress", {
           current: currentIndex + 1,
-          total: SETUP_STEP_KEYS.length,
+          total: WIZARD_IDS.length,
         })}
       >
         {currentId === "basics" ? (
@@ -187,6 +218,8 @@ export function SetupWizard({ courseId }: SetupWizardProps) {
             */}
             <StepMemoryImport />
           </div>
+        ) : currentId === REVIEW_ID ? (
+          <StepReview courseId={courseId} onNavigate={goToStep} />
         ) : null}
       </StepWizard>
     </div>
