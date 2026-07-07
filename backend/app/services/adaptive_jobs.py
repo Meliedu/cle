@@ -728,3 +728,311 @@ async def run_draft_learning_notes(
     if drafted:
         await session.commit()
     return {"course_id": str(course_id), "drafted": drafted}
+
+
+# ---------------------------------------------------------------------------
+# Report drafting (P7 B3) — reviewed-notes-only, evidence-refs-required.
+# ---------------------------------------------------------------------------
+#
+# Governing constraint (Core §0.2 / Decision 1): a report NEVER draws from an
+# unreviewed note. ``run_draft_report`` selects ONLY ``LearningNote`` rows with
+# ``review_status IN ('reviewed','edited')`` AND ``report_eligibility=true`` in
+# the course + period window, sets ``evidence_refs`` to EXACTLY those note ids,
+# and NEVER lets an unreviewed / ineligible note's text reach ``body``. If zero
+# eligible reviewed notes exist, NO ``reports`` row is created (returns
+# ``{"drafted": 0}``). Mirrors the ``run_draft_learning_notes`` shape:
+# window scan → idempotency skip → non-raising LLM step with deterministic
+# fallback → ``session.add`` → single commit; a strict Pydantic cap bounds any
+# LLM-composed section before it lands in an instructor-facing row.
+
+# The reviewed-status values that make a note report-eligible. Any other status
+# (draft / queued / merged / split / archived) is invisible to drafting.
+_REPORT_REVIEWED_STATUSES = ("reviewed", "edited")
+
+# A concept is "weak" when its mastery point estimate is below this AND we are
+# confident enough in that estimate (mirrors the insights weak-concept rule).
+_REPORT_WEAK_MASTERY_MAX = 0.5
+_REPORT_WEAK_CONFIDENCE_MIN = 0.5
+
+# Bound how many rows a single report references / summarizes.
+_REPORT_NOTE_CAP = 50
+_REPORT_WEAK_CONCEPT_CAP = 20
+
+
+class _ReportSectionV1(BaseModel):
+    """Strict schema for the LLM-composed narrative section of a report.
+
+    Caps bound a hallucinated or prompt-injected payload before it lands in an
+    instructor-facing (and, once sent, student-facing) row. The LLM only ever
+    composes the free-text ``summary`` — every factual section (observations,
+    completed work, weak points, claim limits) is built deterministically from
+    reviewed rows, never from model output.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    summary: str = Field(..., max_length=4000)
+
+
+_REPORT_SYSTEM_PROMPT = """You compose a short, factual summary paragraph for a \
+course report, drawn ONLY from already-reviewed instructor evidence notes.
+Return ONLY a JSON object: {"summary": "one short factual paragraph"}.
+Describe observed participation and learning patterns only. Do NOT invent \
+facts, scores, or judgments beyond the supplied notes. This summarizes \
+instructor-reviewed evidence for a human-reviewed report."""
+
+
+def _parse_report_dt(value: Any) -> "datetime":
+    from datetime import datetime as _dt
+
+    if isinstance(value, _dt):
+        return value
+    return _dt.fromisoformat(str(value))
+
+
+def _summarize_notes_for_report(notes: list[Any]) -> str:
+    return "\n".join(
+        f"- observed={n.observed_signal!r} "
+        f"interpretation={(n.draft_interpretation or '')!r} "
+        f"limitation={(n.limitation_note or '')!r}"
+        for n in notes
+    )
+
+
+def _fallback_report_summary(notes: list[Any]) -> dict[str, Any]:
+    """Deterministic summary built straight from the reviewed notes — used when
+    the LLM call fails so a report is never blocked on model availability."""
+    return {
+        "summary": (
+            f"This report summarizes {len(notes)} reviewed evidence "
+            f"note(s) from the period."
+        )
+    }
+
+
+async def _llm_draft_report(
+    notes: list[Any], context: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Compose the report summary via the LLM. Never raises — returns None on any
+    failure so the caller falls back to a deterministic template."""
+    client = AsyncOpenAI(
+        api_key=settings.openrouter_api_key,
+        base_url=settings.openrouter_base_url,
+    )
+    try:
+        resp = await client.chat.completions.create(
+            model=settings.llm_primary_model,
+            messages=[
+                {"role": "system", "content": _REPORT_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": _summarize_notes_for_report(notes)[:6000],
+                },
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1,
+        )
+        parsed = json.loads(resp.choices[0].message.content or "{}")
+        return _ReportSectionV1.model_validate(parsed).model_dump(mode="json")
+    except Exception:  # noqa: BLE001 — never escape; fall back to template
+        logger.warning(
+            "draft_report LLM step failed; using fallback", exc_info=True
+        )
+        return None
+
+
+async def _report_completed_count(
+    session: AsyncSession,
+    *,
+    course_id: uuid.UUID,
+    user_id: uuid.UUID | None,
+) -> int:
+    """Count completed ``work_item_progress`` rows for the course (scoped to the
+    student for a student-audience report)."""
+    from sqlalchemy import func as _func
+
+    from app.models.work_item import WorkItem, WorkItemProgress
+
+    stmt = (
+        select(_func.count())
+        .select_from(WorkItemProgress)
+        .join(WorkItem, WorkItem.id == WorkItemProgress.work_item_id)
+        .where(
+            WorkItem.course_id == course_id,
+            WorkItemProgress.status == "completed",
+        )
+    )
+    if user_id is not None:
+        stmt = stmt.where(WorkItemProgress.user_id == user_id)
+    return int((await session.execute(stmt)).scalar_one() or 0)
+
+
+async def _report_weak_concepts(
+    session: AsyncSession,
+    *,
+    course_id: uuid.UUID,
+    user_id: uuid.UUID | None,
+) -> list[dict[str, Any]]:
+    """Weak concepts (mastery below threshold, confidence high enough) for the
+    course, scoped to the student for a student-audience report."""
+    from app.models.concept import Concept, ConceptMastery
+
+    stmt = (
+        select(Concept.id, Concept.name, ConceptMastery.mastery_score)
+        .join(ConceptMastery, ConceptMastery.concept_id == Concept.id)
+        .where(
+            ConceptMastery.course_id == course_id,
+            ConceptMastery.mastery_score < _REPORT_WEAK_MASTERY_MAX,
+            ConceptMastery.confidence >= _REPORT_WEAK_CONFIDENCE_MIN,
+        )
+        .order_by(ConceptMastery.mastery_score.asc())
+        .limit(_REPORT_WEAK_CONCEPT_CAP)
+    )
+    if user_id is not None:
+        stmt = stmt.where(ConceptMastery.user_id == user_id)
+    rows = (await session.execute(stmt)).all()
+    return [
+        {
+            "concept_id": str(cid),
+            "name": name,
+            "mastery_score": float(score) if score is not None else None,
+        }
+        for cid, name, score in rows
+    ]
+
+
+async def run_draft_report(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Draft a ``reports`` row from REVIEWED learning notes only (Core §0.2).
+
+    payload: ``{course_id, audience, period, user_id?, period_start, period_end}``
+
+    Selects ``LearningNote`` rows with ``review_status IN ('reviewed','edited')``
+    AND ``report_eligibility=true`` whose ``created_at`` falls in the window;
+    ``evidence_refs`` becomes EXACTLY those ids. An unreviewed / ineligible note
+    is never referenced and its text never reaches ``body``. If zero eligible
+    reviewed notes exist, NO report row is created (``{"drafted": 0}``). The LLM
+    composition step is non-raising with a deterministic fallback; a strict
+    Pydantic cap bounds the composed section. Idempotent per ``(course, audience,
+    period, user, period_start)`` window — an existing non-archived report short
+    circuits.
+    """
+    from app.models.evidence import LearningNote
+    from app.models.report import Report
+    from app.pilot import get_pilot_profile
+
+    course_id = uuid.UUID(payload["course_id"])
+    audience = payload["audience"]
+    period = payload["period"]
+    raw_user_id = payload.get("user_id")
+    user_id = uuid.UUID(raw_user_id) if raw_user_id else None
+    period_start = _parse_report_dt(payload["period_start"])
+    period_end = _parse_report_dt(payload["period_end"])
+
+    # Idempotency guard: a live (non-archived) report for the same window short
+    # circuits so a retried task / burst cannot pile up duplicate drafts.
+    existing = (
+        await session.execute(
+            select(Report.id).where(
+                Report.course_id == course_id,
+                Report.audience == audience,
+                Report.period == period,
+                (Report.user_id == user_id)
+                if user_id is not None
+                else Report.user_id.is_(None),
+                Report.period_start == period_start,
+                Report.status != "archived",
+            )
+        )
+    ).first()
+    if existing is not None:
+        return {"course_id": str(course_id), "drafted": 0, "skipped": "exists"}
+
+    # Reviewed-notes-ONLY gate (Core §0.2). A student-audience report also picks
+    # up cohort-level (``user_id IS NULL``) reviewed notes; a teacher
+    # course-level report sees every reviewed note for the course.
+    note_filters = [
+        LearningNote.course_id == course_id,
+        LearningNote.review_status.in_(_REPORT_REVIEWED_STATUSES),
+        LearningNote.report_eligibility.is_(True),
+        LearningNote.created_at >= period_start,
+        LearningNote.created_at <= period_end,
+    ]
+    if audience == "student" and user_id is not None:
+        note_filters.append(
+            (LearningNote.user_id == user_id)
+            | (LearningNote.user_id.is_(None))
+        )
+
+    notes = (
+        await session.execute(
+            select(LearningNote)
+            .where(*note_filters)
+            .order_by(LearningNote.created_at.asc())
+            .limit(_REPORT_NOTE_CAP)
+        )
+    ).scalars().all()
+
+    # No report leaves ``draft`` without evidence refs → no row at all when there
+    # is no reviewed evidence (Decision 1).
+    if not notes:
+        return {"course_id": str(course_id), "drafted": 0}
+
+    completed_count = await _report_completed_count(
+        session, course_id=course_id, user_id=user_id
+    )
+    weak_concepts = await _report_weak_concepts(
+        session, course_id=course_id, user_id=user_id
+    )
+
+    context = {
+        "completed_count": completed_count,
+        "weak_concept_count": len(weak_concepts),
+    }
+    composed = await _llm_draft_report(notes, context) or _fallback_report_summary(
+        notes
+    )
+
+    profile = get_pilot_profile()
+    # Every factual section is built deterministically from reviewed rows — the
+    # LLM only supplies the free-text ``summary``. This is the boundary that
+    # keeps unreviewed content out of the report (Core §0.2).
+    body = {
+        "summary": composed["summary"],
+        "observations": [
+            {
+                "observed_signal": n.observed_signal,
+                "draft_interpretation": n.draft_interpretation,
+                "limitation_note": n.limitation_note,
+            }
+            for n in notes
+        ],
+        "completed_work": {"completed_count": completed_count},
+        "weak_points": weak_concepts,
+        "next_actions": [
+            n.suggested_follow_up
+            for n in notes
+            if n.suggested_follow_up
+        ],
+        "claim_limits": profile.claim_limits["report"],
+    }
+
+    session.add(
+        Report(
+            course_id=course_id,
+            audience=audience,
+            user_id=user_id,
+            period=period,
+            period_start=period_start,
+            period_end=period_end,
+            body=body,
+            evidence_refs=[n.id for n in notes],
+            status="draft",
+        )
+    )
+    await session.commit()
+    return {
+        "course_id": str(course_id),
+        "drafted": 1,
+        "evidence_refs": len(notes),
+    }

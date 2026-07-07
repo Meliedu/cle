@@ -364,6 +364,9 @@ async def process_task(session: AsyncSession, task: Task) -> dict | None:
     elif task.task_type == "draft_learning_notes":
         from app.services.adaptive_jobs import run_draft_learning_notes
         return await run_draft_learning_notes(session, task.payload)
+    elif task.task_type == "draft_report":
+        from app.services.adaptive_jobs import run_draft_report
+        return await run_draft_report(session, task.payload)
     elif task.task_type == "analyze_course_setup":
         # Read-only course-map + missing-source aggregation (setup wizard
         # T019/T028). Result is returned so complete_task stores it under
