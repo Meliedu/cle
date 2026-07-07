@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 
+from app.api.activities import course_router as activities_course_router
+from app.api.activities import router as activities_router
 from app.api.analytics import router as analytics_router
 from app.api.assignments import router as assignments_router
 from app.api.attendance import attend_router
@@ -86,3 +88,5 @@ api_router.include_router(attendance_router)
 api_router.include_router(attend_router)
 api_router.include_router(attendance_meeting_router)
 api_router.include_router(attendance_record_router)
+api_router.include_router(activities_course_router)
+api_router.include_router(activities_router)
