@@ -1149,6 +1149,60 @@
     }
   },
   "student": {
+    "workspace": {
+      "breadcrumb": "My courses",
+      "navLabel": "Course sections",
+      "loadErrorTitle": "We couldn't load this course",
+      "loadError": "Refresh the page or return to your courses.",
+      "tabs": {
+        "overview": "Overview",
+        "checklist": "Checklist",
+        "schedule": "Schedule",
+        "sessions": "Sessions",
+        "materials": "Materials",
+        "activities": "Activities"
+      },
+      "overview": {
+        "error": {
+          "title": "We couldn't load your checklist",
+          "reason": "Refresh the page to try again."
+        },
+        "empty": {
+          "title": "Nothing to do yet",
+          "reason": "When your instructor releases sessions and checkpoints, your to-dos will appear here."
+        },
+        "nextAction": {
+          "label": "Next up",
+          "start": "Start",
+          "due": "Due {when}",
+          "clearTitle": "You're all caught up",
+          "clearReason": "No open tasks right now. Check back after your next session."
+        },
+        "progress": {
+          "title": "Your progress",
+          "summary": "{done} of {total} tasks done",
+          "open": "open",
+          "done": "done",
+          "missed": "missed"
+        },
+        "links": {
+          "schedule": "Class schedule",
+          "sessions": "Sessions",
+          "materials": "Materials"
+        }
+      }
+    },
+    "checklist": {
+      "kind": {
+        "checkpoint": "Checkpoint",
+        "practice": "Practice",
+        "quiz": "Quiz",
+        "activity": "Activity",
+        "material": "Material",
+        "follow_up": "Follow-up",
+        "report": "Report"
+      }
+    },
     "join": {
       "title": "Join a course",
       "subtitle": "Enter the code shown by your instructor.",
