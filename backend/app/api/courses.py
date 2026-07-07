@@ -19,6 +19,8 @@ from app.schemas.course import (
     CourseUpdate,
     EnrollByCodeRequest,
     EnrollByCodeResult,
+    JoinRequestOut,
+    RosterEntryOut,
 )
 from app.services.setup import SetupGateError, assert_course_open
 
@@ -396,3 +398,138 @@ async def enroll_in_course(
     db.add(enrollment)
     await db.commit()
     return APIResponse(success=True, data=None)
+
+
+def _join_request_out(enrollment: Enrollment, user: User) -> JoinRequestOut:
+    return JoinRequestOut(
+        enrollment_id=enrollment.id,
+        user_id=user.id,
+        full_name=user.full_name,
+        email=user.email,
+        requested_at=enrollment.enrolled_at,
+        status=enrollment.status,
+    )
+
+
+async def _decide_join_request(
+    db: AsyncSession, course: Course, enrollment_id: uuid.UUID, new_status: str
+) -> APIResponse[JoinRequestOut]:
+    """Approve (-> active) or deny (-> rejected) a pending join request.
+
+    Only ``pending`` rows are actionable — an already-decided row yields 409
+    ``NOT_PENDING`` so a double-approve/deny is surfaced rather than silently
+    reapplied.
+    """
+    row = (
+        await db.execute(
+            select(Enrollment, User)
+            .join(User, User.id == Enrollment.user_id)
+            .where(
+                Enrollment.id == enrollment_id,
+                Enrollment.course_id == course.id,
+            )
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Join request not found"
+        )
+    enrollment, user = row
+    if enrollment.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "NOT_PENDING",
+                "message": f"Join request is already '{enrollment.status}'.",
+            },
+        )
+    enrollment.status = new_status
+    await db.commit()
+    await db.refresh(enrollment)
+    return APIResponse(success=True, data=_join_request_out(enrollment, user))
+
+
+@router.get(
+    "/{course_id}/join-requests",
+    response_model=APIResponse[list[JoinRequestOut]],
+)
+async def list_join_requests(
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+):
+    """List pending enrollments awaiting the owning instructor's approval (T033)."""
+    rows = (
+        await db.execute(
+            select(Enrollment, User)
+            .join(User, User.id == Enrollment.user_id)
+            .where(
+                Enrollment.course_id == course.id,
+                Enrollment.status == "pending",
+            )
+            .order_by(Enrollment.enrolled_at.asc())
+        )
+    ).all()
+    return APIResponse(
+        success=True, data=[_join_request_out(e, u) for e, u in rows]
+    )
+
+
+@router.post(
+    "/{course_id}/join-requests/{enrollment_id}/approve",
+    response_model=APIResponse[JoinRequestOut],
+)
+async def approve_join_request(
+    enrollment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+):
+    return await _decide_join_request(db, course, enrollment_id, "active")
+
+
+@router.post(
+    "/{course_id}/join-requests/{enrollment_id}/deny",
+    response_model=APIResponse[JoinRequestOut],
+)
+async def deny_join_request(
+    enrollment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+):
+    return await _decide_join_request(db, course, enrollment_id, "rejected")
+
+
+@router.get(
+    "/{course_id}/roster",
+    response_model=APIResponse[list[RosterEntryOut]],
+)
+async def list_roster(
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+):
+    """List active enrollments (students + instructors) for the class roster (T032)."""
+    rows = (
+        await db.execute(
+            select(Enrollment, User)
+            .join(User, User.id == Enrollment.user_id)
+            .where(
+                Enrollment.course_id == course.id,
+                Enrollment.status == "active",
+            )
+            .order_by(Enrollment.enrolled_at.asc())
+        )
+    ).all()
+    return APIResponse(
+        success=True,
+        data=[
+            RosterEntryOut(
+                enrollment_id=e.id,
+                user_id=u.id,
+                full_name=u.full_name,
+                email=u.email,
+                role=e.role,
+                enrolled_at=e.enrolled_at,
+                status=e.status,
+            )
+            for e, u in rows
+        ],
+    )

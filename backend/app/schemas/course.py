@@ -60,6 +60,34 @@ class EnrollByCodeResult(BaseModel):
     enrollment_status: str
 
 
+class JoinRequestOut(BaseModel):
+    """A pending (or decided) join request with the requesting student's info.
+
+    ``requested_at`` mirrors the enrollment row's ``enrolled_at``. Reused for
+    both the pending list (T033 join-request-approval) and the approve/deny
+    responses so the client gets the post-decision status back.
+    """
+
+    enrollment_id: uuid.UUID
+    user_id: uuid.UUID
+    full_name: str | None
+    email: str
+    requested_at: datetime
+    status: str
+
+
+class RosterEntryOut(BaseModel):
+    """An active enrollment row + user info for the class roster (T032)."""
+
+    enrollment_id: uuid.UUID
+    user_id: uuid.UUID
+    full_name: str | None
+    email: str
+    role: str
+    enrolled_at: datetime
+    status: str
+
+
 class EnrollmentCreate(BaseModel):
     user_email: str | None = None
     course_code: str | None = None
