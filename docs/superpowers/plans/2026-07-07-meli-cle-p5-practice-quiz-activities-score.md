@@ -74,104 +74,104 @@ Each task: failing test first → minimal impl → refactor → code review (`/c
 
 ### Backend
 
-- [ ] **B1 — Publish-settings + practice/graded columns on `quizzes` (migration + model).**
+- [x] **B1 — Publish-settings + practice/graded columns on `quizzes` (migration + model).**
   - Test first (`tests/test_quiz_publish_settings_model.py`): a `Quiz` accepts `assessment_purpose` (CHECK `practice|graded`, default `practice`), `score_bearing` (default false), `score_category_id` (FK `score_categories`, nullable), `points` (Numeric, nullable), `grading_mode` (CHECK `auto|manual|participation`, nullable), `open_at/due_at/close_at` (tz, nullable), `late_rule` (CHECK `accept_late|reject_late|accept_with_flag`, nullable); an existing quiz row backfills `assessment_purpose='practice'`, `score_bearing=false`; a bad `assessment_purpose` violates the CHECK. Do NOT touch the existing `purpose`/`quiz_type` columns.
   - Impl: extend `app/models/quiz.py::Quiz`; migration chains from the confirmed head — `op.add_column` ×N + `create_check_constraint` for the three new CHECKs (Decision 1). No change to `Question`.
   - Commit `feat(quiz): publish-settings + assessment_purpose columns on quizzes`.
 
-- [ ] **B2 — `grade_exports` audit model + migration (append-only).**
+- [x] **B2 — `grade_exports` audit model + migration (append-only).**
   - Test first (`tests/test_grade_exports_model.py`): `GradeExport` has `course_id FK`, `exported_by FK users`, `format` (e.g. `csv`), `filters JSON`, `row_count int`, `created_at`; UUID PK; **no soft-delete** (append-only audit). A row persists and reads back.
   - Impl: `GradeExport` in `app/models/score.py` (co-located with `ScoreCategory`); register in `app/models/__init__.py`; migration chains from B1 (Decision 7).
   - Commit `feat(scores): grade_exports append-only audit table`.
 
-- [ ] **B3 — `activities` + `activity_responses` models + owner-isolation RLS migration.**
+- [x] **B3 — `activities` + `activity_responses` models + owner-isolation RLS migration.**
   - Test first (`tests/test_activity_model.py`): `Activity` columns `course_id FK`, `meeting_id FK nullable`, `format` (CHECK `swipe|vote|comment_reaction`), `title`, `config JSON`, `status` (CHECK `draft|published|live|closed|archived`, default `draft`), `open_at/due_at/close_at`, `anonymous bool`, + §4.5 publish-settings (`score_category_id`, `points`, `grading_mode`, `late_rule`); UUID PK + Timestamp + SoftDelete. `ActivityResponse` columns `activity_id FK`, `user_id FK`, `payload JSON`, `submitted_at`, `status`; unique `(activity_id, user_id)`; UUID PK + Timestamp (NO soft-delete — student-owned row). Plus `tests/test_activity_responses_rls_migration.py` style assertions that the migration enables RLS.
   - Impl: NEW `app/models/activity.py` (`Activity`, `ActivityResponse`); register in `app/models/__init__.py`; migration COPIES `e6c2b8f4a19d` structure for `activity_responses` (create table + `ix_activity_responses_user_id` + `ENABLE ROW LEVEL SECURITY` + `activity_responses_owner_isolation` policy on `user_id`, Decision 3). Chain from B2.
   - Commit `feat(activities): activities + activity_responses models + owner-isolation RLS`.
 
-- [ ] **B4 — Score-policy gate service (`SCORE_POLICY_INCOMPLETE`).**
+- [x] **B4 — Score-policy gate service (`SCORE_POLICY_INCOMPLETE`).**
   - Test first (`tests/test_score_policy.py`): `assert_score_policy_complete(artifact)` returns None for a fully-specified graded artifact (has `score_category_id`, `points`, `grading_mode`, and a `due_at` or `close_at`); raises `HTTPException(422, {"code":"SCORE_POLICY_INCOMPLETE","missing":[...]})` listing exactly the absent fields when any is missing; is a NO-OP for a practice quiz / participation-only artifact (caller decides whether to invoke). Pure — no HTTP resolution, no commit.
   - Impl: `app/services/score_policy.py::assert_score_policy_complete` (works on both `Quiz` and `Activity` via duck-typed attribute reads, Decision 7).
   - Commit `feat(scores): SCORE_POLICY_INCOMPLETE publish gate service`.
 
-- [ ] **B5 — Gated quiz publish → transactional work_item (practice|quiz).**
+- [x] **B5 — Gated quiz publish → transactional work_item (practice|quiz).**
   - Test first (`tests/test_quizzes_api.py` additions): `POST /quizzes/{id}/publish` on a `graded` quiz missing score fields → 422 `SCORE_POLICY_INCOMPLETE` and NOTHING is published / no work_item written (assert atomicity); a fully-specified graded publish → `is_published=true` + a `work_items` row with `source_kind='quiz'`, `source_id=quiz.id`, `required=true`, `score_bearing=true`, `due_at=close_at`; a `practice` publish → published + a `work_items` row `source_kind='practice'`, `required=false`, `score_bearing=false`, and SKIPS the gate; re-publishing does NOT duplicate (unique index) and keeps `title/due_at/close_at` in sync (mirror `publish_checkpoint`). Non-owner → 404.
   - Impl: rewrite `api/quizzes.py::publish_quiz` — for `graded`, call `assert_score_policy_complete(quiz)` (B4) BEFORE flipping; then `upsert_work_item(...)` with `source_kind` from `assessment_purpose` (Decision 4) BEFORE `await db.commit()`; keep the practice toggle path (no gate). Mirror the `publish_checkpoint` kept-in-sync block.
   - Commit `feat(quiz): gated publish writes practice/quiz work_item (transactional)`.
 
-- [ ] **B6 — Quiz attempt → transactional work_item_progress + score-bearing disclosure read.**
+- [x] **B6 — Quiz attempt → transactional work_item_progress + score-bearing disclosure read.**
   - Test first (`tests/test_quizzes_api.py` additions): after `POST /quizzes/{id}/attempt`, the student's `work_item_progress` for the quiz's work_item is `completed` (or `late` past `close_at`) and rides the attempt's OWN commit (a forced failure of the best-effort evidence block does NOT lose progress); a missing work_item (unpublished-creator-preview) is a no-op, never 500. Plus `GET /quizzes/{id}` (or a new `GET /quizzes/{id}/intro`) exposes `assessment_purpose`, `score_bearing`, `points`, `late_rule`, `due_at/close_at` so the student landing can show the **score-bearing disclosure BEFORE start (S050)** — with `correct_answer` still redacted for students.
   - Impl: in `submit_attempt`, resolve the quiz's work_item (`source_kind ∈ practice|quiz`) and `upsert_progress(...)` BEFORE the attempt commit (mirror `submit_checkpoint_response`, Decision 5). Extend the quiz read schema/response with the disclosure fields (Decision 7 FE consumes them). Reuse `_derive_progress_status`-style logic (a single-shot quiz attempt is `completed` on submit unless late).
   - Commit `feat(quiz): attempt writes work_item_progress (transactional) + score disclosure`.
 
-- [ ] **B7 — Matching / ordering / short-answer question renderers: storage validation + `grade_question`.**
+- [x] **B7 — Matching / ordering / short-answer question renderers: storage validation + `grade_question`.**
   - Test first (`tests/test_grade_question.py`): `grade_question(question, answer)` returns `1.0`/`0.0` for `multiple_choice` (unchanged: `answer==correct_answer`), `matching` (answer map equals decoded `correct_answer` map), `ordering` (answer list equals decoded ordered id list), `short_answer` (normalized exact match — trim/casefold); a malformed `options`/`correct_answer` for a new type is rejected at question create/update (`add_question`/`update_question` shape guard) with 422/400; `submit_attempt` routes each answered question through `grade_question` so mastery `outcome` is correct per type (Decision 2 + 5).
   - Impl: `app/services/question_grading.py::grade_question` + a `validate_question_shape(type, options, correct_answer)` guard called from `api/quizzes.py::add_question`/`update_question`; refactor `submit_attempt` + `_enqueue_mastery_for_quiz` to use `grade_question` instead of the inline `answer==correct_answer` (keep MC behavior identical). `correct_answer` stays a JSON-encoded string for the new types (Decision 2).
   - Commit `feat(quiz): matching/ordering/short-answer grading + shape validation`.
 
-- [ ] **B8 — `activities.py` router: builder CRUD + gated publish → activity work_item.**
+- [x] **B8 — `activities.py` router: builder CRUD + gated publish → activity work_item.**
   - Test first (`tests/test_activities_api.py`): teacher CRUD `POST/GET/PATCH/DELETE /courses/{id}/activities` (owner-guarded — students 403, non-owner 404); `POST /activities/{id}/publish` runs the state transition + (for a score-bearing activity) `assert_score_policy_complete` → 422 `SCORE_POLICY_INCOMPLETE`, else writes a `work_items` row `source_kind='activity'` (`required`/`score_bearing` from the activity) transactionally + idempotently; `config` shape is validated per `format` (swipe prompts / vote options / reaction set). A participation-only activity publishes without the gate.
   - Impl: NEW `app/api/activities.py` (course-scoped + item-scoped routers), schemas in `app/schemas/activity.py`; publish mirrors B5 (`upsert_work_item` source_kind `activity`, Decision 4); register routers in `app/api/__init__.py`.
   - Commit `feat(activities): builder CRUD + gated publish + activity work_item`.
 
-- [ ] **B9 — Activity response service + endpoints (participation evidence seam).**
+- [x] **B9 — Activity response service + endpoints (participation evidence seam).**
   - Test first (`tests/test_activity_responses.py`): `POST /activities/{id}/responses` (enrollment-scoped via `verify_enrollment`) upserts on `(activity_id, user_id)` (a resubmit updates in place; comment_reaction stacks inside `payload`), writes `work_item_progress` on the response's OWN commit, then a best-effort block emits ONE `LearningEvent` (`source_kind='activity'`, `stage='during_class'`) and **NEVER** an `update_concept_mastery` Task (participation-only, Decision 5); a wrong-owner cannot write another student's row (RLS + authenticated `user_id`); `GET /activities/{id}/results` returns the teacher evidence/aggregate view (owner-guarded). Only `published|live` activities accept responses.
   - Impl: NEW `app/services/activity_responses.py::submit_activity_response` (COPY the `checkpoint_responses.py` structure — upsert → `upsert_progress` before commit → best-effort `record_attempt_event` (no mastery) → `_notify_monitor`); wire into `api/activities.py`.
   - Commit `feat(activities): response submission + participation evidence seam`.
 
-- [ ] **B10 — Live activity monitor (WS reuse) + `WS /api/activities/{id}/monitor`.**
+- [x] **B10 — Live activity monitor (WS reuse) + `WS /api/activities/{id}/monitor`.**
   - Test first (`tests/test_activity_monitor.py`): `compute_activity_monitor_state(db, activity_id)` returns `{submission_count, distribution}` with the format-appropriate aggregate (swipe L/R, vote tallies, reaction histogram); `broadcast_submission` pushes to connected monitors; a non-owner/student WS connect is rejected with `WS_1008_POLICY_VIOLATION` (owner-only, mirror `websocket_monitor`). (WS handshake tested at the service/aggregate level per the P3 monitor precedent; owner-guard asserted.)
   - Impl: NEW `app/services/activity_monitor.py` (`monitor_manager = ConnectionManager()`, `compute_activity_monitor_state`, `broadcast_state/submission/closed` — COPY `checkpoint_monitor.py`, Decision 6) + a `@router.websocket("/{activity_id}/monitor")` in `api/activities.py` copying `checkpoints.py::websocket_monitor` (token→`verify_jwt`→owner-guard). `submit_activity_response._notify_monitor` calls `broadcast_submission` best-effort.
   - Commit `feat(activities): live monitor via reused ConnectionManager + WS endpoint`.
 
-- [ ] **B11 — `scores.py` extend: teacher/student score record + audited grade export.**
+- [x] **B11 — `scores.py` extend: teacher/student score record + audited grade export.**
   - Test first (`tests/test_scores_record.py` + `tests/test_grade_export.py`): `GET /courses/{id}/scores` (owner-guarded) returns each active student's per-category / per-artifact rollup from graded quiz attempts + score-bearing activity responses; `GET /users/me/courses/{id}/scores` (enrollment-scoped) returns ONLY the caller's own record (S059); `GET /courses/{id}/grade-export.csv` (owner-guarded) streams a CSV AND appends exactly one `grade_exports` audit row (`exported_by=user.id`, `format='csv'`, `filters`, `row_count`) in the same request (Decision 7); a student calling the teacher routes → 403.
   - Impl: extend `app/api/scores.py` with a second router (or add routes) `/courses/{id}/scores`, `/users/me/courses/{id}/scores`, `/courses/{id}/grade-export.csv`; a `services/scores.py` aggregation helper reading `QuizAttempt` (graded) + `ActivityResponse` (score-bearing) joined to `ScoreCategory`. CSV via `csv`/`StreamingResponse`. Ensure the audit row commits before/with the stream.
   - Commit `feat(scores): student+teacher score record + audited CSV grade export`.
 
-- [ ] **B12 — RLS isolation test for `activity_responses`.**
+- [x] **B12 — RLS isolation test for `activity_responses`.**
   - Test first: COPY `tests/test_work_item_progress_rls.py` (or `test_checkpoint_responses_rls.py`) into `tests/test_activity_responses_rls.py`: under `SET ROLE meli_app`, user A's response row is invisible/immutable to user B (SELECT hides, UPDATE/DELETE affect 0 rows, INSERT of A's `user_id` rejected by WITH CHECK), GUC switch-back restores visibility, blank GUC fails closed. Skip-guard when `meli_app` absent. Seed/teardown on `async_engine`.
   - Commit `test(activities): RLS owner-isolation for activity_responses`.
 
 ### Frontend (pull Figma per screen via `get_metadata` on the group first)
 
-- [ ] **F1 — Hooks + Activities-tab routing scaffold (`use-activities`, `use-scores`, extend `use-quizzes`).**
+- [x] **F1 — Hooks + Activities-tab routing scaffold (`use-activities`, `use-scores`, extend `use-quizzes`).**
   - New `hooks/use-activities.ts` (teacher `useActivities`/`useActivity`/`useCreateActivity`/`useUpdateActivity`/`usePublishActivity`/`useActivityResults`/`useActivityMonitor` WS client mirroring `use-checkpoints`; student `useSubmitActivityResponse`); new `hooks/use-scores.ts` (`useCourseScores` teacher, `useMyScores` student, `useGradeExport`); extend `hooks/use-quizzes.ts` with `assessment_purpose`/publish-settings fields + `usePublishQuiz` mapping the 422 `SCORE_POLICY_INCOMPLETE` body. Add teacher `activities` route shell (`teacher/courses/[courseId]/activities/`, `await params`) + student `activities` route shell (`student/courses/[courseId]/activities/`) — the `activities` tab is already `enabled:true`. Vitest for one query + one mutation (mocked, per offline convention).
   - Commit `feat(hooks): activities + scores hooks + quiz publish-settings + activity route shells`.
 
-- [ ] **F2 — Teacher practice builder / review / publish / results (T060–T063).**
+- [x] **F2 — Teacher practice builder / review / publish / results (T060–T063).**
   - Practice builder (reuse `components/quiz/quiz-question-editor` + `generate-quiz-dialog` + `use-quizzes`, `assessment_purpose='practice'`); review + publish (practice skips the score gate); results over quiz attempts. Designed empty/generating states. i18n `teacher.practice.*`. Tokens only. Pull group `1372:132` (practice children).
   - Commit `feat(teacher): practice builder + review + publish + results`.
 
-- [ ] **F3 — Teacher graded quiz builder / review / publish (score policy) / results (T064–T067).**
+- [x] **F3 — Teacher graded quiz builder / review / publish (score policy) / results (T064–T067).**
   - Graded quiz builder (`assessment_purpose='graded'`) with a score-policy panel (`score_category_id` via `use-scores`, `points`, `grading_mode`, `late_rule`, `due/close`); publish surfacing the 422 `SCORE_POLICY_INCOMPLETE` `missing[]` as a `StateBanner tone="blocked"` with jump-to-field affordances; results. i18n `teacher.quiz.*`. Pull `1372:132` (quiz children).
   - Commit `feat(teacher): graded quiz builder + score-policy publish gate + results`.
 
-- [ ] **F4 — Teacher activity builders swipe / vote / comment (T068–T071).**
+- [x] **F4 — Teacher activity builders swipe / vote / comment (T068–T071).**
   - Three format builders driven by `use-activities` (swipe prompts, vote options, comment/reaction set), each writing `config`; a shared publish control reusing the score-gate banner (F3) when the activity is score-bearing. Designed empty states. i18n `teacher.activities.*`. Pull `1372:132` (activity-builder children).
   - Commit `feat(teacher): swipe/vote/comment activity builders + publish`.
 
-- [ ] **F5 — Teacher live activity monitor + results / evidence (T072–T073).**
+- [x] **F5 — Teacher live activity monitor + results / evidence (T072–T073).**
   - Live monitor consuming `useActivityMonitor` (WS `state`/`submission`/`closed`, reuse the checkpoint-monitor client shape) with a format-specific live aggregate (swipe L/R, vote tally, reaction histogram); results/evidence view over `useActivityResults`. `prefers-reduced-motion` respected. i18n `teacher.activities.monitor.*`/`results.*`. Pull `1372:132` (monitor/results children).
   - Commit `feat(teacher): live activity monitor + results/evidence`.
 
-- [ ] **F6 — Teacher Activities home + grade export (T074–T075) + fold-in entry points.**
+- [x] **F6 — Teacher Activities home + grade export (T074–T075) + fold-in entry points.**
   - Activities home (T074) listing practice/quiz/activities + linking to the folded-in flashcard/pronunciation/revision/live-quiz surfaces (Decision 9 — route/link into existing components, no rebuild); grade export (T075) via `useGradeExport` (download CSV) with a note that every export is audited. i18n `teacher.activities.home.*`/`teacher.grades.*`. Pull `1372:132` (home + grade-export children).
   - Commit `feat(teacher): activities home + audited grade export + fold-in links`.
 
-- [ ] **F7 — Student practice: start + MC / matching / ordering / short-answer renderers + feedback + complete (S043–S049).**
+- [x] **F7 — Student practice: start + MC / matching / ordering / short-answer renderers + feedback + complete (S043–S049).**
   - Practice start (S043); question renderers — reuse `components/quiz/quiz-player` for MC, add **NEW** `matching` (pair-match) + `ordering` (drag/rank) + `short_answer` (text) renderers (S044–S047), each posting the per-type answer shape the backend `grade_question` decodes (Decision 2); per-question feedback (S048) + complete (S049). Keyboard-navigable; `prefers-reduced-motion`. i18n `student.practice.*`. Pull group `1372:292` (practice children).
   - Commit `feat(student): practice start + new question renderers + feedback + complete`.
 
-- [ ] **F8 — Student graded quiz: landing (score-bearing disclosure) + taking + result (S050–S052).**
+- [x] **F8 — Student graded quiz: landing (score-bearing disclosure) + taking + result (S050–S052).**
   - Quiz landing (S050) showing the **score-bearing disclosure BEFORE start** (points, category, late rule, due/close — from B6's disclosure read); taking flow (reuse the F7 renderers); result view. i18n `student.quiz.*`. Pull `1372:292` (quiz children).
   - Commit `feat(student): quiz landing disclosure + taking + result`.
 
-- [ ] **F9 — Student activity flows: waiting / swipe / vote / comment / submitted / record (S053–S058, S073).**
+- [x] **F9 — Student activity flows: waiting / swipe / vote / comment / submitted / record (S053–S058, S073).**
   - Waiting state (activity not yet live) → format-specific interaction (swipe / vote / comment_reaction) via `useSubmitActivityResponse` → submitted confirmation → the student's own record (S073). Designed waiting/empty states (never blank). i18n `student.activities.*`. Pull `1372:292` (activity children).
   - Commit `feat(student): activity waiting/swipe/vote/comment/submitted/record`.
 
-- [ ] **F10 — Student score & participation record (S059) + fold-in mounts + P5 close-out.**
+- [x] **F10 — Student score & participation record (S059) + fold-in mounts + P5 close-out.**
   - Score & participation record (S059) over `useMyScores`; mount the folded-in flashcard/pronunciation/revision/live-quiz entry points under the student Activities list (Decision 9 — link into existing components). Playwright happy-path (teacher publishes graded quiz → student sees disclosure → attempts → progress `completed` on checklist + score in record) where infra allows; else vitest against mocked hooks (per P0–P4 offline convention). i18n `student.scores.*`. **P5 close-out is a SEPARATE controller step** — this task ships code only; do not edit the roadmap here.
   - Commit `feat(student): score/participation record + activity fold-in + P5 verification`.
 
@@ -179,16 +179,16 @@ Each task: failing test first → minimal impl → refactor → code review (`/c
 
 ## Self-review checklist (spec §4.4–4.5 coverage before P5 close-out)
 
-- [ ] Practice-vs-graded is the NEW `quizzes.assessment_purpose` column (CHECK `practice|graded`, backfilled to practice); the existing `purpose`/`quiz_type` are untouched (B1, Decision 1).
-- [ ] Matching/ordering/short-answer ship as free-string `Question.type` renderers with a `grade_question` helper + shape validation — NO enum migration (B7, F7, Decision 2).
-- [ ] `activities` is course-scoped/no-RLS; `activity_responses` is student-owned with owner-isolation RLS proven under `meli_app` (B3/B12, Decision 3).
-- [ ] Quiz + activity publish write the work_item TRANSACTIONALLY (`source_kind ∈ practice|quiz|activity`, idempotent, kept-in-sync) mirroring P4 B4 (B5/B8, Decision 4).
-- [ ] Every student submission rides the answer's OWN commit for `work_item_progress`; practice/graded questions emit mastery via `grade_question`, activities are participation-only (LearningEvent, no `update_concept_mastery`) — one evidence seam, no parallel path (B6/B9, Decision 5).
-- [ ] The live-activity monitor REUSES `ConnectionManager` via a second `activity_monitor.py` instance + an owner-guarded WS mirroring `checkpoint_monitor.py`/`websocket_monitor` (B10, Decision 6).
-- [ ] The score gate is the server-side `SCORE_POLICY_INCOMPLETE` typed code (graded/score-bearing only; practice/participation skip); the FE maps it to a designed blocked state (B4/B5/B8/F3, Decision 7).
-- [ ] Grade export appends a `grade_exports` audit row per export (append-only, owner-guarded); export rate-limiting noted for the final gate (B2/B11, Decision 7).
-- [ ] Practice work_items publish `required=False` so `mark_missed_work_items` never marks them missed; graded/score-bearing publish `required=True` and the EXISTING cron covers them — no new cron (B5/B8, Decision 8).
-- [ ] Fold-in MOUNTS existing flashcard/pronunciation/revision/live-quiz surfaces under Activities — no behavioral rebuild (F6/F10, Decision 9).
-- [ ] Student S043–S059 + S073 + teacher T060–T075 shipped with designed waiting/empty/blocked states (never blank divs) (F2–F10).
-- [ ] Next.js 16: every new `page` awaits `params` (Promise); `proxy.ts` not `middleware.ts`; read `frontend/AGENTS.md` before FE work.
-- [ ] No hardcoded strings (next-intl `teacher.*`/`student.*`/`patterns.*`), no hardcoded colors (tokens.css), conventional commits, code review per task cluster.
+- [x] Practice-vs-graded is the NEW `quizzes.assessment_purpose` column (CHECK `practice|graded`, backfilled to practice); the existing `purpose`/`quiz_type` are untouched (B1, Decision 1).
+- [x] Matching/ordering/short-answer ship as free-string `Question.type` renderers with a `grade_question` helper + shape validation — NO enum migration (B7, F7, Decision 2).
+- [x] `activities` is course-scoped/no-RLS; `activity_responses` is student-owned with owner-isolation RLS proven under `meli_app` (B3/B12, Decision 3).
+- [x] Quiz + activity publish write the work_item TRANSACTIONALLY (`source_kind ∈ practice|quiz|activity`, idempotent, kept-in-sync) mirroring P4 B4 (B5/B8, Decision 4).
+- [x] Every student submission rides the answer's OWN commit for `work_item_progress`; practice/graded questions emit mastery via `grade_question`, activities are participation-only (LearningEvent, no `update_concept_mastery`) — one evidence seam, no parallel path (B6/B9, Decision 5).
+- [x] The live-activity monitor REUSES `ConnectionManager` via a second `activity_monitor.py` instance + an owner-guarded WS mirroring `checkpoint_monitor.py`/`websocket_monitor` (B10, Decision 6).
+- [x] The score gate is the server-side `SCORE_POLICY_INCOMPLETE` typed code (graded/score-bearing only; practice/participation skip); the FE maps it to a designed blocked state (B4/B5/B8/F3, Decision 7).
+- [x] Grade export appends a `grade_exports` audit row per export (append-only, owner-guarded); export rate-limiting noted for the final gate (B2/B11, Decision 7).
+- [x] Practice work_items publish `required=False` so `mark_missed_work_items` never marks them missed; graded/score-bearing publish `required=True` and the EXISTING cron covers them — no new cron (B5/B8, Decision 8).
+- [x] Fold-in MOUNTS existing flashcard/pronunciation/revision/live-quiz surfaces under Activities — no behavioral rebuild (F6/F10, Decision 9).
+- [x] Student S043–S059 + S073 + teacher T060–T075 shipped with designed waiting/empty/blocked states (never blank divs) (F2–F10).
+- [x] Next.js 16: every new `page` awaits `params` (Promise); `proxy.ts` not `middleware.ts`; read `frontend/AGENTS.md` before FE work.
+- [x] No hardcoded strings (next-intl `teacher.*`/`student.*`/`patterns.*`), no hardcoded colors (tokens.css), conventional commits, code review per task cluster.
