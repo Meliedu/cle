@@ -24,12 +24,15 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.checkpoint import Checkpoint, CheckpointCard, CheckpointResponse
 from app.models.task import Task
+from app.models.work_item import WorkItem
 from app.services.learning_events import record_attempt_event
+from app.services.work_items import upsert_progress
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +50,30 @@ def confidence_to_outcome(confidence: int) -> float:
     """Normalize a −2..+2 confidence to a 0..1 mastery outcome: ``(c+2)/4``."""
     span = CONFIDENCE_MAX - CONFIDENCE_MIN
     return (confidence - CONFIDENCE_MIN) / span
+
+
+def _derive_progress_status(
+    *, row_status: str, on_time_count: int, live_card_count: int
+) -> str:
+    """Map a checkpoint submission to a ``work_item_progress`` status (P4 B5).
+
+    Mirrors the ``_derive_history_status`` shape in ``api/checkpoints.py`` but
+    speaks the checklist vocabulary (``completed``/``late``/``submitted`` — the
+    history view's ``complete``/``upcoming``/``missed`` don't map 1:1, so this is
+    replicated minimally rather than shared):
+
+    * ``late`` — this response arrived after ``close_at`` (``row_status='late'``).
+    * ``completed`` — every live card is now answered on time.
+    * ``submitted`` — an on-time answer that doesn't yet cover every live card.
+
+    ``on_time_count`` is the student's non-late response count for the checkpoint
+    (one row per card, so it equals the number of cards answered on time).
+    """
+    if row_status == "late":
+        return "late"
+    if live_card_count > 0 and on_time_count >= live_card_count:
+        return "completed"
+    return "submitted"
 
 
 def is_within_window(cp: Checkpoint, now: datetime) -> bool:
@@ -178,6 +205,60 @@ async def submit_checkpoint_response(
         .returning(CheckpointResponse.id)
     )
     response_id = (await db.execute(stmt)).scalar_one()
+
+    # Transactional checklist progress (P4 B5, Decision 3): the student's
+    # ``work_item_progress`` for this checkpoint's work_item rides the ANSWER's
+    # OWN commit below — NOT the best-effort evidence block, so progress
+    # durability equals answer durability. A missing work_item (a pre-backfill
+    # checkpoint that never got a spine row) is a no-op, never a 500.
+    work_item = (
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.course_id == course_id,
+                WorkItem.source_kind == "checkpoint",
+                WorkItem.source_id == checkpoint_id,
+                WorkItem.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if work_item is not None:
+        # The answer upsert above is visible in-transaction, so these counts
+        # already include the row just written.
+        live_card_count = (
+            await db.execute(
+                select(func.count())
+                .select_from(CheckpointCard)
+                .where(
+                    CheckpointCard.checkpoint_id == checkpoint_id,
+                    CheckpointCard.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one()
+        on_time_count = (
+            await db.execute(
+                select(func.count())
+                .select_from(CheckpointResponse)
+                .where(
+                    CheckpointResponse.checkpoint_id == checkpoint_id,
+                    CheckpointResponse.user_id == user_id,
+                    CheckpointResponse.status != "late",
+                )
+            )
+        ).scalar_one()
+        progress_status = _derive_progress_status(
+            row_status=row_status,
+            on_time_count=on_time_count,
+            live_card_count=live_card_count,
+        )
+        # ``user_id`` is the authenticated caller (endpoint-supplied) — a student
+        # can only ever write their own progress row.
+        await upsert_progress(
+            db,
+            work_item_id=work_item.id,
+            user_id=user_id,
+            status=progress_status,
+        )
+
     await db.commit()
 
     # Evidence seam (best-effort) — a failure here must not lose the answer.

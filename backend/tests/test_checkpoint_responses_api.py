@@ -34,6 +34,7 @@ from app.models import Concept, ConceptTag, Course, Enrollment, User
 from app.models.checkpoint import Checkpoint, CheckpointCard, CheckpointResponse
 from app.models.evidence import LearningEvent
 from app.models.task import Task
+from app.models.work_item import WorkItem, WorkItemProgress
 
 
 def _utcnow() -> datetime:
@@ -439,6 +440,237 @@ async def test_submit_enqueue_failure_preserves_response(
         )
     ).scalar_one()
     assert row.confidence == 0
+
+
+# ----- P4 B5: transactional work_item_progress on submission -----
+
+
+async def _make_work_item(
+    db_session: AsyncSession, course: Course, cp: Checkpoint
+) -> WorkItem:
+    """The `checkpoint` work_item the publish path would have created (B4)."""
+    wi = WorkItem(
+        course_id=course.id,
+        source_kind="checkpoint",
+        source_id=cp.id,
+        title=cp.title,
+        required=True,
+        score_bearing=False,
+        due_at=cp.close_at,
+        close_at=cp.close_at,
+        created_by=course.instructor_id,
+    )
+    db_session.add(wi)
+    await db_session.commit()
+    await db_session.refresh(wi)
+    return wi
+
+
+async def _progress_rows(
+    db_session: AsyncSession, wi_id: uuid.UUID
+) -> list[WorkItemProgress]:
+    return list(
+        (
+            await db_session.execute(
+                select(WorkItemProgress).where(
+                    WorkItemProgress.work_item_id == wi_id
+                )
+            )
+        ).scalars().all()
+    )
+
+
+@pytest.mark.asyncio
+async def test_submit_writes_progress_submitted(
+    db_session: AsyncSession, owned_course: Course, enrolled_student: User
+):
+    made = await _make_checkpoint(db_session, owned_course, status="published")
+    wi = await _make_work_item(db_session, owned_course, made["cp"])
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.post(
+            f"/api/checkpoints/{made['cp'].id}/responses",
+            json={"card_id": str(made["review"].id), "confidence": 1},
+        )
+        assert r.status_code in (200, 201), r.text
+    app.dependency_overrides.clear()
+
+    rows = await _progress_rows(db_session, wi.id)
+    assert len(rows) == 1
+    assert rows[0].user_id == enrolled_student.id
+    assert rows[0].status == "submitted"
+
+
+@pytest.mark.asyncio
+async def test_submit_progress_late_when_past_close_at(
+    db_session: AsyncSession, owned_course: Course, enrolled_student: User
+):
+    made = await _make_checkpoint(
+        db_session, owned_course, status="published",
+        close_at=_utcnow() - timedelta(minutes=5),
+    )
+    wi = await _make_work_item(db_session, owned_course, made["cp"])
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.post(
+            f"/api/checkpoints/{made['cp'].id}/responses",
+            json={"card_id": str(made["review"].id), "confidence": 1},
+        )
+        assert r.status_code in (200, 201), r.text
+    app.dependency_overrides.clear()
+
+    rows = await _progress_rows(db_session, wi.id)
+    assert len(rows) == 1
+    assert rows[0].status == "late"
+
+
+@pytest.mark.asyncio
+async def test_submit_all_cards_flips_progress_completed(
+    db_session: AsyncSession, owned_course: Course, enrolled_student: User
+):
+    made = await _make_checkpoint(db_session, owned_course, status="published")
+    wi = await _make_work_item(db_session, owned_course, made["cp"])
+    cp_id = made["cp"].id
+    review_id = made["review"].id
+    review2_id = made["review2"].id
+    final_id = made["final"].id
+    async with _student_client(db_session, enrolled_student) as ac:
+        # Answer the first review point → still partial → submitted.
+        r1 = await ac.post(
+            f"/api/checkpoints/{cp_id}/responses",
+            json={"card_id": str(review_id), "confidence": 1},
+        )
+        assert r1.status_code in (200, 201), r1.text
+        rows = await _progress_rows(db_session, wi.id)
+        assert rows[0].status == "submitted"
+        # Answer the remaining live cards on time → completed.
+        r2 = await ac.post(
+            f"/api/checkpoints/{cp_id}/responses",
+            json={"card_id": str(review2_id), "confidence": 2},
+        )
+        assert r2.status_code in (200, 201), r2.text
+        r3 = await ac.post(
+            f"/api/checkpoints/{cp_id}/responses",
+            json={"card_id": str(final_id), "text_response": "done"},
+        )
+        assert r3.status_code in (200, 201), r3.text
+    app.dependency_overrides.clear()
+
+    rows = await _progress_rows(db_session, wi.id)
+    assert len(rows) == 1
+    assert rows[0].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_submit_missing_work_item_is_noop(
+    db_session: AsyncSession, owned_course: Course, enrolled_student: User
+):
+    # No work_item created (pre-backfill checkpoint) — submission must still
+    # succeed (never a 500) and simply skip the progress write.
+    made = await _make_checkpoint(db_session, owned_course, status="published")
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.post(
+            f"/api/checkpoints/{made['cp'].id}/responses",
+            json={"card_id": str(made["review"].id), "confidence": 0},
+        )
+    app.dependency_overrides.clear()
+    assert r.status_code in (200, 201), r.text
+    # The answer persisted; no progress rows exist for this student.
+    prog = (
+        await db_session.execute(
+            select(WorkItemProgress).where(
+                WorkItemProgress.user_id == enrolled_student.id
+            )
+        )
+    ).scalars().all()
+    assert prog == []
+
+
+@pytest.mark.asyncio
+async def test_submit_progress_survives_evidence_failure(
+    db_session: AsyncSession, owned_course: Course, enrolled_student: User,
+    monkeypatch,
+):
+    # Progress rides the ANSWER's commit, NOT the best-effort evidence block:
+    # blow up the evidence seam and prove both the answer AND the progress row
+    # survive (the evidence-block rollback cannot touch either).
+    made = await _make_checkpoint(db_session, owned_course, status="published")
+    wi = await _make_work_item(db_session, owned_course, made["cp"])
+    cp_id = made["cp"].id
+    review_id = made["review"].id
+    student_id = enrolled_student.id
+    wi_id = wi.id
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("evidence seam down")
+
+    monkeypatch.setattr(
+        "app.services.checkpoint_responses.record_attempt_event", _boom
+    )
+
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.post(
+            f"/api/checkpoints/{cp_id}/responses",
+            json={"card_id": str(review_id), "confidence": 0},
+        )
+    app.dependency_overrides.clear()
+    assert r.status_code in (200, 201), r.text
+
+    answer = (
+        await db_session.execute(
+            select(CheckpointResponse).where(
+                CheckpointResponse.card_id == review_id,
+                CheckpointResponse.user_id == student_id,
+            )
+        )
+    ).scalar_one()
+    assert answer.confidence == 0
+    rows = await _progress_rows(db_session, wi_id)
+    assert len(rows) == 1
+    assert rows[0].status == "submitted"
+
+
+@pytest.mark.asyncio
+async def test_submit_progress_user_id_is_authenticated_caller(
+    db_session: AsyncSession, owned_course: Course, enrolled_student: User
+):
+    # The progress user_id is the authenticated caller — never client-supplied.
+    # A second enrolled student writes THEIR OWN row, not the first student's.
+    made = await _make_checkpoint(db_session, owned_course, status="published")
+    wi = await _make_work_item(db_session, owned_course, made["cp"])
+
+    other = User(
+        better_auth_id="chkr_student_02", email="chkrstudent2@connect.ust.hk",
+        full_name="Chk Student Two", role="student",
+    )
+    db_session.add(other)
+    await db_session.flush()
+    db_session.add(
+        Enrollment(
+            course_id=owned_course.id, user_id=other.id,
+            role="student", status="active",
+        )
+    )
+    await db_session.commit()
+    await db_session.refresh(other)
+
+    cp_id = made["cp"].id
+    review_id = made["review"].id
+    async with _student_client(db_session, enrolled_student) as ac:
+        await ac.post(
+            f"/api/checkpoints/{cp_id}/responses",
+            json={"card_id": str(review_id), "confidence": 1},
+        )
+    app.dependency_overrides.clear()
+    async with _student_client(db_session, other) as ac:
+        await ac.post(
+            f"/api/checkpoints/{cp_id}/responses",
+            json={"card_id": str(review_id), "confidence": -1},
+        )
+    app.dependency_overrides.clear()
+
+    rows = await _progress_rows(db_session, wi.id)
+    owners = {row.user_id for row in rows}
+    assert owners == {enrolled_student.id, other.id}
+    assert len(rows) == 2
 
 
 @pytest.mark.asyncio
