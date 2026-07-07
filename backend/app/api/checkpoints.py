@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_owned_course
+from app.api.deps import get_current_user, get_owned_course, require_instructor
 from app.database import get_db
 from app.models.checkpoint import Checkpoint, CheckpointCard
 from app.models.course import Course
@@ -31,10 +31,13 @@ from app.schemas.checkpoint import (
     CheckpointCardResponse,
     CheckpointCardUpdate,
     CheckpointGenerateRequest,
+    CheckpointPublishRequest,
     CheckpointResponse,
+    CheckpointScheduleRequest,
     CheckpointWithCardsResponse,
 )
 from app.schemas.common import APIResponse
+from app.services.checkpoints import IllegalTransition, assert_transition
 
 # Card mutations (edit/remove/add) are only legal while the teacher is still
 # drafting (Decision 3). Any later state is P3 territory and refuses edits.
@@ -282,3 +285,212 @@ async def add_card(
     await db.commit()
     await db.refresh(card)  # pull the server-generated created_at/updated_at
     return APIResponse(success=True, data=CheckpointCardResponse.model_validate(card))
+
+
+# ----- publish path: approve / schedule / publish / close (P3 T5) -----
+#
+# Every state change routes through ``assert_transition`` (the T1 service — the
+# single source of truth for legal edges, Decision 1). T1's map deliberately
+# forbids skip-edges: ``draft→approved`` and ``published→closed`` are illegal, so
+# ``approve`` walks ``draft→teacher_editing→approved`` and ``close`` walks
+# ``published→live→closed`` — one asserted step at a time.
+#
+# ``review_actions`` audit note: the repo's ``review_actions`` table
+# (``models/evidence.py``) is the reviewed-evidence loop's append-only log and is
+# hard-bound to a ``learning_note_id`` with an ``action_type`` CHECK that has no
+# checkpoint verbs, so it cannot hold publish-path transitions. T5 is scoped to
+# the router (no migration), so the transition audit trail is appended to
+# ``checkpoint.generation_meta['review_actions']`` — an immutable-style list of
+# ``{action, from, to, actor_id, at}`` entries.
+
+
+def _review_required(message: str) -> HTTPException:
+    """A typed ``REVIEW_REQUIRED`` gate refusal (§3.4), HTTP 409."""
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={"code": "REVIEW_REQUIRED", "message": message},
+    )
+
+
+def _apply_transition(cp: Checkpoint, *targets: str) -> None:
+    """Walk ``cp.status`` through each target, asserting every edge via T1.
+
+    Any illegal edge raises ``IllegalTransition`` which the caller maps to a
+    ``REVIEW_REQUIRED`` 409.
+    """
+    for target in targets:
+        assert_transition(cp.status, target)
+        cp.status = target
+
+
+def _append_review_action(
+    cp: Checkpoint, action: str, from_status: str, actor_id: uuid.UUID
+) -> None:
+    """Append an audit entry to ``generation_meta['review_actions']``.
+
+    Immutable update: a fresh dict/list is assigned so SQLAlchemy flags the
+    JSONB column dirty (in-place mutation would not be detected).
+    """
+    meta = dict(cp.generation_meta or {})
+    actions = list(meta.get("review_actions", []))
+    actions.append(
+        {
+            "action": action,
+            "from": from_status,
+            "to": cp.status,
+            "actor_id": str(actor_id),
+            "at": _utcnow().isoformat(),
+        }
+    )
+    meta["review_actions"] = actions
+    cp.generation_meta = meta
+
+
+@router.post("/{checkpoint_id}/approve", response_model=APIResponse[CheckpointResponse])
+async def approve_checkpoint(
+    checkpoint_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+) -> APIResponse[CheckpointResponse]:
+    """``draft``/``teacher_editing`` → ``approved`` (§4.2).
+
+    Gate: at least one non-removed ``review_point`` card AND the fixed
+    ``final_comments`` card must be present, else ``REVIEW_REQUIRED``.
+    """
+    cp = await _owned_checkpoint(checkpoint_id, user, db)
+    from_status = cp.status
+
+    cards = await _load_cards(db, cp.id)
+    review_points = [
+        c for c in cards if c.kind == "review_point" and not c.removed
+    ]
+    finals = [c for c in cards if c.kind == "final_comments"]
+    if not review_points or not finals:
+        raise _review_required(
+            "A checkpoint needs at least one review point and the final "
+            "comments card before it can be approved."
+        )
+
+    try:
+        # draft→approved is a skip-edge (illegal in T1); walk via teacher_editing.
+        if cp.status == "draft":
+            _apply_transition(cp, "teacher_editing", "approved")
+        else:
+            _apply_transition(cp, "approved")
+    except IllegalTransition as exc:
+        raise _review_required(exc.message) from exc
+
+    _append_review_action(cp, "approve", from_status, user.id)
+    await db.commit()
+    await db.refresh(cp)
+    return APIResponse(success=True, data=CheckpointResponse.model_validate(cp))
+
+
+@router.post("/{checkpoint_id}/schedule", response_model=APIResponse[CheckpointResponse])
+async def schedule_checkpoint(
+    checkpoint_id: uuid.UUID,
+    body: CheckpointScheduleRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+) -> APIResponse[CheckpointResponse]:
+    """``approved`` → ``scheduled`` (§4.2).
+
+    Gate: ``release_at`` and ``close_rule`` must be set (from the body, falling
+    back to any values already on the checkpoint), else ``REVIEW_REQUIRED``.
+    """
+    cp = await _owned_checkpoint(checkpoint_id, user, db)
+    from_status = cp.status
+
+    if body.release_at is not None:
+        cp.release_at = body.release_at
+    if body.close_at is not None:
+        cp.close_at = body.close_at
+    if body.close_rule is not None:
+        cp.close_rule = body.close_rule
+
+    if cp.release_at is None or cp.close_rule is None:
+        raise _review_required(
+            "A release time and close rule are required to schedule a checkpoint."
+        )
+
+    try:
+        _apply_transition(cp, "scheduled")
+    except IllegalTransition as exc:
+        raise _review_required(exc.message) from exc
+
+    _append_review_action(cp, "schedule", from_status, user.id)
+    await db.commit()
+    await db.refresh(cp)
+    return APIResponse(success=True, data=CheckpointResponse.model_validate(cp))
+
+
+@router.post("/{checkpoint_id}/publish", response_model=APIResponse[CheckpointResponse])
+async def publish_checkpoint(
+    checkpoint_id: uuid.UUID,
+    body: CheckpointPublishRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+) -> APIResponse[CheckpointResponse]:
+    """``approved``/``scheduled`` → ``published`` (§4.2).
+
+    Gate (all required, else ``REVIEW_REQUIRED``): a session relation
+    (``meeting_id``), release timing (``release_at``) and a close rule
+    (``close_rule``). Illegal source states are refused by ``assert_transition``.
+    """
+    cp = await _owned_checkpoint(checkpoint_id, user, db)
+    from_status = cp.status
+
+    if body is not None:
+        if body.release_at is not None:
+            cp.release_at = body.release_at
+        if body.close_at is not None:
+            cp.close_at = body.close_at
+        if body.close_rule is not None:
+            cp.close_rule = body.close_rule
+
+    if cp.meeting_id is None:
+        raise _review_required(
+            "A checkpoint must be attached to a session before it can be published."
+        )
+    if cp.release_at is None or cp.close_rule is None:
+        raise _review_required(
+            "A release time and close rule are required to publish a checkpoint."
+        )
+
+    try:
+        _apply_transition(cp, "published")
+    except IllegalTransition as exc:
+        raise _review_required(exc.message) from exc
+
+    _append_review_action(cp, "publish", from_status, user.id)
+    await db.commit()
+    await db.refresh(cp)
+    return APIResponse(success=True, data=CheckpointResponse.model_validate(cp))
+
+
+@router.post("/{checkpoint_id}/close", response_model=APIResponse[CheckpointResponse])
+async def close_checkpoint(
+    checkpoint_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+) -> APIResponse[CheckpointResponse]:
+    """``published``/``live`` → ``closed`` (§4.2).
+
+    ``published→closed`` is a skip-edge (illegal in T1), so a publish that never
+    went ``live`` is walked ``published→live→closed`` — each step asserted.
+    """
+    cp = await _owned_checkpoint(checkpoint_id, user, db)
+    from_status = cp.status
+
+    try:
+        if cp.status == "published":
+            _apply_transition(cp, "live", "closed")
+        else:
+            _apply_transition(cp, "closed")
+    except IllegalTransition as exc:
+        raise _review_required(exc.message) from exc
+
+    _append_review_action(cp, "close", from_status, user.id)
+    await db.commit()
+    await db.refresh(cp)
+    return APIResponse(success=True, data=CheckpointResponse.model_validate(cp))

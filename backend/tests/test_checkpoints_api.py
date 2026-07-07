@@ -326,22 +326,287 @@ async def test_delete_checkpoint_soft_deletes(
     assert cp.deleted_at is not None
 
 
-# ----- NO publish/approve/schedule routes (Decision 3) -----
+# ----- publish path: approve / schedule / publish / close (P3 T5) -----
+
+def _review_actions(cp: Checkpoint) -> list[dict]:
+    return list((cp.generation_meta or {}).get("review_actions", []))
+
 
 @pytest.mark.asyncio
-async def test_p1_has_no_publish_route(
-    async_client: AsyncClient, draft_checkpoint_with_cards
+async def test_approve_happy_path(
+    async_client: AsyncClient, db_session: AsyncSession, draft_checkpoint_with_cards
 ):
     cp, _ = draft_checkpoint_with_cards
-    for verb, path in [
-        ("post", f"/api/checkpoints/{cp.id}/publish"),
-        ("post", f"/api/checkpoints/{cp.id}/approve"),
-        ("post", f"/api/checkpoints/{cp.id}/schedule"),
-        ("post", f"/api/checkpoints/{cp.id}/close"),
-    ]:
-        r = await getattr(async_client, verb)(path)
-        # route must not exist / not be implemented in P1
-        assert r.status_code in (404, 405), f"{path} unexpectedly returned {r.status_code}"
+    r = await async_client.post(f"/api/checkpoints/{cp.id}/approve")
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["status"] == "approved"
+    await db_session.refresh(cp)
+    assert cp.status == "approved"
+    actions = _review_actions(cp)
+    assert len(actions) == 1
+    assert actions[0]["action"] == "approve"
+    assert actions[0]["to"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_approve_from_teacher_editing(
+    async_client: AsyncClient, db_session: AsyncSession, draft_checkpoint_with_cards
+):
+    cp, _ = draft_checkpoint_with_cards
+    cp.status = "teacher_editing"
+    await db_session.commit()
+    r = await async_client.post(f"/api/checkpoints/{cp.id}/approve")
+    assert r.status_code == 200, r.text
+    await db_session.refresh(cp)
+    assert cp.status == "approved"
+
+
+@pytest.mark.asyncio
+async def test_approve_requires_review_point_card(
+    async_client: AsyncClient, db_session: AsyncSession,
+    owned_course: Course, seed_meeting: CourseMeeting,
+):
+    # Checkpoint with only the final_comments card — no review_point → refused.
+    cp = Checkpoint(
+        course_id=owned_course.id, meeting_id=seed_meeting.id,
+        kind="session", title="No review points", status="draft",
+    )
+    db_session.add(cp)
+    await db_session.flush()
+    db_session.add(CheckpointCard(
+        checkpoint_id=cp.id, position=0, kind="final_comments",
+        prompt="Any final comments?",
+    ))
+    await db_session.commit()
+    r = await async_client.post(f"/api/checkpoints/{cp.id}/approve")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "REVIEW_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_approve_requires_final_card(
+    async_client: AsyncClient, db_session: AsyncSession,
+    owned_course: Course, seed_meeting: CourseMeeting,
+):
+    # Checkpoint with a review_point but no final_comments card → refused.
+    cp = Checkpoint(
+        course_id=owned_course.id, meeting_id=seed_meeting.id,
+        kind="session", title="No final card", status="draft",
+    )
+    db_session.add(cp)
+    await db_session.flush()
+    db_session.add(CheckpointCard(
+        checkpoint_id=cp.id, position=0, kind="review_point",
+        prompt="Rate your grasp.",
+    ))
+    await db_session.commit()
+    r = await async_client.post(f"/api/checkpoints/{cp.id}/approve")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "REVIEW_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_schedule_happy_path(
+    async_client: AsyncClient, db_session: AsyncSession, draft_checkpoint_with_cards
+):
+    cp, _ = draft_checkpoint_with_cards
+    cp.status = "approved"
+    await db_session.commit()
+    release = datetime.now(timezone.utc).replace(microsecond=0)
+    r = await async_client.post(
+        f"/api/checkpoints/{cp.id}/schedule",
+        json={"release_at": release.isoformat(), "close_rule": "at_close_at"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["status"] == "scheduled"
+    await db_session.refresh(cp)
+    assert cp.status == "scheduled"
+    assert cp.release_at is not None
+    assert cp.close_rule == "at_close_at"
+
+
+@pytest.mark.asyncio
+async def test_schedule_requires_release_and_close_rule(
+    async_client: AsyncClient, db_session: AsyncSession, draft_checkpoint_with_cards
+):
+    cp, _ = draft_checkpoint_with_cards
+    cp.status = "approved"
+    await db_session.commit()
+    r = await async_client.post(f"/api/checkpoints/{cp.id}/schedule", json={})
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "REVIEW_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_schedule_illegal_from_draft(
+    async_client: AsyncClient, draft_checkpoint_with_cards
+):
+    cp, _ = draft_checkpoint_with_cards  # still draft
+    release = datetime.now(timezone.utc).isoformat()
+    r = await async_client.post(
+        f"/api/checkpoints/{cp.id}/schedule",
+        json={"release_at": release, "close_rule": "manual"},
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "REVIEW_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_publish_happy_path_from_approved(
+    async_client: AsyncClient, db_session: AsyncSession, draft_checkpoint_with_cards
+):
+    cp, _ = draft_checkpoint_with_cards  # has meeting_id set
+    cp.status = "approved"
+    await db_session.commit()
+    release = datetime.now(timezone.utc).isoformat()
+    r = await async_client.post(
+        f"/api/checkpoints/{cp.id}/publish",
+        json={"release_at": release, "close_rule": "manual"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["status"] == "published"
+    await db_session.refresh(cp)
+    assert cp.status == "published"
+    actions = _review_actions(cp)
+    assert any(a["action"] == "publish" for a in actions)
+
+
+@pytest.mark.asyncio
+async def test_publish_happy_path_from_scheduled(
+    async_client: AsyncClient, db_session: AsyncSession, draft_checkpoint_with_cards
+):
+    cp, _ = draft_checkpoint_with_cards
+    cp.status = "scheduled"
+    cp.release_at = datetime.now(timezone.utc)
+    cp.close_rule = "manual"
+    await db_session.commit()
+    r = await async_client.post(f"/api/checkpoints/{cp.id}/publish")
+    assert r.status_code == 200, r.text
+    await db_session.refresh(cp)
+    assert cp.status == "published"
+
+
+@pytest.mark.asyncio
+async def test_publish_gate_missing_release_timing(
+    async_client: AsyncClient, db_session: AsyncSession, draft_checkpoint_with_cards
+):
+    cp, _ = draft_checkpoint_with_cards
+    cp.status = "approved"  # meeting_id set, but no release_at / close_rule
+    await db_session.commit()
+    r = await async_client.post(f"/api/checkpoints/{cp.id}/publish")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "REVIEW_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_publish_gate_requires_session_relation(
+    async_client: AsyncClient, db_session: AsyncSession, owned_course: Course
+):
+    cp = Checkpoint(
+        course_id=owned_course.id, meeting_id=None,
+        kind="session", title="Sessionless", status="approved",
+        release_at=datetime.now(timezone.utc), close_rule="manual",
+    )
+    db_session.add(cp)
+    await db_session.commit()
+    r = await async_client.post(f"/api/checkpoints/{cp.id}/publish")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "REVIEW_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_close_happy_path_from_published(
+    async_client: AsyncClient, db_session: AsyncSession, draft_checkpoint_with_cards
+):
+    cp, _ = draft_checkpoint_with_cards
+    cp.status = "published"
+    await db_session.commit()
+    r = await async_client.post(f"/api/checkpoints/{cp.id}/close")
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["status"] == "closed"
+    await db_session.refresh(cp)
+    assert cp.status == "closed"
+    actions = _review_actions(cp)
+    assert any(a["action"] == "close" for a in actions)
+
+
+@pytest.mark.asyncio
+async def test_close_happy_path_from_live(
+    async_client: AsyncClient, db_session: AsyncSession, draft_checkpoint_with_cards
+):
+    cp, _ = draft_checkpoint_with_cards
+    cp.status = "live"
+    await db_session.commit()
+    r = await async_client.post(f"/api/checkpoints/{cp.id}/close")
+    assert r.status_code == 200, r.text
+    await db_session.refresh(cp)
+    assert cp.status == "closed"
+
+
+@pytest.mark.asyncio
+async def test_close_illegal_from_draft(
+    async_client: AsyncClient, draft_checkpoint_with_cards
+):
+    cp, _ = draft_checkpoint_with_cards  # draft
+    r = await async_client.post(f"/api/checkpoints/{cp.id}/close")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "REVIEW_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_publish_path_non_owner_404(
+    async_client: AsyncClient, db_session: AsyncSession
+):
+    other = User(
+        better_auth_id="chkp_other_pub", email="chkpotherpub@ust.hk",
+        full_name="Other", role="instructor",
+    )
+    db_session.add(other)
+    await db_session.flush()
+    course = Course(
+        name="ForeignPub", language="english",
+        instructor_id=other.id, enroll_code="CHKPPUB1",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    cp = Checkpoint(
+        course_id=course.id, kind="session", title="x", status="draft",
+    )
+    db_session.add(cp)
+    await db_session.commit()
+    r = await async_client.post(f"/api/checkpoints/{cp.id}/approve")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_publish_path_student_forbidden(
+    db_session: AsyncSession, draft_checkpoint_with_cards
+):
+    cp, _ = draft_checkpoint_with_cards
+    student = User(
+        better_auth_id="chkp_student_pub", email="chkpstudentpub@connect.ust.hk",
+        full_name="Student", role="student",
+    )
+    db_session.add(student)
+    await db_session.commit()
+
+    async def override_db():
+        yield db_session
+
+    async def override_user():
+        return student
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test",
+            headers={"Authorization": "Bearer x"},
+        ) as ac:
+            r = await ac.post(f"/api/checkpoints/{cp.id}/approve")
+            assert r.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio

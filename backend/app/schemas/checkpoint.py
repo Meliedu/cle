@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 RemovedReason = Literal["not_needed", "duplicate", "not_covered", "other"]
 CardKind = Literal["review_point", "final_comments"]
+CloseRule = Literal["manual", "at_close_at", "end_of_session"]
 
 
 class CheckpointGenerateRequest(BaseModel):
@@ -47,6 +48,9 @@ class CheckpointResponse(BaseModel):
     status: str
     title: str
     qr_enabled: bool
+    release_at: datetime | None = None
+    close_at: datetime | None = None
+    close_rule: CloseRule | None = None
     generation_meta: dict | None
     created_at: datetime
     updated_at: datetime
@@ -80,3 +84,30 @@ class CheckpointCardCreate(BaseModel):
     document_id: uuid.UUID | None = None
     chunk_id: uuid.UUID | None = None
     objective_id: uuid.UUID | None = None
+
+
+class CheckpointScheduleRequest(BaseModel):
+    """Schedule an ``approved`` checkpoint for future release (P3 T5).
+
+    Fields are optional at the schema layer so a caller who omits them gets the
+    typed ``REVIEW_REQUIRED`` gate (§3.4) rather than a bare 422 — the endpoint
+    falls back to any values already set on the checkpoint and refuses when
+    ``release_at``/``close_rule`` are still missing.
+    """
+
+    release_at: datetime | None = None
+    close_at: datetime | None = None
+    close_rule: CloseRule | None = None
+
+
+class CheckpointPublishRequest(BaseModel):
+    """Optional overrides applied before the publish gate (P3 T5).
+
+    A direct publish from ``approved`` (immediate release) can supply the
+    release timing here; a publish from ``scheduled`` typically sends no body
+    and relies on the values persisted at schedule time.
+    """
+
+    release_at: datetime | None = None
+    close_at: datetime | None = None
+    close_rule: CloseRule | None = None
