@@ -90,6 +90,43 @@ async def _ensure_mastery_row(
     await db.execute(stmt)
 
 
+async def _sync_follow_up_progress(
+    db: AsyncSession, fua: FollowUpAction
+) -> None:
+    """Sync a closed follow-up's ``follow_up`` work_item to ``completed``.
+
+    Resolves the ``follow_up`` work_item (``source_kind='follow_up'``,
+    ``source_id=fua.id``, non-deleted) written by the B1 review seam and upserts
+    the student's ``work_item_progress`` to ``completed``. A follow-up with NO
+    work_item (a pre-P6 follow-up) is a silent no-op — the outcome-closure
+    durability must never depend on the checklist sync. Runs inside the caller's
+    transaction; the caller commits. Idempotent: a second closure pass re-writes
+    the already-``completed`` row to the same value.
+    """
+    # Local imports keep this module import-cycle free at load time (mirrors the
+    # local-import convention used throughout ``services/work_items.py``).
+    from app.models.work_item import WorkItem
+    from app.services.work_items import upsert_progress
+
+    work_item = (
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.source_kind == "follow_up",
+                WorkItem.source_id == fua.id,
+                WorkItem.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if work_item is None:
+        return
+    await upsert_progress(
+        db,
+        work_item_id=work_item.id,
+        user_id=fua.user_id,
+        status="completed",
+    )
+
+
 async def _close_follow_ups_for_attempt(
     db: AsyncSession,
     *,
@@ -140,6 +177,12 @@ async def _close_follow_ups_for_attempt(
     oc_status = "improved" if outcome >= 0.7 else "persistent"
     for fua in open_fuas:
         fua.assignment_status = "completed"
+        # P6 B2: keep the checklist spine coherent — flip the follow-up's
+        # `follow_up` work_item progress to `completed` in THIS transaction
+        # (the handler commits). Best-effort: a pre-P6 follow-up that never
+        # had a work_item is a no-op, never a raise. The worker connection is
+        # BYPASSRLS (migration 28236be3d7b3) so it may write the student's row.
+        await _sync_follow_up_progress(db, fua)
         # Idempotent: uq_outcome_checks_followup permits one OutcomeCheck per
         # follow-up. Pre-check so worker retries don't raise IntegrityError.
         already = (
