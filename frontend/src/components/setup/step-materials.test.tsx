@@ -36,6 +36,7 @@ function makeDoc(overrides: Partial<DocumentResponse> = {}): DocumentResponse {
     status: "ready",
     page_count: 3,
     word_count: 900,
+    meeting_id: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,

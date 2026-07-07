@@ -41,8 +41,8 @@ const TABS: readonly TabDef[] = [
   { id: "sessions", segment: "sessions", enabled: true },
   { id: "enrollment", segment: "enrollment", enabled: true },
   { id: "setup", segment: "setup", enabled: true },
-  { id: "materials", segment: "materials", enabled: false },
-  { id: "activities", segment: "activities", enabled: false },
+  { id: "materials", segment: "materials", enabled: true },
+  { id: "activities", segment: "activities", enabled: true },
   { id: "insights", segment: "insights", enabled: false },
 ];
 
