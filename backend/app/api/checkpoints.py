@@ -13,10 +13,20 @@ Two routers are exported:
   per-checkpoint ownership helper that mirrors ``get_owned_course`` semantics
   (404 on non-owner, never 403, so course existence isn't leaked).
 """
+import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+    WebSocketException,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,7 +37,7 @@ from app.api.deps import (
     require_instructor,
     require_student,
 )
-from app.database import get_db
+from app.database import async_session_factory, get_db
 from app.models.checkpoint import (
     Checkpoint,
     CheckpointCard,
@@ -58,12 +68,20 @@ from app.schemas.checkpoint import (
     CheckpointWithCardsResponse,
 )
 from app.schemas.common import APIResponse
+from app.services.auth import verify_jwt
+from app.services.checkpoint_monitor import (
+    broadcast_closed,
+    compute_monitor_state,
+    monitor_manager,
+)
 from app.services.checkpoint_responses import (
     OPEN_STATUSES,
     is_within_window,
     submit_checkpoint_response,
 )
 from app.services.checkpoints import IllegalTransition, assert_transition
+
+logger = logging.getLogger(__name__)
 
 # Card mutations (edit/remove/add) are only legal while the teacher is still
 # drafting (Decision 3). Any later state is P3 territory and refuses edits.
@@ -643,6 +661,14 @@ async def close_checkpoint(
     _append_review_action(cp, "close", from_status, user.id)
     await db.commit()
     await db.refresh(cp)
+
+    # Best-effort: tell any connected live monitor the checkpoint closed. A
+    # broadcast failure must never fail the close (the state change is durable).
+    try:
+        await broadcast_closed(db, cp.id)
+    except Exception:  # noqa: BLE001 — non-fatal: close already committed
+        logger.exception("monitor closed-broadcast failed for checkpoint_id=%s", cp.id)
+
     return APIResponse(success=True, data=CheckpointResponse.model_validate(cp))
 
 
@@ -1076,3 +1102,77 @@ async def revisit_response(
             delta=delta,
         ),
     )
+
+
+# ----- teacher live monitor WebSocket (P3 T12, Decision 4) -----
+#
+# Reuses the live-quiz ``ConnectionManager`` class via ``monitor_manager`` — no
+# new WS framework. Auth preamble is copied from ``api/live.py``'s
+# ``websocket_live`` (``?token=`` → ``verify_jwt`` → resolve user), but the
+# enrollment check is swapped for an OWNER check: only the checkpoint's course
+# instructor may monitor. The monitor is read-only — inbound frames are drained
+# and ignored; the server only ever pushes ``state``/``submission``/``closed``.
+
+
+@router.websocket("/{checkpoint_id}/monitor")
+async def websocket_monitor(
+    websocket: WebSocket,
+    checkpoint_id: str,
+    token: str = "",
+):
+    """Teacher live-monitor stream for one checkpoint.
+
+    On connect the owner receives ``{type: "state", submission_count,
+    confidence_distribution}``; thereafter the hub pushes ``submission`` (a
+    student response landed) and ``closed`` (the checkpoint closed) broadcasts.
+    """
+    if not token:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+    try:
+        verified = verify_jwt(token)
+    except Exception as exc:  # noqa: BLE001 — any verify failure is a policy reject
+        logger.warning("Monitor WS auth failed for checkpoint %s: %s", checkpoint_id, exc)
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+
+    auth_user_id = verified.claims.get("sub")
+    if not auth_user_id:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+
+    try:
+        cp_uuid = uuid.UUID(checkpoint_id)
+    except ValueError:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+
+    # Resolve user + OWNER-guard the checkpoint, then snapshot the initial state
+    # — all in one short-lived session that is released before the read-loop.
+    async with async_session_factory() as db:
+        user = (
+            await db.execute(
+                select(User).where(User.better_auth_id == auth_user_id)
+            )
+        ).scalar_one_or_none()
+        if user is None:
+            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+
+        cp = await db.get(Checkpoint, cp_uuid)
+        if cp is None or cp.deleted_at is not None:
+            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+        course = await db.get(Course, cp.course_id)
+        if (
+            course is None
+            or course.deleted_at is not None
+            or course.instructor_id != user.id
+        ):
+            # Owner-only: a non-owner (or student) is rejected before accept.
+            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+
+        initial_state = await compute_monitor_state(db, cp_uuid)
+
+    await monitor_manager.connect(checkpoint_id, websocket)
+    try:
+        await websocket.send_json({"type": "state", **initial_state})
+        # Read-only monitor: drain (and ignore) inbound frames until disconnect.
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        monitor_manager.disconnect(checkpoint_id, websocket)

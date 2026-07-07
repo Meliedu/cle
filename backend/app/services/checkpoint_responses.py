@@ -96,14 +96,25 @@ def _validate_shape(
     return None, text_response
 
 
-async def _notify_monitor(checkpoint_id: uuid.UUID) -> None:
-    """Live-monitor broadcast seam (Decision 4).
+async def _notify_monitor(db: AsyncSession, checkpoint_id: uuid.UUID) -> None:
+    """Live-monitor broadcast seam (Decision 4, wired in T12).
 
-    Deferred to T12 (the monitor WS reuses the live-quiz ``ConnectionManager``).
-    Kept as a named, import-safe no-op so T12 fills in ``monitor_manager
-    .broadcast(...)`` here without touching the submission flow's callers.
+    Pushes a ``submission`` broadcast to any connected teacher monitor via the
+    reused live-quiz ``ConnectionManager`` (``monitor_manager``). Best-effort:
+    a broadcast failure must NEVER fail the student's already-committed answer,
+    so the whole thing is wrapped. Imported lazily to keep the module's import
+    graph flat and side-effect free.
     """
-    return None
+    try:
+        from app.services.checkpoint_monitor import broadcast_submission
+
+        await broadcast_submission(db, checkpoint_id)
+    except Exception:  # noqa: BLE001 — non-fatal: response already persisted
+        logger.exception(
+            "Failed to broadcast checkpoint submission to monitor for "
+            "checkpoint_id=%s",
+            checkpoint_id,
+        )
 
 
 async def submit_checkpoint_response(
@@ -210,7 +221,7 @@ async def submit_checkpoint_response(
         )
         await db.rollback()
 
-    await _notify_monitor(checkpoint_id)
+    await _notify_monitor(db, checkpoint_id)
 
     response = await db.get(CheckpointResponse, response_id)
     assert response is not None
