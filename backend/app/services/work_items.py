@@ -8,14 +8,17 @@ backfill, or a concurrent first-attempt can never raise ``IntegrityError``.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.work_item import WorkItem, WorkItemProgress
+
+logger = logging.getLogger(__name__)
 
 
 async def upsert_work_item(
@@ -204,3 +207,128 @@ async def backfill_work_items(db: AsyncSession) -> int:
     if created:
         await db.commit()
     return created
+
+
+# --------------------------------------------------------------------------- #
+#  P4 B9: mark_missed_work_items cron                                          #
+# --------------------------------------------------------------------------- #
+
+#: Progress statuses the cron may flip to ``missed``. Everything else is
+#: protected (see ``_TERMINAL_STATUSES``): a student who is still ``pending``
+#: or mid-attempt on a now-past-due required item has missed it.
+_MISSABLE_STATUSES: frozenset[str] = frozenset({"pending", "in_progress"})
+
+#: Statuses the cron must NEVER overwrite. ``completed``/``submitted`` are the
+#: happy path; ``missed`` is already terminal (idempotency); ``late`` is a
+#: submission that merely arrived late — a late submission is NOT missed;
+#: ``follow_up_assigned`` means the loop already advanced past the deadline.
+_TERMINAL_STATUSES: frozenset[str] = frozenset(
+    {"completed", "submitted", "missed", "late", "follow_up_assigned"}
+)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+async def mark_missed_work_items(session: AsyncSession) -> int:
+    """Flip actively-enrolled students to ``missed`` on past-due required items.
+
+    Mirrors ``checkpoints.close_due_checkpoints`` (P3 T13): a privileged cron
+    service that commits internally and returns the number of rows it changed.
+    The worker connection is ``BYPASSRLS`` (migration ``28236be3d7b3``) so it may
+    write every student's ``work_item_progress`` row.
+
+    An item's deadline is ``close_at`` when set, else ``due_at``; an item with
+    neither is never missed. For each ``required``, non-deleted work_item whose
+    deadline is ``<= now``:
+
+    - each ACTIVE ``student`` enrollment on the item's course whose progress is
+      ``pending``/``in_progress`` is flipped to ``missed``;
+    - each such student with NO progress row gets a fresh ``missed`` row (a
+      never-started required item that is now past due is a missed item);
+    - ``completed``/``submitted``/``missed``/``late``/``follow_up_assigned`` rows
+      are left untouched (terminal / protected).
+
+    Idempotent: a second run finds only protected rows and returns ``0``.
+    Returns the number of progress rows created or flipped on this run.
+    """
+    # Local imports keep this module import-cycle free at load time.
+    from app.models.course import Enrollment
+
+    now = _utcnow()
+
+    items = (
+        await session.execute(
+            select(WorkItem).where(
+                WorkItem.required.is_(True),
+                WorkItem.deleted_at.is_(None),
+                or_(
+                    WorkItem.close_at <= now,
+                    and_(WorkItem.close_at.is_(None), WorkItem.due_at <= now),
+                ),
+            )
+        )
+    ).scalars().all()
+    if not items:
+        return 0
+
+    item_ids = [it.id for it in items]
+    course_ids = {it.course_id for it in items}
+
+    # Active student roster per course, in one query.
+    active_by_course: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for course_id, user_id in (
+        await session.execute(
+            select(Enrollment.course_id, Enrollment.user_id).where(
+                Enrollment.course_id.in_(course_ids),
+                Enrollment.role == "student",
+                Enrollment.status == "active",
+            )
+        )
+    ).all():
+        active_by_course.setdefault(course_id, []).append(user_id)
+
+    # Existing progress for these items, keyed on (item, user), in one query.
+    existing: dict[tuple[uuid.UUID, uuid.UUID], WorkItemProgress] = {
+        (row.work_item_id, row.user_id): row
+        for row in (
+            await session.execute(
+                select(WorkItemProgress).where(
+                    WorkItemProgress.work_item_id.in_(item_ids)
+                )
+            )
+        ).scalars().all()
+    }
+
+    changed = 0
+    for item in items:
+        for user_id in active_by_course.get(item.course_id, ()):
+            row = existing.get((item.id, user_id))
+            if row is None:
+                # Never-started: create the missed row directly. on_conflict is
+                # unnecessary here (single serialized cron, prior read) but kept
+                # defensive against a concurrent first-attempt insert.
+                await session.execute(
+                    pg_insert(WorkItemProgress)
+                    .values(
+                        id=uuid.uuid4(),
+                        work_item_id=item.id,
+                        user_id=user_id,
+                        status="missed",
+                    )
+                    .on_conflict_do_nothing(
+                        index_elements=["work_item_id", "user_id"]
+                    )
+                )
+                changed += 1
+            elif row.status in _MISSABLE_STATUSES:
+                row.status = "missed"
+                row.updated_at = now
+                changed += 1
+            # else: protected/terminal — leave untouched.
+
+    if changed:
+        await session.commit()
+        logger.info("mark_missed_work_items marked %d progress row(s)", changed)
+    return changed

@@ -490,6 +490,15 @@ async def _body_close_due() -> None:
             logger.info("close_due_checkpoints closed %d checkpoint(s)", n)
 
 
+async def _body_mark_missed() -> None:
+    from app.services.work_items import mark_missed_work_items
+
+    async with async_session_factory() as session:
+        n = await mark_missed_work_items(session)
+        if n:
+            logger.info("mark_missed_work_items marked %d progress row(s)", n)
+
+
 async def _body_alerts_enqueue() -> None:
     from app.models import Course
 
@@ -571,6 +580,9 @@ async def _run_cron_ticks() -> None:
     await _claim_and_run_cron("alert", timedelta(hours=1), _body_alerts_enqueue)
     await _claim_and_run_cron(
         "close_due_checkpoints", timedelta(minutes=1), _body_close_due
+    )
+    await _claim_and_run_cron(
+        "mark_missed_work_items", timedelta(hours=1), _body_mark_missed
     )
 
 
