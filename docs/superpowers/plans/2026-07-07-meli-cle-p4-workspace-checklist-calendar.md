@@ -60,89 +60,89 @@ Each task: failing test first → minimal impl → refactor → code review (`/c
 
 ### Backend
 
-- [ ] **B1 — `work_items` model + migration (course-scoped, no RLS).**
+- [x] **B1 — `work_items` model + migration (course-scoped, no RLS).**
   - Test first (`tests/test_work_item_model.py`): columns `course_id FK`, `source_kind` (CHECK full §4.6 enum, Decision 1), `source_id UUID`, `title`, `required bool default true`, `score_bearing bool default false`, `due_at/close_at` (nullable, tz), `visible_from` (nullable, tz), `created_by FK users`; UUID PK + `TimestampMixin` + `SoftDeleteMixin`; **unique index `uq_work_items_course_source` on `(course_id, source_kind, source_id)`** (Decision 3 idempotency). No RLS (mirrors `CheckpointLaunch`).
   - Model `WorkItem` in a NEW `app/models/work_item.py`; migration chains from the confirmed P3 head. Register in `app/models/__init__.py`.
   - Commit `feat(checklist): work_items model + course-source unique index`.
 
-- [ ] **B2 — `work_item_progress` model + owner-isolation RLS migration.**
+- [x] **B2 — `work_item_progress` model + owner-isolation RLS migration.**
   - Test first (`tests/test_work_item_progress_model.py`): columns `work_item_id FK`, `user_id FK`, `status` (CHECK `pending|in_progress|submitted|late|missed|completed|follow_up_assigned`), `updated_at`; unique `(work_item_id, user_id)`; UUID PK + `TimestampMixin`.
   - Model `WorkItemProgress` in `app/models/work_item.py`. Migration COPIES `d94257fc717c` structure verbatim: create table + `ix_work_item_progress_user_id` + `ENABLE ROW LEVEL SECURITY` + `work_item_progress_owner_isolation` policy on `user_id` (Decision 2). Chain from B1.
   - Commit `feat(checklist): work_item_progress model + owner-isolation RLS`.
 
-- [ ] **B3 — Work-item write service (`app/services/work_items.py`).**
+- [x] **B3 — Work-item write service (`app/services/work_items.py`).**
   - Test first (`tests/test_work_items_service.py`): `upsert_work_item(db, *, course_id, source_kind, source_id, title, required, score_bearing, due_at, close_at, created_by)` uses `pg_insert(...).on_conflict_do_nothing(index_elements=[...]).returning(...)` then re-fetches on conflict (mirrors `mastery.py::_get_or_create_mastery`) — a second call with the same `(course_id, source_kind, source_id)` returns the SAME row, no `IntegrityError`; caller commits. `upsert_progress(db, *, work_item_id, user_id, status)` upserts on `(work_item_id, user_id)`; caller commits. `remove_work_item(db, work_item)` soft-deletes. Pure helpers — no HTTP, no commit inside (the transactional callers own the commit, Decision 3).
   - Commit `feat(checklist): work-item upsert + progress service`.
 
-- [ ] **B4 — Transactional `checkpoint` work_item on publish + backfill.**
+- [x] **B4 — Transactional `checkpoint` work_item on publish + backfill.**
   - Test first (`tests/test_checkpoints_api.py` additions): after `POST /checkpoints/{id}/publish` succeeds, a `work_items` row exists with `source_kind='checkpoint'`, `source_id=checkpoint.id`, `due_at=close_at`, `required=true`; re-publishing (or a `follow_up`-kind publish) does NOT duplicate (unique index); the write is rolled back if the publish transaction fails (assert atomicity). Plus `tests/test_backfill_work_items.py`: `backfill_work_items(session)` inserts one row per existing `published|live|closed|archived` checkpoint lacking one and is idempotent on re-run.
   - Impl: call `upsert_work_item(...)` inside `api/checkpoints.py::publish_checkpoint` BEFORE `await db.commit()` (alongside `_append_review_action`); title from `cp.title`, `source_kind` = `"checkpoint"` (both `session` and `follow_up` checkpoint kinds map to the `checkpoint` source_kind — the `follow_up` SPINE source_kind is reserved for P6 follow-up actions, not checkpoints). Backfill as a data migration OR `services/work_items.py::backfill_work_items` run once + guarded idempotent.
   - Commit `feat(checklist): publish writes checkpoint work_item (transactional) + backfill`.
 
-- [ ] **B5 — Transactional `work_item_progress` on response submission.**
+- [x] **B5 — Transactional `work_item_progress` on response submission.**
   - Test first (`tests/test_checkpoint_responses.py` additions): after `POST /checkpoints/{id}/responses`, the student's `work_item_progress` for the checkpoint's work_item exists with `status='submitted'` (or `late` when past `close_at`); once ALL live cards are answered on time it flips to `completed`; the progress row shares the answer's commit (a forced failure of the evidence block below does NOT lose progress); a missing work_item (pre-backfill) is a no-op, not a 500. Wrong-owner cannot write another student's progress (RLS + `user_id` from the authenticated caller).
   - Impl: in `services/checkpoint_responses.py::submit_checkpoint_response`, resolve the checkpoint's work_item and call `upsert_progress(...)` BEFORE the answer's `await db.commit()` (Decision 3) — same transaction. Derive `completed` by counting the student's non-late responses vs live card count (reuse the `_derive_history_status` logic shape from `api/checkpoints.py`; extract a shared helper if it de-duplicates cleanly).
   - Commit `feat(checklist): response submission writes work_item_progress (transactional)`.
 
-- [ ] **B6 — Checklist router (`app/api/checklist.py`): student read + teacher manager + next-action.**
+- [x] **B6 — Checklist router (`app/api/checklist.py`): student read + teacher manager + next-action.**
   - Test first (`tests/test_checklist_api.py`): `GET /courses/{id}/checklist` (student, enrollment-scoped via `verify_enrollment`) returns the course's non-deleted work_items merged with the caller's own `work_item_progress` (derived status for pre-backfill items from `checkpoint_responses` fallback, Decision 4), ordered by `due_at` then `visible_from`; `GET /courses/{id}/next-action` returns the single next `pending`/`in_progress` item by `due_at` (Decision 7) or `null`; teacher manager `GET /courses/{id}/work-items` (owner-guarded, no progress), `POST` (manual add), `PATCH /work-items/{id}` (reorder/required/title), `DELETE /work-items/{id}` (soft-remove). A non-enrolled user → 403; non-owner teacher on manager routes → 404.
   - Impl: `app/api/checklist.py` (course-scoped + item-scoped routers), schemas in `app/schemas/work_item.py`. Register all routers in `app/api/__init__.py`.
   - Commit `feat(checklist): student checklist + next-action + teacher work-item manager`.
 
-- [ ] **B7 — Calendar feed merges work_items.**
+- [x] **B7 — Calendar feed merges work_items.**
   - Test first (`tests/test_calendar_feed.py` additions): `GET /courses/{id}/calendar?from&to` now also emits `kind="work_item"` events for work_items with `due_at`/`close_at` in-window, each carrying `source_kind` and (for a student) that student's `work_item_progress.status`; a teacher sees the same items without per-student status; the 366-day cap + `from<to` validation are unchanged; a student sees only their own progress overlay (owner-scoped).
   - Impl: extend `meetings.py::calendar_feed` (append the third source; keep the flat envelope + sort). Reuse `_accessible_course` for role. No new endpoint.
   - Commit `feat(calendar): merge work_items into the course calendar feed`.
 
-- [ ] **B8 — Materials library API: assign-to-session, session folders, preview.**
+- [x] **B8 — Materials library API: assign-to-session, session folders, preview.**
   - Test first (`tests/test_documents_materials.py`): `PATCH /courses/{id}/documents/{doc_id}` (owner-guarded) sets `meeting_id` (assign) or `null` (unassign) — a foreign meeting_id → 404/422; assigning to a `released` session creates a `material` work_item (idempotent), unassigning soft-removes it; `GET /courses/{id}/materials` returns documents GROUPED by `meeting_id` (+ "unassigned" bucket) with each session's `release_state` (Decision 6); `GET /courses/{id}/documents/{doc_id}/preview` returns a short-lived signed R2 URL (owner or enrolled student on a released session), never raw bytes.
   - Impl: extend `app/api/documents.py` (new PATCH + materials + preview handlers, reuse `_require_course_instructor` / `verify_enrollment`); signed-URL helper in `app/services/storage.py` if absent. `material` work_item via `upsert_work_item` (B3).
   - Commit `feat(materials): assign-to-session, session folders, signed preview`.
 
-- [ ] **B9 — `mark_missed_work_items` cron.**
+- [x] **B9 — `mark_missed_work_items` cron.**
   - Test first (`tests/test_mark_missed_work_items.py`): `mark_missed_work_items(session)` flips a student's `work_item_progress` to `missed` for `required` work_items whose `close_at`/`due_at` is past AND the student is actively enrolled AND has no `completed`/`submitted` progress; idempotent (re-run no-ops); never touches non-required items or already-terminal statuses. Runs privileged (worker connection is BYPASSRLS per `28236be3d7b3`) so it can write every student's row.
   - Impl: `mark_missed_work_items` in `app/services/work_items.py` + `_body_mark_missed` + registration `_claim_and_run_cron("mark_missed_work_items", timedelta(hours=1), _body_mark_missed)` in `worker.py::_run_cron_ticks` (mirror `_body_close_due`).
   - Commit `feat(checklist): mark_missed_work_items cron`.
 
-- [ ] **B10 — RLS isolation test for `work_item_progress`.**
+- [x] **B10 — RLS isolation test for `work_item_progress`.**
   - Test first: COPY `tests/test_checkpoint_responses_rls.py` (or `test_readiness_rls.py`) into `tests/test_work_item_progress_rls.py`: under `SET ROLE meli_app`, user A's progress row is invisible/immutable to user B (SELECT hides, UPDATE/DELETE affect 0 rows, INSERT of A's `user_id` rejected by WITH CHECK), GUC switch-back restores visibility, blank GUC fails closed. Skip-guard when `meli_app` absent. Seed/teardown on `async_engine`.
   - Commit `test(checklist): RLS owner-isolation for work_item_progress`.
 
 ### Frontend (pull Figma per screen via `get_metadata` on the group first)
 
-- [ ] **F1 — Hooks + `CourseTab` wiring (`use-work-items`, `use-checklist`, calendar, materials).**
+- [x] **F1 — Hooks + `CourseTab` wiring (`use-work-items`, `use-checklist`, calendar, materials).**
   - New `hooks/use-work-items.ts` (`useChecklist(courseId)`, `useNextAction(courseId)`, teacher `useWorkItems`/`useAddWorkItem`/`useUpdateWorkItem`/`useRemoveWorkItem` mirroring `use-checkpoints.ts` shape + `authedWrite`); new `hooks/use-calendar.ts` (`useCalendar(courseId, from, to)` over `/courses/{id}/calendar`); extend `use-documents.ts` with `useMaterials`/`useAssignMaterial`/`useMaterialPreview`. Flip `materials`+`activities` to `enabled:true` in `course-workspace-shell.tsx` `TABS` and add the student `CourseTab` shape if a student shell diverges. Vitest for one query + one mutation (mocked, per offline convention).
   - Commit `feat(hooks): work-items, checklist, calendar, materials hooks + enable tabs`.
 
-- [ ] **F2 — Student course workspace shell + overview + no-content states (S023, S072).**
+- [x] **F2 — Student course workspace shell + overview + no-content states (S023, S072).**
   - New route tree `student/courses/[courseId]/` (Next.js 16: `page` props `params` is a **Promise — `await params`**; see `frontend/AGENTS.md`). A student workspace shell (mirror `course-workspace-shell.tsx` but student tabs: overview / checklist / schedule / sessions / materials / activities); overview (S023) summarizing next-action + progress; designed no-materials / no-activities EmptyStates (S072). i18n `student.workspace.*`. Tokens only. Pull group `1372:246`.
   - Commit `feat(student): course workspace shell + overview + empty states`.
 
-- [ ] **F3 — Student checklist + schedule table (S024–S026).**
+- [x] **F3 — Student checklist + schedule table (S024–S026).**
   - Checklist view (S024/S025) over `useChecklist` — grouped by status with one visual treatment per `work_item_progress.status` (reuse `ReviewStateChip`/`StateBanner` tones); schedule table (S026) over `useMeetings` (reuse P2 teacher schedule-table shape, student-read). i18n `student.checklist.*` / `student.schedule.*`. Pull the relevant `1372:246` children.
   - Commit `feat(student): checklist + schedule table`.
 
-- [ ] **F4 — Student sessions list / detail / locked (S027–S029).**
+- [x] **F4 — Student sessions list / detail / locked (S027–S029).**
   - Sessions list (S027) from `useMeetings` filtered to `release_state ∈ released|completed`; session detail (S028) showing topic summary + that session's materials + any session checkpoint; locked state (S029, a designed EmptyState for a `locked` session — reason + "opens when your instructor releases it"). i18n `student.sessions.*`. Pull `1372:246` children.
   - Commit `feat(student): sessions list/detail/locked`.
 
-- [ ] **F5 — Student materials list + reader + activities placeholder (S030–S032).**
+- [x] **F5 — Student materials list + reader + activities placeholder (S030–S032).**
   - Materials list (S030) grouped by session folder from `useMaterials`; material reader (S031) opening the signed preview URL (`useMaterialPreview`) in an embedded viewer with a download fallback; activities list placeholder (S032, designed "activities arrive soon" EmptyState — P5 fills it). i18n `student.materials.*` / `student.activities.*`. Pull `1372:246` children.
   - Commit `feat(student): materials list + reader + activities placeholder`.
 
-- [ ] **F6 — Teacher materials library: upload + link-resource + session folders (T052–T054).**
+- [x] **F6 — Teacher materials library: upload + link-resource + session folders (T052–T054).**
   - `teacher/courses/[courseId]/materials/` route (await `params`). Upload (T052, reuse `components/documents/upload-zone.tsx` + `use-documents` upload); link-resource modal (T053 — external URL/resource entry); session-folders view (T054 — documents grouped by `meeting_id` via `useMaterials`, "Unassigned" bucket). i18n `teacher.materials.*`. Pull `1372:116` (+ first `1372:132` frames only).
   - Commit `feat(teacher): materials upload + link-resource + session folders`.
 
-- [ ] **F7 — Teacher materials: preview + assign-to-session + remove + no-materials (T055–T059).**
+- [x] **F7 — Teacher materials: preview + assign-to-session + remove + no-materials (T055–T059).**
   - Material preview (T055, signed URL); assign-to-session control (T056, `useAssignMaterial` PATCH `meeting_id`); remove confirmation modal (T057/T058); no-materials-published EmptyState (T059, designed reason + "upload your first material"). Surface any typed error (foreign meeting_id) as a `StateBanner`. i18n `teacher.materials.*`. Pull `1372:116` children.
   - Commit `feat(teacher): material preview + assign-to-session + remove + empty state`.
 
-- [ ] **F8 — Full calendar month/week + event-detail drawer, both roles (T007/T008 + S018–S020).**
+- [x] **F8 — Full calendar month/week + event-detail drawer, both roles (T007/T008 + S018–S020).**
   - Replace the `calendar-view.tsx` "coming soon" `StateBanner` with real month + week grid components (`components/calendar/`), consuming `useCalendar` (meetings + assignments + work_items, Decision 5). Month grid (T007/S018), week grid (T008/S019), event-detail drawer routing by `kind` (`meeting`/`assignment`/`work_item`) (S020). `prefers-reduced-motion` respected; keyboard-navigable grid. Shared by both role lanes (the page composition already is). i18n `patterns.calendar.*`. Pull `1372:6` (T007/T008) + `1372:226` (S018–S020). Vitest for the month-grid date math.
   - Commit `feat(calendar): full month/week grids + event-detail drawer`.
 
-- [ ] **F9 — Dashboard next-action from work items + P4 close-out.**
+- [x] **F9 — Dashboard next-action from work items + P4 close-out.**
   - Feed `dashboard-home.tsx`'s next-action slot from `useNextAction` (Decision 7 — NOT the localStorage `use-todos` widget, which stays). Designed no-next-action state. Playwright happy-path (publish checkpoint → student checklist shows it → answer → progress flips → appears on calendar) where infra allows; else vitest against mocked hooks (per P0–P3 offline convention). i18n `student.dashboard.*`. **P4 close-out is a SEPARATE controller step** — this task ships the code only; do not edit the roadmap here.
   - Commit `feat(dashboard): next-action fed from work items + P4 verification`.
 
@@ -150,15 +150,15 @@ Each task: failing test first → minimal impl → refactor → code review (`/c
 
 ## Self-review checklist (spec §4.6 coverage before P4 close-out)
 
-- [ ] `work_items` ships the full §4.6 `source_kind` CHECK; P4 writes `checkpoint`/`material` only; `(course_id, source_kind, source_id)` unique enforced (B1, Decision 1).
-- [ ] `work_item_progress` is the student-owned RLS table (owner-isolation proven under `meli_app`); `work_items` is no-RLS, endpoint-guarded (B2/B10, Decision 2).
-- [ ] The `checkpoint` work_item is written TRANSACTIONALLY inside `publish_checkpoint` (atomic with publish, idempotent) + existing P3 checkpoints backfilled idempotently (B4, Decisions 3–4).
-- [ ] `work_item_progress` rides the answer's OWN commit in `submit_checkpoint_response` (not the best-effort evidence block); missing work_item is a no-op, never a 500 (B5, Decision 3).
-- [ ] Student checklist + calendar overlay + dashboard next-action all read the SINGLE spine (`work_item_progress`), not a parallel list (B6/B7/F9, Decision 7).
-- [ ] Calendar EXTENDS the existing `calendar_feed` with `kind="work_item"`; meetings stay a separate source (no `meeting` source_kind); 366-day cap + role scoping intact (B7, Decision 5).
-- [ ] Materials assign-to-session uses the existing `documents.meeting_id` column; session folders = group-by-meeting; signed-URL preview, never raw bytes; foreign meeting_id refused (B8, Decision 6).
-- [ ] `mark_missed_work_items` cron idempotent + registered in `_run_cron_ticks` (B9).
-- [ ] Student S023–S032 + teacher T052–T059 shipped with designed no-materials / no-activities / locked-session states (never blank divs) (F2–F7).
-- [ ] Full month/week calendars + event-detail drawer replace the P0 "coming soon" banner for BOTH roles (F8; T007/T008 + S018–S020).
-- [ ] Next.js 16: every new `page` awaits `params` (Promise); `proxy.ts` not `middleware.ts`; read `frontend/AGENTS.md` before FE work.
-- [ ] No hardcoded strings (next-intl `student.*`/`teacher.*`/`patterns.*`), no hardcoded colors (tokens.css), conventional commits, code review per task cluster.
+- [x] `work_items` ships the full §4.6 `source_kind` CHECK; P4 writes `checkpoint`/`material` only; `(course_id, source_kind, source_id)` unique enforced (B1, Decision 1).
+- [x] `work_item_progress` is the student-owned RLS table (owner-isolation proven under `meli_app`); `work_items` is no-RLS, endpoint-guarded (B2/B10, Decision 2).
+- [x] The `checkpoint` work_item is written TRANSACTIONALLY inside `publish_checkpoint` (atomic with publish, idempotent) + existing P3 checkpoints backfilled idempotently (B4, Decisions 3–4).
+- [x] `work_item_progress` rides the answer's OWN commit in `submit_checkpoint_response` (not the best-effort evidence block); missing work_item is a no-op, never a 500 (B5, Decision 3).
+- [x] Student checklist + calendar overlay + dashboard next-action all read the SINGLE spine (`work_item_progress`), not a parallel list (B6/B7/F9, Decision 7).
+- [x] Calendar EXTENDS the existing `calendar_feed` with `kind="work_item"`; meetings stay a separate source (no `meeting` source_kind); 366-day cap + role scoping intact (B7, Decision 5).
+- [x] Materials assign-to-session uses the existing `documents.meeting_id` column; session folders = group-by-meeting; signed-URL preview, never raw bytes; foreign meeting_id refused (B8, Decision 6).
+- [x] `mark_missed_work_items` cron idempotent + registered in `_run_cron_ticks` (B9).
+- [x] Student S023–S032 + teacher T052–T059 shipped with designed no-materials / no-activities / locked-session states (never blank divs) (F2–F7).
+- [x] Full month/week calendars + event-detail drawer replace the P0 "coming soon" banner for BOTH roles (F8; T007/T008 + S018–S020).
+- [x] Next.js 16: every new `page` awaits `params` (Promise); `proxy.ts` not `middleware.ts`; read `frontend/AGENTS.md` before FE work.
+- [x] No hardcoded strings (next-intl `student.*`/`teacher.*`/`patterns.*`), no hardcoded colors (tokens.css), conventional commits, code review per task cluster.
