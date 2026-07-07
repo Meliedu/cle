@@ -1884,6 +1884,90 @@
         "reason": "Refresh the page to try again."
       }
     },
+    "practice": {
+      "load": {
+        "errorTitle": "We couldn't load this practice set",
+        "errorReason": "Refresh the page or head back to your activities.",
+        "back": "Back to activities"
+      },
+      "intro": {
+        "eyebrow": "Practice set",
+        "subtitle": "Low-stakes practice — nothing here counts toward your grade.",
+        "questionCount": "{count, plural, =0 {No questions yet} one {# question} other {# questions}}",
+        "start": "Start practice",
+        "emptyTitle": "No questions yet",
+        "emptyReason": "This practice set has no questions to work through right now."
+      },
+      "renderer": {
+        "mcLegend": "Choose one answer",
+        "matchPlaceholder": "Select a match…",
+        "orderingLegend": "Put these in order",
+        "moveUp": "Move {item} up",
+        "moveDown": "Move {item} down",
+        "shortAnswerLabel": "Your answer",
+        "shortAnswerPlaceholder": "Type your answer…"
+      },
+      "taking": {
+        "progress": "Question {current} of {total}",
+        "answered": "{count}/{total} answered",
+        "previous": "Previous",
+        "next": "Next",
+        "finish": "Finish practice",
+        "submitting": "Submitting…",
+        "submitErrorTitle": "We couldn't submit your answers",
+        "submitErrorReason": "Something went wrong submitting your answers. Please try again.",
+        "confirmTitle": "Submit your answers?",
+        "confirmAllAnswered": "You've answered all {total} questions. Submit now?",
+        "confirmSomeBlank": "You've answered {answered} of {total}. Unanswered questions will be marked incorrect.",
+        "confirmReview": "Keep reviewing",
+        "confirmSubmit": "Submit"
+      },
+      "result": {
+        "practiceEyebrow": "Practice complete",
+        "quizEyebrow": "Your score",
+        "correctOf": "{correct} of {total} correct",
+        "feedbackLabel": "Per-question feedback",
+        "correct": "Correct",
+        "incorrect": "Not quite",
+        "retry": "Try again",
+        "back": "Back to activities"
+      }
+    },
+    "quiz": {
+      "load": {
+        "errorTitle": "We couldn't load this quiz",
+        "errorReason": "Refresh the page or head back to your activities.",
+        "back": "Back to activities"
+      },
+      "landing": {
+        "gradedEyebrow": "Graded quiz",
+        "practiceEyebrow": "Quiz",
+        "scoreBearingTitle": "This quiz counts toward your grade",
+        "scoreBearingReason": "Review the details below before you start. You're submitting for a score.",
+        "notGradedTitle": "This quiz isn't score-bearing",
+        "notGradedReason": "Your instructor set this quiz up for feedback, not a grade.",
+        "detailsTitle": "Quiz details",
+        "points": "Points",
+        "category": "Category",
+        "lateRule": "Late submissions",
+        "dueAt": "Due",
+        "closeAt": "Closes",
+        "questionCount": "{count, plural, =0 {No questions yet} one {# question} other {# questions}}",
+        "start": "Start quiz",
+        "notSet": "Not set",
+        "lateAccept": "Accepted",
+        "lateReject": "Not accepted after close",
+        "lateFlag": "Accepted, flagged as late",
+        "emptyTitle": "No questions yet",
+        "emptyReason": "This quiz has no questions to attempt right now."
+      },
+      "taking": {
+        "submit": "Submit quiz"
+      },
+      "result": {
+        "back": "Back to activities"
+      }
+    },
     "join": {
       "title": "Join a course",
       "subtitle": "Enter the code shown by your instructor.",
