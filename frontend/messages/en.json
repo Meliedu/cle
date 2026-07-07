@@ -627,7 +627,8 @@
       },
       "tabs": {
         "overview": "Overview",
-        "schedule": "Sessions",
+        "schedule": "Schedule",
+        "sessions": "Checkpoints",
         "enrollment": "Enrollment",
         "setup": "Setup",
         "materials": "Materials",
@@ -688,6 +689,111 @@
         "empty": {
           "title": "No sessions yet",
           "reason": "Add sessions in the course setup schedule step."
+        }
+      }
+    },
+    "sessions": {
+      "title": "Sessions",
+      "subtitle": "Review each session and its checkpoints. Open a session to manage its release and checkpoint.",
+      "manageInSetup": "Add in setup",
+      "untitled": "Untitled session",
+      "placeholder": "—",
+      "sessionLabel": "Session {index}",
+      "backToList": "Back to sessions",
+      "noCheckpoint": "No checkpoint",
+      "checkpointCount": "{count, plural, one {# checkpoint} other {# checkpoints}}",
+      "editSession": "Edit session",
+      "groups": {
+        "active": "Active sessions",
+        "activeEmpty": "No active sessions. Completed sessions appear below.",
+        "completed": "Completed sessions"
+      },
+      "release": {
+        "locked": "Hidden",
+        "released": "Released",
+        "completed": "Completed",
+        "archived": "Archived"
+      },
+      "checkpointStatus": {
+        "draft": "Draft",
+        "teacher_editing": "Editing",
+        "approved": "Approved",
+        "scheduled": "Scheduled",
+        "published": "Published",
+        "live": "Live",
+        "closed": "Closed",
+        "archived": "Archived"
+      },
+      "empty": {
+        "title": "No sessions yet",
+        "reason": "Add sessions in the course setup schedule step, then manage their checkpoints here."
+      },
+      "notFound": {
+        "title": "We couldn't find this session",
+        "reason": "It may have been removed. Return to the sessions list."
+      },
+      "facts": {
+        "when": "When",
+        "venue": "Venue",
+        "duration": "Duration",
+        "minutes": "{count} min"
+      },
+      "checkpoints": {
+        "title": "Checkpoints",
+        "openStudio": "Open in checkpoint studio",
+        "emptyTitle": "No checkpoint for this session",
+        "emptyReason": "Checkpoints are drafted from your materials in setup. Once drafted, they appear here to review and publish.",
+        "emptyLocked": "This session is hidden from students. Release it and draft a checkpoint in setup to run a check-in."
+      },
+      "edit": {
+        "title": "Edit Session {index}",
+        "subtitle": "Adjust the session details and its student-visibility release state.",
+        "back": "Back to session",
+        "date": "Date",
+        "time": "Start time",
+        "venue": "Venue",
+        "venuePlaceholder": "Room or link",
+        "duration": "Duration (minutes)",
+        "topic": "Topic",
+        "topicPlaceholder": "What this session covers",
+        "releaseState": "Release state",
+        "releaseHint": {
+          "locked": "Hidden from students until you release it.",
+          "released": "Visible to students, including linked materials.",
+          "completed": "Marked as taught; stays visible for review.",
+          "archived": "Hidden and archived out of the active list."
+        },
+        "visibilityNoticeTitle": "Release state controls what students see",
+        "visibilityNoticeReason": "Releasing a session reveals its materials and lets you publish its checkpoint.",
+        "illegalTransition": "That release change isn't allowed from the current state.",
+        "saveError": "We couldn't save your changes. Try again.",
+        "save": "Save changes",
+        "cancel": "Cancel",
+        "checklist": {
+          "title": "Release checklist",
+          "state": {
+            "locked": "Hidden",
+            "released": "Released",
+            "completed": "Completed",
+            "archived": "Archived"
+          },
+          "items": {
+            "checkpoint": {
+              "title": "Checkpoint ready",
+              "done": "A checkpoint is approved or published for this session.",
+              "todo": "Draft and approve a checkpoint to run a check-in."
+            },
+            "visible": {
+              "title": "Visible to students",
+              "done": "Students can see this session and its materials.",
+              "todo": "Set the release state to Released to show students."
+            },
+            "calendar": {
+              "title": "Calendar event",
+              "done": "A calendar event is linked to this session.",
+              "todo": "No calendar event is linked yet."
+            }
+          }
         }
       }
     },

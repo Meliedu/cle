@@ -14,6 +14,7 @@ import { useCourse, type CourseResponse } from "@/hooks/use-courses";
 export type CourseTab =
   | "overview"
   | "schedule"
+  | "sessions"
   | "enrollment"
   | "setup"
   | "materials"
@@ -37,6 +38,7 @@ interface TabDef {
 const TABS: readonly TabDef[] = [
   { id: "overview", segment: null, enabled: true },
   { id: "schedule", segment: "schedule", enabled: true },
+  { id: "sessions", segment: "sessions", enabled: true },
   { id: "enrollment", segment: "enrollment", enabled: true },
   { id: "setup", segment: "setup", enabled: true },
   { id: "materials", segment: "materials", enabled: false },
