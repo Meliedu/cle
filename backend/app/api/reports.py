@@ -21,7 +21,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_owned_course, require_instructor
+from app.api._helpers import verify_enrollment
+from app.api.deps import get_owned_course, require_instructor, require_student
 from app.database import get_db
 from app.models.course import Course
 from app.models.evidence import LearningNote
@@ -43,6 +44,12 @@ router = APIRouter(prefix="/courses/{course_id}/reports", tags=["reports"])
 # Per-report routes are NOT nested under a course — a report id is globally
 # unique, so ownership is resolved from the report's own course (Decision 2).
 report_item_router = APIRouter(prefix="/reports", tags=["reports"])
+# Student-facing read side (B7): the caller reads ONLY their OWN delivered
+# reports. Owner-isolation RLS keys on ``user_id`` in production; these endpoints
+# ALSO filter ``user_id`` explicitly (defense-in-depth, since a superuser test /
+# migration seam can bypass RLS) and restrict to ``audience='student'`` +
+# ``status='sent'`` so pre-send draft content is NEVER exposed (Core §0.2).
+me_router = APIRouter(prefix="/users/me", tags=["reports"])
 
 _VALID_PERIODS = ("weekly", "end_term")
 
@@ -373,3 +380,77 @@ async def update_share_settings(
             share_settings=_read_share_settings(report),
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Student read side (B7) — own delivered reports only (delivery state S069).
+# ---------------------------------------------------------------------------
+# The archive shell shows only ``status='sent'`` rows: a report that is still
+# ``draft`` / ``reviewed`` is INVISIBLE to the student (the delivery state is
+# "not yet sent" — never draft content). A report id is never trusted to imply
+# access — every read re-filters on the caller's ``user_id``.
+_STUDENT_REPORT_NOT_FOUND = "Report not found"
+
+
+@me_router.get(
+    "/courses/{course_id}/reports",
+    response_model=APIResponse[list[ReportResponse]],
+)
+async def list_my_reports(
+    course_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_student),
+) -> APIResponse[list[ReportResponse]]:
+    """The caller's delivered report archive for a course (student, own rows only).
+
+    Enrollment-scoped (``verify_enrollment`` — active enrollment only, 403
+    otherwise). Returns ONLY the caller's ``audience='student'`` AND
+    ``status='sent'`` reports, newest first — a ``draft`` / ``reviewed`` report is
+    never returned (no pre-send draft content ever reaches the student, Core
+    §0.2). A student with nothing delivered gets an empty list (archive shell).
+    """
+    await verify_enrollment(db, course_id, user.id)
+
+    stmt = (
+        select(Report)
+        .where(
+            Report.course_id == course_id,
+            Report.user_id == user.id,
+            Report.audience == "student",
+            Report.status == "sent",
+        )
+        .order_by(Report.created_at.desc())
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return APIResponse(
+        success=True,
+        data=[ReportResponse.model_validate(r) for r in rows],
+    )
+
+
+@me_router.get(
+    "/reports/{report_id}", response_model=APIResponse[ReportResponse]
+)
+async def get_my_report(
+    report_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_student),
+) -> APIResponse[ReportResponse]:
+    """One of the caller's OWN delivered reports (student).
+
+    404 (never 403) unless the report exists, is owned by the caller
+    (``user_id`` == caller), is student-audience, AND is ``sent`` — an unsent
+    (draft/reviewed) own report and another student's report are both 404 so no
+    existence or pre-send content is ever leaked (Core §0.2, Decision 3).
+    """
+    report = await db.get(Report, report_id)
+    if (
+        report is None
+        or report.user_id != user.id
+        or report.audience != "student"
+        or report.status != "sent"
+    ):
+        raise HTTPException(
+            status_code=404, detail=_STUDENT_REPORT_NOT_FOUND
+        )
+    return APIResponse(success=True, data=ReportResponse.model_validate(report))

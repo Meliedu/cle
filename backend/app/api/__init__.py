@@ -39,6 +39,7 @@ from app.api.quizzes import router as quizzes_router
 from app.api.rag import router as rag_router
 from app.api.readiness import router as readiness_router
 from app.api.recalibration import router as recalibration_router
+from app.api.reports import me_router as reports_me_router
 from app.api.reports import report_item_router as reports_item_router
 from app.api.reports import router as reports_router
 from app.api.review import router as review_router
@@ -100,3 +101,4 @@ api_router.include_router(activities_course_router)
 api_router.include_router(activities_router)
 api_router.include_router(reports_router)
 api_router.include_router(reports_item_router)
+api_router.include_router(reports_me_router)
