@@ -16,23 +16,29 @@ Two routers are exported:
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_owned_course, require_instructor
 from app.database import get_db
-from app.models.checkpoint import Checkpoint, CheckpointCard
-from app.models.course import Course
+from app.models.checkpoint import (
+    Checkpoint,
+    CheckpointCard,
+    CheckpointResponse as CheckpointResponseModel,
+)
+from app.models.course import Course, Enrollment
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.checkpoint import (
     CheckpointCardCreate,
     CheckpointCardResponse,
+    CheckpointCardResult,
     CheckpointCardUpdate,
     CheckpointGenerateRequest,
     CheckpointPublishRequest,
     CheckpointResponse,
+    CheckpointResults,
     CheckpointScheduleRequest,
     CheckpointWithCardsResponse,
 )
@@ -42,6 +48,15 @@ from app.services.checkpoints import IllegalTransition, assert_transition
 # Card mutations (edit/remove/add) are only legal while the teacher is still
 # drafting (Decision 3). Any later state is P3 territory and refuses edits.
 _EDITABLE_STATUSES = {"draft", "teacher_editing"}
+
+# The history filter (P3 T6, T049) surfaces checkpoints that have run their
+# course. Anything still in flight (draft…live) is excluded.
+_HISTORY_STATUSES = ("closed", "archived")
+
+# The −2..+2 confidence scale buckets (pilot ``ConfidenceScale``); every bucket
+# is present (zero-filled) in a review_point card's distribution so the T048/T019
+# histogram renders a stable axis.
+_CONFIDENCE_BUCKETS = (-2, -1, 0, 1, 2)
 
 router = APIRouter(prefix="/checkpoints", tags=["checkpoints"])
 course_router = APIRouter(prefix="/courses/{course_id}", tags=["checkpoints"])
@@ -129,17 +144,27 @@ async def generate_checkpoints(
 async def list_checkpoints(
     db: AsyncSession = Depends(get_db),
     course: Course = Depends(get_owned_course),
+    history: bool = Query(
+        default=False,
+        description=(
+            "When truthy, list only closed/archived checkpoints (the T049 "
+            "history view). Absent/0 preserves the P1 behaviour (all live rows)."
+        ),
+    ),
 ) -> APIResponse[list[CheckpointResponse]]:
-    rows = (
-        await db.execute(
-            select(Checkpoint)
-            .where(
-                Checkpoint.course_id == course.id,
-                Checkpoint.deleted_at.is_(None),
-            )
-            .order_by(Checkpoint.created_at)
+    stmt = (
+        select(Checkpoint)
+        .where(
+            Checkpoint.course_id == course.id,
+            Checkpoint.deleted_at.is_(None),
         )
-    ).scalars().all()
+        .order_by(Checkpoint.created_at)
+    )
+    # The history filter is additive (Decision: reality beats plan) — without it
+    # the P1 contract (every non-deleted checkpoint) is unchanged.
+    if history:
+        stmt = stmt.where(Checkpoint.status.in_(_HISTORY_STATUSES))
+    rows = (await db.execute(stmt)).scalars().all()
     return APIResponse(
         success=True,
         data=[CheckpointResponse.model_validate(cp) for cp in rows],
@@ -162,6 +187,96 @@ async def get_checkpoint(
     data = CheckpointWithCardsResponse.model_validate(cp)
     data.cards = [CheckpointCardResponse.model_validate(c) for c in cards]
     return APIResponse(success=True, data=data)
+
+
+@router.get(
+    "/{checkpoint_id}/results", response_model=APIResponse[CheckpointResults]
+)
+async def get_checkpoint_results(
+    checkpoint_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+) -> APIResponse[CheckpointResults]:
+    """Teacher results for a checkpoint (P3 T6, T048/T019).
+
+    Per-card response counts + a −2..+2 confidence histogram for ``review_point``
+    cards, plus a derived "missed" count = active-enrolled students with no
+    response (only meaningful once the checkpoint is closed). Owner-guarded
+    course-scoped read (Decision 2) — the privileged app connection sees every
+    student's response; a student gets 403, a non-owner instructor 404.
+    """
+    cp = await _owned_checkpoint(checkpoint_id, user, db)
+    cards = await _load_cards(db, cp.id)
+
+    responses = (
+        await db.execute(
+            select(CheckpointResponseModel).where(
+                CheckpointResponseModel.checkpoint_id == cp.id
+            )
+        )
+    ).scalars().all()
+
+    by_card: dict[uuid.UUID, list[CheckpointResponseModel]] = {}
+    responded_user_ids: set[uuid.UUID] = set()
+    for resp in responses:
+        by_card.setdefault(resp.card_id, []).append(resp)
+        responded_user_ids.add(resp.user_id)
+
+    card_results: list[CheckpointCardResult] = []
+    for card in cards:
+        card_responses = by_card.get(card.id, [])
+        if card.kind == "review_point":
+            distribution = {str(b): 0 for b in _CONFIDENCE_BUCKETS}
+            for resp in card_responses:
+                if resp.confidence is not None:
+                    key = str(resp.confidence)
+                    if key in distribution:
+                        distribution[key] += 1
+            text_count = 0
+        else:
+            distribution = {}
+            text_count = sum(
+                1 for r in card_responses if r.text_response is not None
+            )
+        card_results.append(
+            CheckpointCardResult(
+                card_id=card.id,
+                kind=card.kind,
+                prompt=card.prompt,
+                position=card.position,
+                response_count=len(card_responses),
+                confidence_distribution=distribution,
+                text_response_count=text_count,
+            )
+        )
+
+    # Active-student roster is the "missed" denominator (Enrollment status=active,
+    # role=student — instructors/pending rows never count).
+    active_student_ids = set(
+        (
+            await db.execute(
+                select(Enrollment.user_id).where(
+                    Enrollment.course_id == cp.course_id,
+                    Enrollment.status == "active",
+                    Enrollment.role == "student",
+                )
+            )
+        ).scalars().all()
+    )
+    responded_active = active_student_ids & responded_user_ids
+    missed = len(active_student_ids - responded_user_ids)
+
+    return APIResponse(
+        success=True,
+        data=CheckpointResults(
+            checkpoint_id=cp.id,
+            status=cp.status,
+            active_student_count=len(active_student_ids),
+            responded_count=len(responded_active),
+            missed_count=missed,
+            cards=card_results,
+        ),
+    )
 
 
 @router.delete("/{checkpoint_id}", response_model=APIResponse[None])

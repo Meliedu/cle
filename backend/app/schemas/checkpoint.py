@@ -111,3 +111,36 @@ class CheckpointPublishRequest(BaseModel):
     release_at: datetime | None = None
     close_at: datetime | None = None
     close_rule: CloseRule | None = None
+
+
+class CheckpointCardResult(BaseModel):
+    """Per-card aggregate for the teacher results view (P3 T6, T048/T019).
+
+    ``confidence_distribution`` is a histogram keyed ``"-2".."2"`` for
+    ``review_point`` cards (every bucket present, zero-filled) and empty for
+    ``final_comments`` cards, which instead surface ``text_response_count``.
+    """
+
+    card_id: uuid.UUID
+    kind: CardKind
+    prompt: str
+    position: int
+    response_count: int
+    confidence_distribution: dict[str, int] = Field(default_factory=dict)
+    text_response_count: int = 0
+
+
+class CheckpointResults(BaseModel):
+    """Teacher results payload for a single checkpoint (P3 T6).
+
+    ``missed_count`` is derived from the active-student roster (active-enrolled
+    students with no response for this checkpoint) and is only meaningful once
+    the checkpoint is ``closed``/``archived``.
+    """
+
+    checkpoint_id: uuid.UUID
+    status: str
+    active_student_count: int
+    responded_count: int
+    missed_count: int
+    cards: list[CheckpointCardResult] = Field(default_factory=list)
