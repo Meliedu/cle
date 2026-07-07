@@ -23,6 +23,33 @@ class ScoreCategory(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     sort: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
+class GradeExport(UUIDPrimaryKeyMixin, Base):
+    """Append-only audit row for a grade CSV export (P5 Task B2, Decision 7).
+
+    Every ``GET /courses/{id}/grade-export.csv`` appends exactly one row BEFORE
+    streaming the CSV, inside the same request. The endpoint is owner-guarded
+    (``get_owned_course``) so the table is course-scoped / teacher-owned — **NO
+    RLS**. Being an immutable audit log it carries **NO soft-delete**: UUID PK +
+    a plain ``created_at`` only (no ``TimestampMixin`` ``updated_at``, no
+    ``SoftDeleteMixin``).
+    """
+
+    __tablename__ = "grade_exports"
+
+    course_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False
+    )
+    exported_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    format: Mapped[str] = mapped_column(String(20), nullable=False, default="csv")
+    filters: Mapped[dict | None] = mapped_column(JSON)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class PronunciationScore(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "pronunciation_scores"
     __table_args__ = (

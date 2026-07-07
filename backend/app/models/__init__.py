@@ -24,7 +24,12 @@ from app.models.pronunciation import (
     PronunciationSet,
     PronunciationSetDocument,
 )
-from app.models.score import PronunciationScore, ScoreCategory, StudentProgress
+from app.models.score import (
+    GradeExport,
+    PronunciationScore,
+    ScoreCategory,
+    StudentProgress,
+)
 from app.models.live_answer import LiveAnswer
 from app.models.session import LiveSession, SessionSummary
 from app.models.summary import CourseSummary
@@ -75,6 +80,7 @@ __all__ = [
     "AttendanceRecord",
     "CheckpointLaunch",
     "ScoreCategory",
+    "GradeExport",
     "Document",
     "Chunk",
     "Quiz",
