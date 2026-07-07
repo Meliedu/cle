@@ -533,6 +533,116 @@ async def _body_alerts_enqueue() -> None:
         await session.commit()
 
 
+async def enqueue_draft_reports(
+    session: AsyncSession,
+    *,
+    course_ids: list,
+    period: str,
+    now: datetime,
+) -> int:
+    """Fan out one ``draft_report`` task per (course, active student), deduped.
+
+    Mirrors ``_body_alerts_enqueue``'s per-course + per-active-enrollment
+    fan-out, but for report drafting. A task is enqueued only for students with
+    an ``active`` enrollment (role ``student``) in a non-deleted course. The
+    fan-out is deduped against existing PENDING ``draft_report`` tasks so a
+    burst (or a retried cron tick) cannot pile up more than one pending task per
+    ``(course, user, period)``.
+
+    The window is derived from the passed-in ``now`` so it stays testable (no
+    uncontrolled wall-clock): a ``weekly`` window is the trailing 7 days; an
+    ``end_term`` window spans the course lifetime (from ``courses.created_at``).
+    The task payload matches ``run_draft_report`` (B3):
+    ``{course_id, audience, period, user_id, period_start, period_end}``.
+
+    The caller owns the commit. Returns the number of tasks enqueued.
+    """
+    from app.models.course import Course, Enrollment
+
+    if not course_ids:
+        return 0
+
+    rows = (
+        await session.execute(
+            select(Enrollment.course_id, Enrollment.user_id, Course.created_at)
+            .join(Course, Course.id == Enrollment.course_id)
+            .where(
+                Course.id.in_(course_ids),
+                Course.deleted_at.is_(None),
+                Enrollment.status == "active",
+                Enrollment.role == "student",
+            )
+        )
+    ).all()
+
+    # Dedupe key set: existing PENDING draft_report tasks. ``Task.payload`` is a
+    # JSON (not JSONB) column, so use ``->>`` via ``op`` (see CLAUDE.md).
+    existing = (
+        await session.execute(
+            select(
+                Task.payload.op("->>")("course_id"),
+                Task.payload.op("->>")("user_id"),
+                Task.payload.op("->>")("period"),
+            ).where(
+                Task.task_type == "draft_report",
+                Task.status == "pending",
+            )
+        )
+    ).all()
+    seen = {(c, u, p) for (c, u, p) in existing}
+
+    enqueued = 0
+    for course_id, user_id, course_created_at in rows:
+        key = (str(course_id), str(user_id), period)
+        if key in seen:
+            continue
+        seen.add(key)
+        period_start = (
+            now - timedelta(days=7) if period == "weekly" else course_created_at
+        )
+        session.add(
+            Task(
+                task_type="draft_report",
+                payload={
+                    "course_id": str(course_id),
+                    "audience": "student",
+                    "period": period,
+                    "user_id": str(user_id),
+                    "period_start": period_start.isoformat(),
+                    "period_end": now.isoformat(),
+                },
+                status="pending",
+            )
+        )
+        enqueued += 1
+    return enqueued
+
+
+async def _body_draft_reports(now: datetime | None = None) -> None:
+    """Weekly cron body: fan out per-student ``draft_report`` tasks for every
+    non-deleted course, gated by ``pilot.report_cadence.weekly``. Enqueue-only —
+    the actual drafting runs off the request path in ``run_draft_report``."""
+    from app.models.course import Course
+    from app.pilot import get_pilot_profile
+
+    if not get_pilot_profile().report_cadence.weekly:
+        return
+
+    now = now or _utcnow()
+    async with async_session_factory() as session:
+        course_ids = (
+            await session.execute(
+                select(Course.id).where(Course.deleted_at.is_(None))
+            )
+        ).scalars().all()
+        n = await enqueue_draft_reports(
+            session, course_ids=list(course_ids), period="weekly", now=now
+        )
+        await session.commit()
+        if n:
+            logger.info("draft_reports enqueued %d weekly report task(s)", n)
+
+
 async def _process_claimed_task(task: Task) -> None:
     """Process a single claimed task in fresh sessions.
 
@@ -586,6 +696,9 @@ async def _run_cron_ticks() -> None:
     )
     await _claim_and_run_cron(
         "mark_missed_work_items", timedelta(hours=1), _body_mark_missed
+    )
+    await _claim_and_run_cron(
+        "draft_reports", timedelta(days=7), _body_draft_reports
     )
 
 
