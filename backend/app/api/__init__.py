@@ -26,6 +26,7 @@ from app.api.progress import router as progress_router
 from app.api.pronunciation import router as pronunciation_router
 from app.api.quizzes import router as quizzes_router
 from app.api.rag import router as rag_router
+from app.api.readiness import router as readiness_router
 from app.api.recalibration import router as recalibration_router
 from app.api.review import router as review_router
 from app.api.revision import router as revision_router
@@ -40,6 +41,7 @@ api_router.include_router(assignments_router)
 api_router.include_router(auth_router)
 api_router.include_router(config_router)
 api_router.include_router(courses_router)
+api_router.include_router(readiness_router)
 api_router.include_router(documents_router)
 api_router.include_router(canvas_router)
 api_router.include_router(canvas_oauth_router)

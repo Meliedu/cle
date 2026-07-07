@@ -127,3 +127,29 @@ async def test_build_summary_lists_completed_phases(db_session, test_instructor,
     summary = await build_summary(db_session, user=test_student, course=c)
     assert "eligibility_survey" in summary["completed_phases"]
     assert summary["recommendation"] is None  # not yet computed
+
+
+@pytest.mark.asyncio
+async def test_recommendation_hard_fails_when_claim_limit_missing(
+    db_session, test_instructor, test_student, monkeypatch
+):
+    """The claim-limit is a legal/trust boundary: a missing config key must
+    hard-fail, never silently ship an empty limit copy."""
+    import app.services.readiness as readiness_svc
+
+    c = await _course(db_session, test_instructor)
+    profile = readiness_svc.get_pilot_profile()
+    stripped = profile.model_copy(
+        update={
+            "claim_limits": {
+                k: v for k, v in profile.claim_limits.items() if k != "recommendation"
+            }
+        }
+    )
+    monkeypatch.setattr(readiness_svc, "get_pilot_profile", lambda: stripped)
+
+    with pytest.raises(ReadinessError) as exc:
+        await submit_phase(
+            db_session, user=test_student, course=c, phase="recommendation", answers={}
+        )
+    assert exc.value.code == "MISSING_CLAIM_LIMIT"

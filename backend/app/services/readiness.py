@@ -112,6 +112,17 @@ def _recommendation_result(prior_answers: dict[str, dict]) -> dict[str, Any]:
     claim-limit from ``pilot.claim_limits['recommendation']``.
     """
     profile = get_pilot_profile()
+    # The recommendation claim-limit is a legal/trust boundary: it is the copy
+    # that stops the UI fabricating placement authority. It must NEVER ship
+    # empty, so a missing/blank config key is a hard configuration fault rather
+    # than a silent default.
+    claim_limit = profile.claim_limits.get("recommendation")
+    if not claim_limit or not claim_limit.strip():
+        raise ReadinessError(
+            "MISSING_CLAIM_LIMIT",
+            "pilot.claim_limits['recommendation'] is required but missing/empty; "
+            "refusing to emit a recommendation without its claim-limit copy.",
+        )
     ready = prior_answers.get("ready_check", {}) or {}
     scores = [v for v in ready.values() if isinstance(v, (int, float)) and not isinstance(v, bool)]
     avg = sum(scores) / len(scores) if scores else 0.0
@@ -124,7 +135,7 @@ def _recommendation_result(prior_answers: dict[str, dict]) -> dict[str, Any]:
     return {
         "level_hint": level_hint,
         "confidence_average": avg,
-        "claim_limit": profile.claim_limits.get("recommendation", ""),
+        "claim_limit": claim_limit,
     }
 
 
