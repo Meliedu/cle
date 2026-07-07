@@ -99,69 +99,69 @@ Each task: failing test first → minimal impl → refactor → code review (`/c
 
 ### Backend
 
-- [ ] **B1 — `follow_up_action` → `follow_up` work_item transactional seam (in `review.py`).**  *(riskiest — combined-review)*
+- [x] **B1 — `follow_up_action` → `follow_up` work_item transactional seam (in `review.py`).**  *(riskiest — combined-review)*
   - Test first (`tests/test_review_api.py` additions, or a new `tests/test_follow_up_work_item_seam.py`): after `POST /learning-notes/{id}/review` with an `assign_followup` action (or an inline `follow_up` spec) on a student-scoped note, a `work_items` row exists with `source_kind='follow_up'`, `source_id = <new FollowUpAction.id>`, `required=true`, `due_at = follow_up.due_at`; the target student has a `work_item_progress` row `status='follow_up_assigned'`; a SECOND review that re-assigns for the same note does NOT duplicate the work_item (unique index); a forced failure BEFORE commit rolls back the follow-up AND its work_item AND its progress (atomicity); a COHORT note (no target) still 400s and writes NO work_item. The `follow_up` item then appears in `GET /courses/{id}/checklist` for that student (integration assertion through `_build_checklist`).
   - Impl: in `api/review.py::review_learning_note`, after `db.add(follow_up)`, `await db.flush()` to get `follow_up.id`, then call `services.work_items.upsert_work_item(...)` + `upsert_progress(..., status="follow_up_assigned")` BEFORE the existing single `await db.commit()` (mirror `checkpoints.py::publish_checkpoint` B4 seam). Title from `body.follow_up` action label or the note's `observed_signal` (short). Import the service; do NOT commit inside the service (Decision 3 of P4). No new schema.
   - Commit `feat(followup): reviewed follow-up writes a follow_up work_item (transactional)`.
 
-- [ ] **B2 — outcome-closure syncs `follow_up` work_item_progress → `completed` (in `mastery.py`).**  *(riskiest — combined-review)*
+- [x] **B2 — outcome-closure syncs `follow_up` work_item_progress → `completed` (in `mastery.py`).**  *(riskiest — combined-review)*
   - Test first (`tests/test_mastery_outcome_closure.py` additions): when `_close_follow_ups` flips a `FollowUpAction` to `completed` (a later attempt satisfies it) and writes its `OutcomeCheck`, the matching `follow_up` work_item's `work_item_progress` for that user flips to `completed` in the SAME transaction; a follow-up with NO work_item (pre-P6) is a no-op (no raise); idempotent on worker retry (a second closure pass leaves the already-`completed` progress unchanged); the sync runs under the privileged/BYPASSRLS worker connection so it may write the student's row.
   - Impl: in `services/mastery.py::_close_follow_ups`, for each `fua` set to `completed`, resolve its `follow_up` work_item (`WorkItem.source_kind='follow_up'`, `source_id=fua.id`, not deleted) and call `upsert_progress(..., user_id=fua.user_id, status="completed")` — best-effort inside the handler's transaction (a missing work_item just skips). Do NOT add a commit (the handler owns it). Guard the import to avoid a cycle (local import, as `work_items.py` does).
   - Commit `feat(followup): sync follow_up checklist progress on outcome closure`.
 
-- [ ] **B3 — follow-up action detail + revisit read (`insights.py` OR extend `review.py`).**
+- [x] **B3 — follow-up action detail + revisit read (`insights.py` OR extend `review.py`).**
   - Test first (`tests/test_follow_up_detail.py`): `GET /users/me/follow-ups/{id}` (student, owner-scoped — 404 for another student's row) returns the follow-up (`action_type`, `target_kind`/`target_id`, `assignment_status`, `due_at`) merged with its linked `LearningNote`'s **reviewed** fields only (`observed_signal`, instructor-`edited`/`reviewed` `draft_interpretation`, `limitation_note`) — a `draft`/`queued` note's interpretation is NOT exposed (Decision 6, Core §0.2); plus its `OutcomeCheck.status` if one exists (the "did it move" state). A `suggested` (not yet `assigned`) follow-up returns the waiting-for-feedback shape (no action content). Marking viewed still uses the existing `POST /follow-ups/{id}/viewed`.
   - Impl: add the read to `api/review.py` (it already owns follow-ups) — reuse `verify_enrollment` is unnecessary (owner-scoped by `user_id`), 404-mask other students. New schema `FollowUpDetailResponse` in `app/schemas/evidence.py`. Revisit connection: when `target_kind='checkpoint'`, surface the existing P3 `revisit-response` path (link only — no new revisit engine).
   - Commit `feat(followup): student follow-up action detail + revisit link`.
 
-- [ ] **B4 — `insights.py` router + student learning profile (pure-read) + register.**
+- [x] **B4 — `insights.py` router + student learning profile (pure-read) + register.**
   - Test first (`tests/test_insights_api.py`): `GET /users/me/courses/{id}/insights` (student, `verify_enrollment` active-only — 403 otherwise) returns the caller's learning profile RESHAPED from `concept_mastery` (per-concept `mastery_score`/`confidence`/`attempt_count`, grouped into strong/developing/weak by the SAME thresholds `api/mastery.py::cohort_mastery` uses — `< 0.5` weak, `confidence >= 0.5` counted) + the pilot `claim_limits['learning_profile']` disclaimer verbatim; a student with zero mastery rows returns an empty profile with `has_evidence=false` (Decision 6); the endpoint recomputes NOTHING (asserts it reads existing rows — e.g. equals the sum from `GET /users/me/courses/{id}/mastery`). Register: `GET` reachable through the app router.
   - Impl: new `app/api/insights.py` (`router` under `/`), schemas in new `app/schemas/insights.py`. Reshape `ConceptMastery` ⋈ `Concept`. Read pilot via the same accessor `config.py`/`api/config.py` uses. Register `insights_router` in `app/api/__init__.py` (follow the alpha-ordered import + `include_router` pattern).
   - Commit `feat(insights): insights router + student learning profile (reshape mastery)`.
 
-- [ ] **B5 — ILO strength map (student + cohort).**
+- [x] **B5 — ILO strength map (student + cohort).**
   - Test first (`tests/test_insights_ilo.py`): `GET /users/me/courses/{id}/ilo-map` (student) returns one row per `learning_objective` in the course, each with an aggregate strength over the concepts tagged to it (`concept_tags` `target_kind='objective'`, `target_id=objective.id`) joined to the caller's `concept_mastery`, plus `has_evidence` (false when no tagged concept has a mastery row) — Decision 7; `GET /courses/{id}/ilo-map` (teacher, `get_owned_course`) returns the cohort aggregate (avg strength + weak-student count per objective, reusing the `cohort_mastery` weak definition). Objectives with no tagged concept render `has_evidence=false`, never a fabricated 0.
   - Impl: extend `app/api/insights.py`; a shared aggregation helper (objective → tagged concept_ids → mastery aggregate). Pure read.
   - Commit `feat(insights): ILO strength map (student + cohort)`.
 
-- [ ] **B6 — skill pattern map (honest, config-driven).**
+- [x] **B6 — skill pattern map (honest, config-driven).**
   - Test first (`tests/test_insights_skill.py`): `GET /users/me/courses/{id}/skill-map` returns one entry per pilot `skill_taxonomy` skill, each with `has_evidence=false` (Decision 5 — no schema link exists) and the skill label; the response NEVER contains a fabricated score; the endpoint is enrollment-scoped. (If a future concept→skill mapping lands, this test is the seam to extend — documented in the docstring.)
   - Impl: extend `app/api/insights.py`; read `skill_taxonomy` from the pilot profile. Keep the shape forward-compatible (a `strength`/`sample_size` field that is `null` today).
   - Commit `feat(insights): skill pattern map (config taxonomy, no-evidence honest)`.
 
-- [ ] **B7 — signal detail + evidence source view (reshape notes/events).**
+- [x] **B7 — signal detail + evidence source view (reshape notes/events).**
   - Test first (`tests/test_insights_signal.py`): `GET /signals/{id}` resolves a `learning_note`, re-derives its `course_id`, and applies the guard — a student sees ONLY their own (`user_id`) **reviewed** signal (404 otherwise; a `draft`/`queued` note → waiting-state, not content); an instructor sees any signal in an owned course (incl. cohort `user_id IS NULL`), else 404. `GET /evidence/{id}/source` resolves a `learning_event` (or the note's `source_event_ids`) and returns its `source_kind`/`source_id`/`stage`/`value` + the anchor (`context_anchor`) for the "where did this come from" view; same owner/enrollment guard, id never trusted (Decision 8).
   - Impl: extend `app/api/insights.py`; reuse `LearningNoteResponse`/`LearningEventResponse` schemas from `app/schemas/evidence.py` where they fit; add a `SignalDetail`/`EvidenceSource` schema only if the composition needs it. Pure read.
   - Commit `feat(insights): signal detail + evidence source view`.
 
-- [ ] **B8 — teacher course insights + effectiveness tracker.**
+- [x] **B8 — teacher course insights + effectiveness tracker.**
   - Test first (`tests/test_insights_teacher.py`): `GET /courses/{id}/insights` (teacher, `get_owned_course`) reshapes into a single payload: cohort mastery summary (from `cohort_mastery` shape), open `instructor_alerts` counts by severity, and review-queue depth (open alerts / `draft`+`queued` notes) — recomputing nothing (asserts the alert counts equal `GET /courses/{id}/alerts?status=open`); `GET /courses/{id}/effectiveness` returns `outcome_checks` grouped by `status` (`improved`/`persistent`/`resolved`/`needs_review`) and by follow-up `action_type` for the owned course (Decision 9); a course with no evidence returns the designed empty payload (`has_evidence=false`). Non-owner → 404 on both.
   - Impl: extend `app/api/insights.py`; the effectiveness read joins `OutcomeCheck` → `FollowUpAction`. Pure read; no new job.
   - Commit `feat(insights): teacher course insights + effectiveness tracker`.
 
 ### Frontend (pull Figma per screen via `get_metadata` on the group first)
 
-- [ ] **F1 — hooks (`use-insights`, `use-follow-ups`) + enable the `insights` tab.**
+- [x] **F1 — hooks (`use-insights`, `use-follow-ups`) + enable the `insights` tab.**
   - New `hooks/use-insights.ts` (`useLearningProfile(courseId)`, `useIloMap(courseId)`, `useSkillMap(courseId)`, `useSignal(id)`, `useEvidenceSource(id)`, teacher `useCourseInsights(courseId)`/`useEffectiveness(courseId)` — `useAuthedQuery` reads, query-key factory, mirror `use-analytics.ts`/`use-checkpoints.ts`); new `hooks/use-follow-ups.ts` (`useMyFollowUps(courseId)`, `useFollowUpDetail(id)`, `useMarkFollowUpViewed` via `authedWrite`). Flip `insights` to `enabled:true` in `course-workspace-shell.tsx` `TABS` + add the workspace route segment. Vitest for one query + one mutation (mocked, per the offline convention — e2e/session infra unavailable, see P0–P5 handoffs).
   - Commit `feat(hooks): insights + follow-up hooks + enable insights tab`.
 
-- [ ] **F2 — student follow-up checklist item + action detail + revisit (S060, S061).**
+- [x] **F2 — student follow-up checklist item + action detail + revisit (S060, S061).**
   - The `follow_up` work_item already renders in the student checklist (P4 `_build_checklist`) — give it its own visual treatment/label (`ReviewStateChip`/`StateBanner` tone for `follow_up_assigned`) in the checklist view (S060). New route `student/courses/[courseId]/follow-ups/[followUpId]/` (Next.js 16: `params` is a **Promise — `await params`**) = action detail (S061) over `useFollowUpDetail`: shows the reviewed observed signal + instructor interpretation + limitation, the "did it move" outcome state, a "mark viewed" action, and — when `target_kind='checkpoint'` — a link into the existing P3 revisit flow. i18n `student.followUp.*`. Tokens only. Pull group `1372:330` (S060/S061).
   - Commit `feat(student): follow-up checklist item + action detail + revisit link`.
 
-- [ ] **F3 — student learning profile + signal detail (S062, S063).**
+- [x] **F3 — student learning profile + signal detail (S062, S063).**
   - New route `student/courses/[courseId]/profile/` (learning profile per spec §3.3, await `params`) over `useLearningProfile` — strong/developing/weak concept groups, each concept opening a signal detail (S063) via `useSignal`/`useEvidenceSource` (the "where did this come from" drawer). Render the pilot `claim_limits.learning_profile` disclaimer verbatim (from `use-pilot-config`). i18n `student.profile.*`. Pull `1372:330` (S062/S063).
   - Commit `feat(student): learning profile + signal detail`.
 
-- [ ] **F4 — student ILO strength map + skill pattern map + no-evidence/waiting states (S064, S065, S070, S071).**
+- [x] **F4 — student ILO strength map + skill pattern map + no-evidence/waiting states (S064, S065, S070, S071).**
   - ILO strength map (S064) over `useIloMap` — a heat/strength grid over objectives, no-evidence cells for objectives without evidence (Decision 7). Skill pattern map (S065) over `useSkillMap` — the config skill grid, **every cell in the designed no-evidence state** with the honest "we don't have skill-level evidence yet" reason (Decision 5). Designed no-evidence (S070, `EmptyState variant="waiting"`) + waiting-for-instructor-feedback (S071, `StateBanner`) states wired to `has_evidence=false` / a `suggested`/`draft` signal (Decision 6). i18n `student.insights.*` / `patterns.*`. Pull `1372:330` (S064/S065/S070/S071).
   - Commit `feat(student): ILO + skill maps + no-evidence/waiting states`.
 
-- [ ] **F5 — teacher course insights + signal detail drawer (T076, T077).**
+- [x] **F5 — teacher course insights + signal detail drawer (T076, T077).**
   - Fill the workspace `insights` tab route `teacher/courses/[courseId]/insights/` (await `params`) AND the top-level `teacher/insights/page.tsx` (course selector → per-course) over `useCourseInsights` — cohort mastery summary + open-alert severity counts + review-queue depth; REPLACE today's P0 "No evidence yet" `EmptyState` with the real view (keeping the designed empty state for a genuinely evidence-free course). Signal detail drawer (T077, `DetailDrawer` pattern) over `useSignal`/`useEvidenceSource`, incl. cohort signals. i18n `teacher.insights.*`. Pull group `1372:168` (T076/T077).
   - Commit `feat(teacher): course insights + signal detail drawer`.
 
-- [ ] **F6 — teacher evidence source view + effectiveness tracker + P6 close-out (T078, T079).**
+- [x] **F6 — teacher evidence source view + effectiveness tracker + P6 close-out (T078, T079).**
   - Evidence source view (T078) — the instructor "where did this signal come from" panel over `useEvidenceSource` (learning_event source + anchor). Effectiveness tracker (T079) over `useEffectiveness` — `outcome_checks` improved-vs-persistent breakdown by follow-up type, the read side of the loop. Designed no-evidence state for a course with no outcomes. Playwright happy-path (review a note → assign follow-up → student sees it on the checklist → detail → later attempt closes it → effectiveness reflects it) where infra allows; else vitest against mocked hooks (offline convention). i18n `teacher.insights.*`. **P6 close-out is a SEPARATE controller step** — ship code only; do not edit the roadmap/RESUME here. Pull `1372:168` (T078/T079).
   - Commit `feat(teacher): evidence source view + effectiveness tracker + P6 verification`.
 
@@ -169,17 +169,17 @@ Each task: failing test first → minimal impl → refactor → code review (`/c
 
 ## Self-review checklist (before P6 close-out)
 
-- [ ] `app/api/insights.py` is PURE-READ — no mastery math, no note drafting, no alert evaluation; every number traces to an existing row (`concept_mastery`/`learning_notes`/`outcome_checks`/`instructor_alerts`/`concept_tags`) (Decision 1, B4–B8).
-- [ ] The follow-up→checklist seam REUSES the `work_items`/`work_item_progress` spine (`source_kind='follow_up'`, `status='follow_up_assigned'`) — **zero new tables, zero migrations** (Decision 2).
-- [ ] The seam write is TRANSACTIONAL + idempotent inside `review.py::review_learning_note` (atomic with the follow-up + ReviewAction; unique-index guarded), mirroring P4 B4's publish seam (Decision 3, B1).
-- [ ] Follow-up COMPLETION syncs onto the spine at `mastery.py::_close_follow_ups` (same transaction, best-effort, worker-privileged, idempotent) — no second reconciliation cron; `mark_missed_work_items` still protects `follow_up_assigned` (Decision 4, B2).
-- [ ] The skill-pattern map is HONEST — config taxonomy with per-skill `has_evidence=false`, never a fabricated score (Decision 5, B6/F4).
-- [ ] No-evidence + waiting-for-instructor-feedback are DESIGNED states sourced from real gates (`has_evidence=false`; `review_status ∈ draft|queued` / `assignment_status='suggested'`); a student NEVER sees an unreviewed AI draft's content (Core §0.2, Decision 6, F4/F5).
-- [ ] ILO strength map aggregates `concept_mastery` over `concept_tags(target_kind='objective')`; no-evidence cells never fabricated (Decision 7, B5/F4).
-- [ ] `insights.py` scoping mirrors existing guards: student `verify_enrollment` active-only + own-`user_id`; teacher `get_owned_course`; `/signals/{id}` + `/evidence/{id}/source` re-derive the course and re-guard (id never trusted) (Decision 8, B7).
-- [ ] Effectiveness tracker reads `outcome_checks` only — the read side of `_close_follow_ups`, no new job (Decision 9, B8).
-- [ ] `InstructorAlert` cited from `app/models/decision.py` (NOT `evidence.py`); insights reads open alerts via existing `api/instructor_alerts.py` (Reality checks).
-- [ ] Student S060–S065 + S070–S071 and teacher T076–T079 shipped with designed no-evidence / waiting states (never blank divs); T080–T087 + S066–S069 (reports/memory) left for P7 (F2–F6, Figma map).
-- [ ] `insights` workspace tab flipped `enabled:true` + route added; `teacher/insights/page.tsx` P0 placeholder replaced with the real view + its designed empty state (F1/F5).
-- [ ] Next.js 16: every new `page` awaits `params` (Promise); `proxy.ts` not `middleware.ts`; read `frontend/AGENTS.md` before FE work.
-- [ ] No hardcoded strings (next-intl `student.*`/`teacher.*`/`patterns.*`), no hardcoded colors (tokens.css), pilot `claim_limits` copy rendered verbatim; conventional commits; code review per task cluster.
+- [x] `app/api/insights.py` is PURE-READ — no mastery math, no note drafting, no alert evaluation; every number traces to an existing row (`concept_mastery`/`learning_notes`/`outcome_checks`/`instructor_alerts`/`concept_tags`) (Decision 1, B4–B8).
+- [x] The follow-up→checklist seam REUSES the `work_items`/`work_item_progress` spine (`source_kind='follow_up'`, `status='follow_up_assigned'`) — **zero new tables, zero migrations** (Decision 2).
+- [x] The seam write is TRANSACTIONAL + idempotent inside `review.py::review_learning_note` (atomic with the follow-up + ReviewAction; unique-index guarded), mirroring P4 B4's publish seam (Decision 3, B1).
+- [x] Follow-up COMPLETION syncs onto the spine at `mastery.py::_close_follow_ups` (same transaction, best-effort, worker-privileged, idempotent) — no second reconciliation cron; `mark_missed_work_items` still protects `follow_up_assigned` (Decision 4, B2).
+- [x] The skill-pattern map is HONEST — config taxonomy with per-skill `has_evidence=false`, never a fabricated score (Decision 5, B6/F4).
+- [x] No-evidence + waiting-for-instructor-feedback are DESIGNED states sourced from real gates (`has_evidence=false`; `review_status ∈ draft|queued` / `assignment_status='suggested'`); a student NEVER sees an unreviewed AI draft's content (Core §0.2, Decision 6, F4/F5).
+- [x] ILO strength map aggregates `concept_mastery` over `concept_tags(target_kind='objective')`; no-evidence cells never fabricated (Decision 7, B5/F4).
+- [x] `insights.py` scoping mirrors existing guards: student `verify_enrollment` active-only + own-`user_id`; teacher `get_owned_course`; `/signals/{id}` + `/evidence/{id}/source` re-derive the course and re-guard (id never trusted) (Decision 8, B7).
+- [x] Effectiveness tracker reads `outcome_checks` only — the read side of `_close_follow_ups`, no new job (Decision 9, B8).
+- [x] `InstructorAlert` cited from `app/models/decision.py` (NOT `evidence.py`); insights reads open alerts via existing `api/instructor_alerts.py` (Reality checks).
+- [x] Student S060–S065 + S070–S071 and teacher T076–T079 shipped with designed no-evidence / waiting states (never blank divs); T080–T087 + S066–S069 (reports/memory) left for P7 (F2–F6, Figma map).
+- [x] `insights` workspace tab flipped `enabled:true` + route added; `teacher/insights/page.tsx` P0 placeholder replaced with the real view + its designed empty state (F1/F5).
+- [x] Next.js 16: every new `page` awaits `params` (Promise); `proxy.ts` not `middleware.ts`; read `frontend/AGENTS.md` before FE work.
+- [x] No hardcoded strings (next-intl `student.*`/`teacher.*`/`patterns.*`), no hardcoded colors (tokens.css), pilot `claim_limits` copy rendered verbatim; conventional commits; code review per task cluster.
