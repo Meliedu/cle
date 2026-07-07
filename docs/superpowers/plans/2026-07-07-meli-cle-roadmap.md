@@ -37,7 +37,7 @@
 ## Phase Tracker
 
 - [x] **P0 — Shell & foundations** → plan: `2026-07-07-meli-cle-p0-shell-foundations.md` (COMPLETE)
-- [ ] **P1 — Course setup wizard & gates** → plan: not written
+- [x] **P1 — Course setup wizard & gates** → plan: `2026-07-07-meli-cle-p1-course-setup.md` (COMPLETE)
 - [ ] **P2 — Student entry & enrollment** → plan: not written
 - [ ] **P3 — Checkpoint loop core** → plan: not written
 - [ ] **P4 — Student workspace, checklist & calendar** → plan: not written
@@ -105,6 +105,24 @@ Phases must run in order: P1 depends on P0's config/shell; P2 on P1's setup gate
 ---
 
 ## Handoff Log (append-only; newest first)
+
+### 2026-07-07 — P1 COMPLETE (Course setup wizard & gates)
+
+**All 17 P1 tasks shipped.** Detailed plan: `docs/superpowers/plans/2026-07-07-meli-cle-p1-course-setup.md`. Branch `feat/cle-p0-shell`.
+
+**Backend T1–T10** (TDD, each reviewed): T1 `courses` setup columns (`setup_status`, `setup_checklist`, `join_mode`, `enroll_code_active`) `012e216`; T2 `course_meetings.release_state`/`topic_summary` `d878dda`; T3 `checkpoints`/`checkpoint_cards`/`score_categories` models + `concept_tags` widened to `checkpoint_card` `e3036b3`; T4 setup service (gate/publish/reopen, `SETUP_STEP_KEYS`, score-category seeding) `e3020a9`; T5 `analyze_course_setup` job `f7d3ffd`; T6 `generate_checkpoints` job (grounded, draft-only, card-id concept tagging) `3cb1b5a`; T7 meetings release-state endpoint `eac12f0`; T8 `setup.py` router `71a9ef4`; T9 `checkpoints.py` router `4de2c65`+`7d71c71`; T10 `scores.py` router `e1d0c43`.
+
+**Frontend T11–T17** (Figma group `1372:34`, T014–T028; tokens/patterns/i18n): T11 `StepWizard` pattern + `use-setup` hooks `1cb2a01`; T12 wizard shell + new-course-start + basics `4a96624`+`f04cf37`; T13 syllabus + core-materials upload steps `cf8c978`+`824bdc6`; T14 schedule-and-venue + ILO-map steps `a79c97d`; T15 analyzer-review + session-gen + checkpoint-gen review steps `c6596f1`; T16 score-policy + class-code + memory-import stub `07d3c91`; **T17 review-checklist (T026) + publish-success (T027) + missing-source-error (T028) + poll hardening + happy-path spec + this close-out — THIS COMMIT.**
+
+**T17 specifics:** `step-review.tsx` is the terminal wizard screen appended after `class_code` — NOT a 10th `SETUP_STEP_KEYS` flag (publish is the action). Publish calls `usePublishSetup` (POST `setup/publish`, Decision 1: flips `setup_status='published'` + `context_status='approved'`); success → `SetupPublishSuccess` (T027), `409 SETUP_INCOMPLETE` → `SetupMissingSourceError` (T028, `StateBanner tone="blocked"`) mapping missing steps + analyzer `missing_sources` to jump-back links. Poll hardening: `usePollWindow` in `use-setup.ts` caps `useSetupAnalysis` + `useCheckpoints` list polls at ~2 min (setTimeout-based, retry-resettable via `pollKey`) and exposes `timedOut`; step-analyzer + step-checkpoints show a "taking longer than expected — retry" banner. Happy-path test: vitest `step-review.test.tsx` (e2e/session infra unavailable offline per P0 handoff) covers publish-success + 409-missing branches with mocked hooks.
+
+**Migration head chain:** `a669b7e5964b`→`51d14ae61c5f`→`6500885d2cfc`. **New task types** (worker.py dispatch): `analyze_course_setup`, `generate_checkpoints`. **New routers:** `setup.py`, `checkpoints.py`, `scores.py`. **Wizard route:** `/teacher/courses/[courseId]/setup`.
+
+**Verification (2026-07-07, actual):** Frontend `npx tsc --noEmit` clean; `npx vitest run` → 22 files, 114 tests passing; `npm run build` succeeds; `npm run lint` → 22 problems (18 errors / 4 warnings) ALL in pre-existing untouched files (use-auth.ts, use-live-timer.ts, live-quiz/*, flashcard/*, quiz/*, revision/*, pronunciation/*) — **zero new lint issues from P1**. Backend `pytest -q` → 668 passed, 12 skipped, 8 failed + 3 errors — all in the KNOWN pre-existing set below, no new P1 breakage.
+
+**Known pre-existing backend failures (NOT P1 — do not chase):** test_alerts_evaluator (~5), test_scheduler_integration (~3 errors), test_canvas_coverage (~2), test_live_quiz_service (~1).
+
+**NEXT ACTION:** write the P2 plan (student entry & enrollment) via `superpowers:writing-plans`, then execute. P2 reuses the `assert_course_open` gate (reads `context_status='approved'`) + `join_mode`/`enroll_code_active` from P1.
 
 ### 2026-07-07 — P1 in progress (Course setup wizard & gates)
 

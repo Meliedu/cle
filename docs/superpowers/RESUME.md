@@ -10,7 +10,7 @@
    `docs/superpowers/specs/2026-07-06-meli-cle-checkpoint-loop-design.md`
 3. Follow the roadmap's **Session bootstrap protocol** — it tells you which phase is next, whether its detailed plan exists, and how to execute + hand off.
 
-Current state: **P0 (Shell & foundations) is COMPLETE** — all 10 tasks shipped (see the roadmap Handoff Log entry dated 2026-07-07 for SHAs, verification numbers, and the known pre-existing backend-failure list). **Next action: PR `feat/cle-p0-shell` to main, then write the P1 plan** (course setup wizard & gates) via `superpowers:writing-plans` from the P1 phase brief + spec, and execute it.
+Current state: **P1 (Course setup wizard & gates) is COMPLETE** — all 17 tasks shipped on `feat/cle-p0-shell` (see the roadmap Handoff Log entry dated 2026-07-07 "P1 COMPLETE" for SHAs, the migration head chain, new routers/task types, verification numbers, and the known pre-existing backend-failure list). P0 is also complete. **Next action: write the P2 plan (student entry & enrollment) via `superpowers:writing-plans`** from the P2 phase brief + spec, then execute. P2 reuses P1's `assert_course_open` gate (`context_status='approved'`) + `join_mode`/`enroll_code_active`.
 
 Note: `docs/` is gitignored — commit doc files with `git add -f`.
 
