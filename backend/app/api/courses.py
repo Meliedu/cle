@@ -2,7 +2,7 @@ import secrets
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,7 @@ from app.pilot import get_pilot_profile
 from app.schemas.common import APIResponse, PaginatedResponse, PaginationMeta
 from app.schemas.course import (
     CourseCreate,
+    CourseLookupResult,
     CourseResponse,
     CourseUpdate,
     EnrollByCodeRequest,
@@ -131,6 +132,51 @@ async def list_courses(
         success=True,
         data=[CourseResponse.model_validate(c) for c in courses],
         meta=PaginationMeta(total=total, page=page, limit=limit, pages=pages),
+    )
+
+
+@router.get("/lookup", response_model=APIResponse[CourseLookupResult])
+async def lookup_course_by_code(
+    code: str = Query(..., min_length=1),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Resolve a typed join code to a course id + branch signals (S003).
+
+    Non-committing (creates no enrollment) so the funnel can preview/branch
+    before the terminal ``enroll-by-code`` action. 404 for a malformed or
+    unknown code (no existence leak); 200 with ``code_active=False`` for a
+    known-but-deactivated code so S004 can distinguish invalid from inactive.
+    Must be declared before ``GET /{course_id}`` so the literal path wins.
+    """
+    normalized = _normalize_enroll_code(code)
+    if len(normalized) != _ENROLL_CODE_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No course found for that code",
+        )
+
+    result = await db.execute(
+        select(Course).where(
+            Course.enroll_code == normalized, Course.deleted_at.is_(None)
+        )
+    )
+    course = result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No course found for that code",
+        )
+
+    return APIResponse(
+        success=True,
+        data=CourseLookupResult(
+            course_id=course.id,
+            name=course.name,
+            is_open=course.context_status == "approved",
+            join_mode=course.join_mode,
+            code_active=course.enroll_code_active,
+        ),
     )
 
 

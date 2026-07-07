@@ -60,6 +60,24 @@ class EnrollByCodeResult(BaseModel):
     enrollment_status: str
 
 
+class CourseLookupResult(BaseModel):
+    """Non-committing resolve of a join code (S003 code entry).
+
+    Lets the student funnel turn a typed code into a ``course_id`` plus the
+    branch signals it needs (``is_open`` for the setup gate, ``join_mode`` for
+    the approval branch, ``code_active`` to distinguish an inactive code from an
+    unknown one) *without* creating an enrollment. Unknown codes 404 (no
+    existence leak); a known-but-inactive code returns 200 with
+    ``code_active=False`` so S004 can show the right copy.
+    """
+
+    course_id: uuid.UUID
+    name: str
+    is_open: bool
+    join_mode: str
+    code_active: bool
+
+
 class JoinRequestOut(BaseModel):
     """A pending (or decided) join request with the requesting student's info.
 

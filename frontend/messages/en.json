@@ -616,5 +616,32 @@
         "REMOVE_REASON_REQUIRED": "Choose a reason before removing this card."
       }
     }
+  },
+  "student": {
+    "join": {
+      "title": "Join a course",
+      "subtitle": "Enter the code shown by your instructor.",
+      "code": {
+        "label": "Course code",
+        "placeholder": "ABCD2345",
+        "hint": "Ask your instructor to confirm the join code.",
+        "submit": "Join course",
+        "submitting": "Checking…",
+        "lengthError": "Enrollment codes are 8 characters.",
+        "lookupError": "We couldn't check that code. Please try again."
+      },
+      "invalid": {
+        "title": "This code is invalid or inactive",
+        "reasonNotFound": "We couldn't find a course for that code. Check for typos and try again.",
+        "reasonInactive": "This join code is no longer active. Ask your instructor for a current code.",
+        "tryAgain": "Try again",
+        "backToCourses": "Back to courses"
+      },
+      "preview": {
+        "comingSoonTitle": "Course preview",
+        "comingSoonReason": "The course preview and readiness steps are coming soon.",
+        "back": "Enter a different code"
+      }
+    }
   }
 }

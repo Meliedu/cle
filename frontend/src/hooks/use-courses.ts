@@ -43,29 +43,9 @@ export function useCourses() {
   });
 }
 
-export function useEnrollByCode() {
-  const { getToken } = useAuth();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (enrollCode: string) => {
-      const token = await getToken({ template: "backend" });
-      if (!token) throw new Error("Not authenticated");
-      const response = await apiFetch<ApiEnvelope<CourseResponse>>(
-        "/courses/enroll-by-code",
-        {
-          method: "POST",
-          token,
-          body: JSON.stringify({ enroll_code: enrollCode }),
-        }
-      );
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["courses"] });
-    },
-  });
-}
+// `useEnrollByCode` moved to `@/hooks/use-enrollment` in P2 Task 9 — the
+// endpoint now returns `{ course, enrollment_status }` and the enrollment
+// funnel owns that surface.
 
 export interface CourseCreatePayload {
   readonly name: string;

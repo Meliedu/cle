@@ -154,5 +154,32 @@
         "REMOVE_REASON_REQUIRED": "移除此卡片前請選擇原因。"
       }
     }
+  },
+  "student": {
+    "join": {
+      "title": "加入課程",
+      "subtitle": "請輸入導師提供的課程代碼。",
+      "code": {
+        "label": "課程代碼",
+        "placeholder": "ABCD2345",
+        "hint": "如有疑問，請向導師確認課程代碼。",
+        "submit": "加入課程",
+        "submitting": "檢查中…",
+        "lengthError": "課程代碼為 8 個字元。",
+        "lookupError": "無法檢查此代碼，請再試一次。"
+      },
+      "invalid": {
+        "title": "此代碼無效或已停用",
+        "reasonNotFound": "找不到符合此代碼的課程。請檢查是否有輸入錯誤後再試一次。",
+        "reasonInactive": "此課程代碼已停用。請向導師索取有效的代碼。",
+        "tryAgain": "重試",
+        "backToCourses": "返回課程"
+      },
+      "preview": {
+        "comingSoonTitle": "課程預覽",
+        "comingSoonReason": "課程預覽與準備度步驟即將推出。",
+        "back": "輸入其他代碼"
+      }
+    }
   }
 }
