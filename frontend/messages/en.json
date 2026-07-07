@@ -63,6 +63,67 @@
       "next": "Next",
       "save": "Save",
       "progress": "Step {current} of {total}"
+    },
+    "calendar": {
+      "title": "Calendar",
+      "subtitle": "Classes, checkpoints, and activities from your courses.",
+      "today": "Today",
+      "prev": "Previous period",
+      "next": "Next period",
+      "viewLabel": "Calendar view",
+      "view": {
+        "month": "Month",
+        "week": "Week"
+      },
+      "monthGridLabel": "Month calendar grid",
+      "more": "{count, plural, one {+# more} other {+# more}}",
+      "openEvent": "Open {title}",
+      "legend": {
+        "label": "Courses"
+      },
+      "empty": {
+        "title": "Nothing scheduled",
+        "reason": "Sessions, checkpoints, and activities from your courses will appear here."
+      },
+      "day": {
+        "empty": "No events on this day."
+      },
+      "kind": {
+        "meeting": "Session",
+        "assignment": "Assignment",
+        "work_item": "Task"
+      },
+      "source": {
+        "checkpoint": "Checkpoint",
+        "practice": "Practice",
+        "quiz": "Quiz",
+        "activity": "Activity",
+        "material": "Material",
+        "follow_up": "Follow-up",
+        "report": "Report"
+      },
+      "status": {
+        "pending": "Pending",
+        "in_progress": "In progress",
+        "submitted": "Submitted",
+        "late": "Late",
+        "missed": "Missed",
+        "completed": "Completed",
+        "follow_up_assigned": "Follow-up assigned"
+      },
+      "drawer": {
+        "close": "Back to calendar",
+        "course": "Course",
+        "when": "When",
+        "location": "Location",
+        "duration": "Duration",
+        "minutes": "{count} min",
+        "weight": "Weight",
+        "requirement": "Requirement",
+        "required": "Required",
+        "optional": "Optional",
+        "status": "Your status"
+      }
     }
   },
   "teacher": {
