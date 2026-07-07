@@ -2448,6 +2448,35 @@
         "viewResponse": "View response"
       }
     },
+    "profile": {
+      "title": "Your learning profile",
+      "subtitle": "A source-linked picture of what you have been building — reviewed before it reaches you.",
+      "back": "Back to course",
+      "viewInsights": "View insights",
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "groups": {
+        "strong": "Strong",
+        "developing": "Developing",
+        "weak": "Needs work"
+      },
+      "empty": {
+        "title": "No profile yet",
+        "reason": "Your learning profile builds as you complete checkpoints and practice. Once there is enough reviewed evidence, your strengths and gaps appear here."
+      },
+      "error": {
+        "title": "We couldn't load your profile",
+        "reason": "Refresh the page to try again."
+      },
+      "evidence": {
+        "mastery": "Mastery",
+        "confidence": "Confidence",
+        "attempts": "Attempts",
+        "lastSeen": "Last seen",
+        "never": "—",
+        "note": "Based on your reviewed attempts so far. This is an estimate, not a grade."
+      }
+    },
     "followUp": {
       "title": "Follow-up",
       "subtitle": "A next step your instructor set based on your recent work.",
