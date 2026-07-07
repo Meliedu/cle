@@ -23,6 +23,7 @@ import {
 } from "@/hooks/use-checkpoints";
 
 import { StatusChip, releaseTone, checkpointTone } from "./session-status";
+import { AttendanceRoster } from "./attendance-roster";
 
 interface SessionDetailProps {
   readonly courseId: string;
@@ -151,6 +152,13 @@ export function SessionDetail({ courseId, meetingId }: SessionDetailProps) {
         checkpoints={checkpoints}
         meeting={meeting}
       />
+
+      <section className="space-y-3">
+        <h3 className="text-[14px] font-semibold text-[var(--color-text)]">
+          {t("attendance.title")}
+        </h3>
+        <AttendanceRoster meetingId={meetingId} />
+      </section>
     </div>
   );
 }

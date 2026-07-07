@@ -17,6 +17,7 @@ import {
 import { PublishGateDialog } from "./publish-gate-dialog";
 import { QrLaunchPanel } from "./qr-launch-panel";
 import { CheckpointMonitor } from "./checkpoint-monitor";
+import { CheckpointResultsView } from "./checkpoint-results-view";
 
 interface CheckpointLifecyclePanelProps {
   readonly courseId: string;
@@ -132,11 +133,14 @@ export function CheckpointLifecyclePanel({
       ) : null}
 
       {DONE.includes(status) ? (
-        <StateBanner
-          tone="success"
-          title={t("closedTitle")}
-          reason={t("closedReason")}
-        />
+        <div className="space-y-4">
+          <StateBanner
+            tone="success"
+            title={t("closedTitle")}
+            reason={t("closedReason")}
+          />
+          <CheckpointResultsView checkpointId={checkpoint.id} />
+        </div>
       ) : null}
 
       {gateError ? (

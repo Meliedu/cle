@@ -696,6 +696,10 @@
       "title": "Sessions",
       "subtitle": "Review each session and its checkpoints. Open a session to manage its release and checkpoint.",
       "manageInSetup": "Add in setup",
+      "viewHistory": "History",
+      "attendance": {
+        "title": "Attendance"
+      },
       "untitled": "Untitled session",
       "placeholder": "—",
       "sessionLabel": "Session {index}",
@@ -939,6 +943,83 @@
         "submissions": "Responses",
         "distributionLabel": "Confidence distribution",
         "closedNotice": "This checkpoint has closed. No more responses will arrive."
+      }
+    },
+    "attendance": {
+      "status": {
+        "present": "Present",
+        "late": "Late",
+        "excused": "Excused",
+        "absent": "Absent"
+      },
+      "empty": {
+        "title": "No attendance yet",
+        "reason": "Once you launch a check-in and students scan the QR, their attendance appears here."
+      },
+      "overriddenNote": "Overridden — {reason}",
+      "cannotOverride": "No scan on record to override.",
+      "override": {
+        "trigger": "Override",
+        "title": "Override attendance",
+        "subtitle": "Correct the attendance status for {name}.",
+        "statusLabel": "Status",
+        "status": {
+          "present": "Present",
+          "late": "Late",
+          "excused": "Excused",
+          "absent": "Absent"
+        },
+        "reasonLabel": "Reason",
+        "reasonPlaceholder": "Why are you changing this?",
+        "reasonHint": "A reason is required and kept on record.",
+        "error": "We couldn't save the override. Try again.",
+        "cancel": "Cancel",
+        "confirm": "Save override"
+      }
+    },
+    "results": {
+      "summary": {
+        "active": "Active students",
+        "responded": "Responded",
+        "missed": "Missed"
+      },
+      "kind": {
+        "review_point": "Review point",
+        "final_comments": "Final comments"
+      },
+      "responseCount": "{count, plural, one {# response} other {# responses}}",
+      "textResponses": "{count, plural, one {# written response} other {# written responses}}",
+      "distributionLabel": "Confidence distribution",
+      "empty": {
+        "title": "No results yet",
+        "reason": "Results appear once this checkpoint has closed and students have responded."
+      }
+    },
+    "history": {
+      "back": "Back to sessions",
+      "title": "History & archive",
+      "subtitle": "Closed checkpoints and completed sessions for this course. Open a checkpoint to review its results.",
+      "untitled": "Untitled session",
+      "checkpointsHeading": "Checkpoint history",
+      "sessionsHeading": "Completed sessions",
+      "noCheckpoints": "No closed checkpoints yet.",
+      "noSessions": "No completed sessions yet.",
+      "viewResults": "View results",
+      "noSessionLink": "Not linked to a session",
+      "status": {
+        "draft": "Draft",
+        "teacher_editing": "Editing",
+        "approved": "Approved",
+        "scheduled": "Scheduled",
+        "published": "Published",
+        "live": "Live",
+        "closed": "Closed",
+        "archived": "Archived"
+      },
+      "empty": {
+        "title": "Nothing archived yet",
+        "reason": "Once checkpoints close and sessions are taught, they'll be recorded here for review.",
+        "action": "Back to sessions"
       }
     },
     "enrollment": {

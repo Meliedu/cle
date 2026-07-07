@@ -70,6 +70,7 @@ export function SessionsList({ courseId }: SessionsListProps) {
   const { data: historyCheckpoints } = useCheckpointHistory(courseId);
 
   const setupHref = `/teacher/courses/${courseId}/setup`;
+  const historyHref = `/teacher/courses/${courseId}/sessions/history`;
 
   const allCheckpoints: readonly Checkpoint[] = [
     ...(draftCheckpoints ?? []),
@@ -94,9 +95,14 @@ export function SessionsList({ courseId }: SessionsListProps) {
             {t("subtitle")}
           </p>
         </div>
-        <Button size="sm" variant="outline" render={<Link href={setupHref} />}>
-          {t("manageInSetup")}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" render={<Link href={historyHref} />}>
+            {t("viewHistory")}
+          </Button>
+          <Button size="sm" variant="outline" render={<Link href={setupHref} />}>
+            {t("manageInSetup")}
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
