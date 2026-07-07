@@ -628,6 +628,7 @@
       "tabs": {
         "overview": "Overview",
         "schedule": "Sessions",
+        "enrollment": "Enrollment",
         "setup": "Setup",
         "materials": "Materials",
         "activities": "Activities",
@@ -687,6 +688,61 @@
         "empty": {
           "title": "No sessions yet",
           "reason": "Add sessions in the course setup schedule step."
+        }
+      }
+    },
+    "enrollment": {
+      "title": "Enrollment",
+      "subtitle": "Control who can join this course and review who has enrolled.",
+      "pendingBanner": {
+        "title": "{count, plural, one {# student is awaiting approval} other {# students are awaiting approval}}",
+        "reason": "Review and approve join requests to add them to the roster.",
+        "review": "Review requests"
+      },
+      "stats": {
+        "students": "Enrolled students",
+        "pending": "Pending requests",
+        "pendingHint": "Awaiting your approval",
+        "access": "Join access"
+      },
+      "access": {
+        "active": "Active",
+        "inactive": "Closed",
+        "approval": "Approval required",
+        "codeHint": "Students can join instantly with the code.",
+        "approvalHint": "Requests need your approval before joining."
+      },
+      "links": {
+        "roster": {
+          "title": "Class roster",
+          "description": "See every student who has joined this course.",
+          "cta": "View roster"
+        },
+        "requests": {
+          "title": "Join requests",
+          "description": "Approve or deny students waiting to join.",
+          "cta": "Review requests"
+        }
+      },
+      "roster": {
+        "title": "Class roster",
+        "subtitle": "Students who joined this course with the enrollment code.",
+        "noName": "Unnamed student",
+        "columns": {
+          "student": "Student",
+          "email": "Email",
+          "joined": "Joined",
+          "status": "Status"
+        },
+        "status": {
+          "active": "Active",
+          "pending": "Pending",
+          "rejected": "Rejected"
+        },
+        "count": "{count, plural, one {# student} other {# students}}",
+        "empty": {
+          "title": "No students yet",
+          "reason": "Share the enrollment code so students can join this course."
         }
       }
     }

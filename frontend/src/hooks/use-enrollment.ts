@@ -87,6 +87,38 @@ export function useRoster(courseId: string) {
   });
 }
 
+// ----- join requests (read-only) -----
+
+/**
+ * A pending (or decided) join request + requesting student's info (mirrors
+ * backend `JoinRequestOut`). `requested_at` mirrors the enrollment row's
+ * `enrolled_at`; `status` is `pending` in the list, or the post-decision
+ * status echoed back by approve/deny (Task 15).
+ */
+export interface JoinRequest {
+  readonly enrollment_id: string;
+  readonly user_id: string;
+  readonly full_name: string | null;
+  readonly email: string;
+  readonly requested_at: string;
+  readonly status: string;
+}
+
+/**
+ * GET `/courses/{id}/join-requests` — pending join requests for an owned
+ * `code_plus_approval` course. Read-only here: it backs the pending-count on
+ * the enrollment overview (T031). The approve/deny mutations that act on this
+ * list live with the T033 join-request-approval screen (Task 15), which reuses
+ * this same query key so a decision invalidates both it and `["roster"]`.
+ */
+export function useJoinRequests(courseId: string) {
+  return useAuthedQuery<readonly JoinRequest[]>({
+    queryKey: ["join-requests", courseId],
+    path: `/courses/${courseId}/join-requests`,
+    enabled: Boolean(courseId),
+  });
+}
+
 // ----- typed join errors -----
 
 /**

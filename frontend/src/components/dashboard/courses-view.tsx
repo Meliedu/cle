@@ -150,7 +150,15 @@ export function CoursesView() {
         >
           {filteredCourses.map((course) => (
             <li key={course.id}>
-              <CourseRowCard course={course} className="h-full" />
+              <CourseRowCard
+                course={course}
+                className="h-full"
+                href={
+                  isInstructor
+                    ? `/teacher/courses/${course.id}`
+                    : undefined
+                }
+              />
             </li>
           ))}
         </ul>

@@ -10,12 +10,19 @@ import { formatRelativeTime } from "@/lib/format";
 interface CourseRowCardProps {
   readonly course: CourseResponse;
   readonly className?: string;
+  /**
+   * Destination for the card. Defaults to the legacy `/dashboard` workspace so
+   * the student lane is unchanged; the teacher lane passes the new
+   * `/teacher/courses/{id}` overview (see `CoursesView`). Role-scoped by the
+   * caller so students are never routed into a teacher-only route.
+   */
+  readonly href?: string;
 }
 
-export function CourseRowCard({ course, className }: CourseRowCardProps) {
+export function CourseRowCard({ course, className, href }: CourseRowCardProps) {
   return (
     <Link
-      href={`/dashboard/courses/${course.id}?tab=overview`}
+      href={href ?? `/dashboard/courses/${course.id}?tab=overview`}
       className={cn(
         "group relative flex w-full gap-4 rounded-[var(--radius-2xl)] border border-[var(--color-border)]/80 bg-[var(--color-surface)] p-3 transition-all duration-[var(--duration-normal)] hover:-translate-y-0.5 hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)]",
         className
