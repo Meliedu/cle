@@ -132,6 +132,54 @@ class FollowUpActionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class FollowUpRevisitLink(BaseModel):
+    """Route info the frontend needs to reach the P3 checkpoint revisit flow.
+
+    A ``checkpoint``-targeted follow-up sends the student back to re-answer the
+    carried-forward checkpoint via ``POST /api/checkpoints/{id}/revisit-response``
+    (no new revisit engine — this is a LINK only).
+    """
+
+    checkpoint_id: uuid.UUID
+    revisit_path: str
+
+
+class FollowUpDetailResponse(BaseModel):
+    """Student-facing detail for one follow-up (the doc's Review Path item).
+
+    Merges the ``FollowUpAction`` with its linked ``LearningNote``'s **reviewed**
+    fields ONLY (Core §0.2 / Decision 6): a ``draft``/``queued`` note's AI content
+    is never exposed. ``waiting_for_review`` is the discriminator for the designed
+    waiting-for-instructor-feedback state — ``True`` for a ``suggested`` follow-up
+    or one whose note is not yet reviewed; those responses carry no action content.
+    ``outcome_status`` is the "did it move" state from the linked ``OutcomeCheck``.
+    """
+
+    id: uuid.UUID
+    course_id: uuid.UUID
+    learning_note_id: uuid.UUID | None
+    action_type: str
+    target_kind: str | None
+    target_id: uuid.UUID | None
+    assignment_status: AssignmentStatus
+    due_at: datetime | None
+    created_at: datetime
+
+    # Discriminator for the designed waiting-for-feedback shape.
+    waiting_for_review: bool
+
+    # Reviewed note fields — None unless the note is instructor-reviewed.
+    observed_signal: str | None = None
+    draft_interpretation: str | None = None
+    limitation_note: str | None = None
+
+    # The "did it move" state from the linked OutcomeCheck, if any.
+    outcome_status: OutcomeStatus | None = None
+
+    # Revisit link — present only when target_kind == 'checkpoint'.
+    revisit: FollowUpRevisitLink | None = None
+
+
 class FollowUpActionCreate(BaseModel):
     user_id: uuid.UUID
     action_type: str

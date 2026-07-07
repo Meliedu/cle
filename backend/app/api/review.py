@@ -31,6 +31,7 @@ from app.models import (
     FollowUpAction,
     InstructorAlert,
     LearningNote,
+    OutcomeCheck,
     ReviewAction,
 )
 from app.models.course import Course
@@ -38,6 +39,8 @@ from app.models.user import User
 from app.schemas.common import APIResponse
 from app.schemas.evidence import (
     FollowUpActionResponse,
+    FollowUpDetailResponse,
+    FollowUpRevisitLink,
     LearningNoteResponse,
     NoteReviewStatus,
     ReviewActionCreate,
@@ -72,6 +75,12 @@ _ACTION_TO_NOTE_STATUS: dict[str, str] = {
 # FollowUpAction.action_type fallback when a review assigns a follow-up without
 # an explicit inline spec (action_type == 'assign_followup' with no body.follow_up).
 _DEFAULT_FOLLOW_UP_ACTION = "follow_up"
+
+# LearningNote.review_status values that mean an instructor has reviewed the
+# note, so its content may be shown to the student (Core §0.2 / Decision 6).
+# The complement ('draft','queued') is AI-drafted and never surfaced; 'archived'
+# is a removed note and also withheld.
+_REVIEWED_NOTE_STATUSES = frozenset({"reviewed", "edited", "merged", "split"})
 
 
 def _follow_up_title(note: LearningNote, follow_up: FollowUpAction) -> str:
@@ -372,6 +381,87 @@ async def list_my_follow_ups(
         success=True,
         data=[FollowUpActionResponse.model_validate(r) for r in rows],
     )
+
+
+@router.get(
+    "/users/me/follow-ups/{follow_up_id}",
+    response_model=APIResponse[FollowUpDetailResponse],
+)
+async def get_follow_up_detail(
+    follow_up_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    student: User = Depends(require_student),
+) -> APIResponse[FollowUpDetailResponse]:
+    """One follow-up's action detail for its owner (the doc's Review Path item).
+
+    Owner-scoped by ``user_id`` — another student's row is masked as 404, never
+    403 (no existence leak). Merges the follow-up with its linked ``LearningNote``'s
+    **reviewed** fields ONLY (``observed_signal`` / ``draft_interpretation`` /
+    ``limitation_note``); a ``draft``/``queued`` note's AI content is withheld
+    (Core §0.2, Decision 6). Surfaces the linked ``OutcomeCheck.status`` (the "did
+    it move" state) and — for a ``checkpoint`` target — the P3 revisit link. A
+    ``suggested`` follow-up (not yet instructor-assigned) returns the designed
+    waiting-for-feedback shape with no action content.
+    """
+    row = (
+        await db.execute(
+            select(FollowUpAction).where(FollowUpAction.id == follow_up_id)
+        )
+    ).scalar_one_or_none()
+    # 404 (not 403) when the row belongs to another student, masking existence.
+    if row is None or row.user_id != student.id:
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+
+    note: LearningNote | None = None
+    if row.learning_note_id is not None:
+        note = (
+            await db.execute(
+                select(LearningNote).where(LearningNote.id == row.learning_note_id)
+            )
+        ).scalar_one_or_none()
+
+    note_reviewed = (
+        note is not None and note.review_status in _REVIEWED_NOTE_STATUSES
+    )
+    # Waiting-for-feedback shape: a not-yet-assigned (suggested) follow-up, or one
+    # whose note has not been reviewed, carries no action content (Decision 6).
+    waiting = row.assignment_status == "suggested" or not note_reviewed
+
+    outcome_status = (
+        await db.execute(
+            select(OutcomeCheck.status).where(
+                OutcomeCheck.follow_up_action_id == row.id
+            )
+        )
+    ).scalar_one_or_none()
+
+    revisit: FollowUpRevisitLink | None = None
+    if not waiting and row.target_kind == "checkpoint" and row.target_id is not None:
+        revisit = FollowUpRevisitLink(
+            checkpoint_id=row.target_id,
+            revisit_path=f"/api/checkpoints/{row.target_id}/revisit-response",
+        )
+
+    detail = FollowUpDetailResponse(
+        id=row.id,
+        course_id=row.course_id,
+        learning_note_id=row.learning_note_id,
+        action_type=row.action_type,
+        target_kind=row.target_kind,
+        target_id=row.target_id,
+        assignment_status=row.assignment_status,
+        due_at=row.due_at,
+        created_at=row.created_at,
+        waiting_for_review=waiting,
+        observed_signal=note.observed_signal if note_reviewed else None,
+        draft_interpretation=(
+            note.draft_interpretation if note_reviewed else None
+        ),
+        limitation_note=note.limitation_note if note_reviewed else None,
+        outcome_status=outcome_status,
+        revisit=revisit,
+    )
+    return APIResponse(success=True, data=detail)
 
 
 @router.post(
