@@ -15,6 +15,7 @@ from app.models.flashcard import (
     FlashcardSetDocument,
 )
 from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument, QuizFolder
+from app.models.readiness import ReadinessResponse
 from app.models.scheduler import SchedulerModel
 from app.models.pronunciation import (
     PronunciationFolder,
@@ -124,4 +125,5 @@ __all__ = [
     "FollowUpAction",
     "OutcomeCheck",
     "CourseRecordItem",
+    "ReadinessResponse",
 ]
