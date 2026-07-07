@@ -1,6 +1,6 @@
 # Resume Pointer — read this first in any fresh session
 
-**Last updated:** 2026-07-07 (P3 in progress — 8/21)
+**Last updated:** 2026-07-08 (P3 COMPLETE — next = P4)
 
 ## Active effort: Meli × CLE Checkpoint Loop (Figma "final" flow, 160 screens, 8 phases)
 
@@ -10,7 +10,7 @@
    `docs/superpowers/specs/2026-07-06-meli-cle-checkpoint-loop-design.md`
 3. Follow the roadmap's **Session bootstrap protocol** — it tells you which phase is next, whether its detailed plan exists, and how to execute + hand off.
 
-Current state: **P0, P1, P2 COMPLETE; P3 IN PROGRESS (8 of 21 tasks done, next = T9)** — all on `feat/cle-p0-shell`. The P3 detailed plan already exists: `docs/superpowers/plans/2026-07-07-meli-cle-p3-checkpoint-loop.md`. See the roadmap Handoff Log "P3 IN PROGRESS" entry for the T1–T8 commit SHAs, the migration head chain (current head `c3a9f0e1d2b4`), the new services/models, and the T9→T21 remaining list. **Next action: resume P3 at T9 (QR launch signed token).** Cadence note (in that entry): per-task = build + run tests + commit; focused review only for security-sensitive tasks (auth/RLS/token/evidence seam); comprehensive `/code-review` + `/security-review` banked for end-of-build. Known pre-existing backend failures — do NOT chase: test_alerts_evaluator, test_scheduler_integration, test_canvas_coverage, test_live_quiz_service.
+Current state: **P0, P1, P2, P3 COMPLETE; P4 NEXT (plan written, not executed)** — all on `feat/cle-p0-shell`. P3 head is merge commit `c798924`. The P4 detailed plan already exists: `docs/superpowers/plans/2026-07-07-meli-cle-p4-workspace-checklist-calendar.md` (19 tasks: 10 backend / 9 frontend, commit `e25229f`). See the roadmap Handoff Log "P3 COMPLETE" entry for all T9–T21 commit SHAs, the QR security-review outcome, the parallel-worktree cadence, and the P4 review-flags (B5 transactional progress write, B2/B10 work_item_progress RLS, B8 materials preview gating). **Next action: execute P4** task-by-task (backend serial — shared `langassistant_test` DB; frontend independent tracks can parallelize via `git worktree` isolation). Cadence: per-task = build + run tests + commit; focused review only for security-sensitive tasks (auth/RLS/token/evidence seam/grades); comprehensive `/code-review` + `/security-review` banked for end-of-build (after P7). Known pre-existing backend failures — do NOT chase: test_alerts_evaluator, test_scheduler_integration, test_canvas_coverage, test_live_quiz_service.
 
 Note: `docs/` is gitignored — commit doc files with `git add -f`.
 

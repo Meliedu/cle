@@ -72,101 +72,101 @@ Each task: failing test first → minimal impl → refactor → code review (`/c
 
 ### Backend
 
-- [ ] **T1 — Status-machine transition helper (`app/services/checkpoints.py`).**
+- [x] **T1 — Status-machine transition helper (`app/services/checkpoints.py`).**
   - Test first (`tests/test_checkpoint_transitions.py`): `assert_transition(from, to)` allows exactly the spec edges — `draft→teacher_editing`, `teacher_editing→approved` (+ back to `teacher_editing`), `approved→scheduled`, `scheduled→published`, `published→live`, `live→closed`, `closed→archived`, `approved→published` (direct publish w/ immediate release); every other pair raises a typed `IllegalTransition` carrying `code="REVIEW_REQUIRED"`. Include an `is_editable(status)` reused by the router.
   - Pure function, no DB. This is the single source of truth every publish-path endpoint routes through (Decision 1).
   - Commit `feat(checkpoints): status-machine transition guard (service layer)`.
 
-- [ ] **T2 — `checkpoint_responses` model + RLS migration.**
+- [x] **T2 — `checkpoint_responses` model + RLS migration.**
   - Test first: `tests/test_checkpoint_response_model.py` — columns `checkpoint_id`, `card_id`, `user_id`, `confidence int` (CHECK `confidence IS NULL OR confidence BETWEEN -2 AND 2`), `text_response text nullable`, `status` (CHECK `on_time|late`), `submitted_at`, unique `(card_id, user_id)`. UUID PK + `TimestampMixin`.
   - Model in `app/models/checkpoint.py` (`CheckpointResponse`). Migration COPIES `d94257fc717c` structure: create table + `ix_checkpoint_responses_checkpoint_id` + `ENABLE ROW LEVEL SECURITY` + `checkpoint_responses_owner_isolation` policy on `user_id` (Decision 2). Chain from P2 head `d94257fc717c`.
   - Commit `feat(checkpoints): checkpoint_responses model + owner-isolation RLS`.
 
-- [ ] **T3 — `attendance_records` model + RLS migration.**
+- [x] **T3 — `attendance_records` model + RLS migration.**
   - Test first: `tests/test_attendance_model.py` — columns `meeting_id`, `user_id`, `status` (CHECK `present|late|excused|absent`), `source` (CHECK `qr|manual_override`), `override_reason text nullable`, `override_by FK users nullable`, `checked_in_at`, unique `(meeting_id, user_id)`.
   - Model + migration (COPY RLS pattern; owner-isolation on `user_id`; participation-only, never mastery). Chain from T2.
   - Commit `feat(attendance): attendance_records model + owner-isolation RLS`.
 
-- [ ] **T4 — `checkpoint_launches` model + migration (no RLS).**
+- [x] **T4 — `checkpoint_launches` model + migration (no RLS).**
   - Test first: `tests/test_checkpoint_launch_model.py` — columns `checkpoint_id`, `meeting_id`, `token text` (the signed JWT), `jti`, `window_start`, `window_end`, `launched_by FK`, `status` (CHECK `active|closed`); **partial unique index `(checkpoint_id) WHERE status='active'`** (single active launch, Decision 3). No RLS — operational/teacher-owned.
   - Model + migration. Add `settings.checkpoint_token_secret: str | None` to `app/config.py` with the same ≥32-byte validation as `canvas_state_secret` (only enforced when a launch is attempted, not unconditionally at startup — keep dev/test bootable).
   - Commit `feat(attendance): checkpoint_launches model + token secret config`.
 
-- [ ] **T5 — Publish-path service + endpoints (REPLACES the no-publish guard).**
+- [x] **T5 — Publish-path service + endpoints (REPLACES the no-publish guard).**
   - Test first: in `tests/test_checkpoints_api.py` **delete `test_p1_has_no_publish_route`** and add: `POST /checkpoints/{id}/approve` (draft/teacher_editing→approved; requires ≥1 non-removed review_point card + the fixed final card), `POST /checkpoints/{id}/schedule` (approved→scheduled; requires `release_at`+`close_rule`), `POST /checkpoints/{id}/publish` (approved/scheduled→published; **gate**: status `approved`+ session relation + release timing + close rule else `REVIEW_REQUIRED`), `POST /checkpoints/{id}/close` (published/live→closed). Illegal transitions → 409 `REVIEW_REQUIRED`. Non-owner → 404. Append a `review_actions` row on approve/publish/close.
   - Impl in `app/api/checkpoints.py` (reuse `_owned_checkpoint`) routing through `assert_transition` (T1). Extend `app/schemas/checkpoint.py`.
   - Commit `feat(checkpoints): approve/schedule/publish/close endpoints + publish gate`.
 
-- [ ] **T6 — Teacher results + history endpoints.**
+- [x] **T6 — Teacher results + history endpoints.**
   - Test first: `GET /checkpoints/{id}/results` (per-card response counts + confidence distribution + derived "missed" = closed & no response for enrolled active students), `GET /courses/{id}/checkpoints?history=1` (closed/archived list). Owner-guarded.
   - Impl in `app/api/checkpoints.py` (`course_router` for the history filter). No RLS reliance — course-scoped owner reads.
   - Commit `feat(checkpoints): teacher results + history endpoints`.
 
-- [ ] **T7 — Student intro + response submission (evidence seam).**
+- [x] **T7 — Student intro + response submission (evidence seam).**
   - Test first: `GET /checkpoints/{id}/intro` (student, enrollment-scoped; only when `published`/`live` and within window; else `QR_NOT_AVAILABLE`/404) returns ordered live cards; `POST /checkpoints/{id}/responses` upserts one row per `(card_id, user_id)` with `confidence` (review_point) or `text_response` (final), sets `status=on_time|late` from `close_at`. Asserts: a `LearningEvent` (`stage="during_class"`, `source_kind="checkpoint_card"`) is written AND an `update_concept_mastery` Task is enqueued for concept-tagged review_point cards (outcome `(c+2)/4`), best-effort (attempt persists even if enqueue fails). Duplicate submit updates in place. Wrong-owner cannot write (RLS + endpoint guard).
   - Impl: new `app/services/checkpoint_responses.py` (submission + evidence wiring, mirrors `quizzes.py`), student endpoints in `checkpoints.py`. Broadcast to `monitor_manager` (Decision 4) after commit — stubbed until T12, wired then.
   - Commit `feat(checkpoints): student intro + response submission w/ evidence seam`.
 
-- [ ] **T8 — Student history + follow-up + revisit endpoints.**
+- [x] **T8 — Student history + follow-up + revisit endpoints.**
   - Test first: `GET /users/me/courses/{id}/checkpoints` (student's own checkpoint history + derived missed/late/complete per S039), `GET /checkpoints/{id}/follow-up-suggested` (S040 — suggested follow-up derived from low-confidence responses), `POST /checkpoints/{id}/revisit-response` (S041 — a revisit re-submits against a `follow_up`-kind checkpoint carried via `carried_from_id`). Owner/enrollment-scoped.
   - Commit `feat(checkpoints): student history + follow-up-suggested + revisit`.
 
-- [ ] **T9 — QR launch service + endpoint (token signing + gate).**
+- [x] **T9 — QR launch service + endpoint (token signing + gate).**
   - Test first: `tests/test_checkpoint_launch.py` — `launch_checkpoint` signs a PyJWT HS256 token (mirror `canvas_oauth.encode_state`) with `{launch_id, checkpoint_id, meeting_id, jti, exp=window_end}`; **gate** `QR_NOT_AVAILABLE` unless checkpoint `published`/`live` + session-bound + `qr_enabled` + within window; single active launch (partial unique index); a rotate closes the prior launch and issues a fresh token; expired token (`exp` past) fails; tampered signature fails. Endpoint `POST /checkpoints/{id}/launch` owner-guarded.
   - Impl: new `app/services/checkpoint_qr.py` (`encode_launch_token`/`decode_launch_token` using `settings.checkpoint_token_secret`), endpoint in a new `app/api/attendance.py`.
   - Commit `feat(attendance): QR launch token (signed, window-bound, rotating)`.
 
-- [ ] **T10 — Attendance scan `/attend/{token}` + rate-limit extension.**
+- [x] **T10 — Attendance scan `/attend/{token}` + rate-limit extension.**
   - Test first: `POST /attend/{token}` validates the token (signature+exp+active launch) → upserts `attendance_records` (`source=qr`, `status=present|late` from window) → returns the checkpoint intro route so the client routes into S034; single-use per student is idempotent (second scan = 200, no dup row, unique `(meeting_id,user_id)`); invalid/expired/closed-launch token → 4xx typed. Plus `tests/test_rate_limit_attend.py`: extend `middleware/rate_limit.py` so `^/api/attend/[^/]+$` is rate-limited on its own per-minute cap; assert a scan flood 429s without touching the RAG quota.
   - Impl: scan endpoint in `app/api/attendance.py`; `_ATTEND_SCAN_REGEX` branch in `_is_rate_limited_path` + its own method/endpoint counting class.
   - Commit `feat(attendance): QR scan endpoint + scan rate-limit`.
 
-- [ ] **T11 — Attendance roster result + manual override.**
+- [x] **T11 — Attendance roster result + manual override.**
   - Test first: `GET /meetings/{id}/attendance` (teacher roster: present/late/excused/absent, absent derived from active roster − records), `PATCH /attendance/{id}` (manual override: `status`, required `override_reason`, `override_by=current user`, `source=manual_override`; append `review_actions`). Owner-guarded via the meeting's course.
   - Impl in `app/api/attendance.py`.
   - Commit `feat(attendance): roster result + manual override with reason`.
 
-- [ ] **T12 — Live monitor WS (reuse live-quiz hub).**
+- [x] **T12 — Live monitor WS (reuse live-quiz hub).**
   - Test first: `tests/test_checkpoint_monitor.py` — WS `/api/checkpoints/{id}/monitor` copies `websocket_live`'s `?token=`→`verify_jwt`→owner check; a connected client receives `{submission_count, confidence_distribution}` on connect and a `submission`/`closed` broadcast when a response lands / the checkpoint closes. Reuse `ConnectionManager` (Decision 4) — assert no new WS framework, just `monitor_manager.connect/broadcast`.
   - Impl: `app/services/checkpoint_monitor.py` (`monitor_manager = ConnectionManager()` + a `broadcast_state` helper), WS endpoint in `checkpoints.py`; wire the T7 submission service + T5 close endpoint to broadcast.
   - Commit `feat(checkpoints): live monitor WS reusing live-quiz hub`.
 
-- [ ] **T13 — `close_due_checkpoints` cron.**
+- [x] **T13 — `close_due_checkpoints` cron.**
   - Test first: `tests/test_close_due_checkpoints.py` — `close_due_checkpoints(session)` transitions `published`/`live` checkpoints whose `close_at`/`close_rule` is due to `closed` (routes through `assert_transition`), closes any active launch, broadcasts `closed`. Idempotent (re-run no-ops). Registered in `_run_cron_ticks` via `_claim_and_run_cron("close_due_checkpoints", timedelta(minutes=1), _body_close_due)`.
   - Impl: service fn in `app/services/checkpoints.py` + `_body_close_due` + registration in `worker.py` (mirror `_body_decay`/`_body_overdue`).
   - Commit `feat(checkpoints): close_due_checkpoints cron`.
 
-- [ ] **T14 — RLS isolation tests for the two student-owned tables.**
+- [x] **T14 — RLS isolation tests for the two student-owned tables.**
   - COPY `tests/test_readiness_rls.py` into `tests/test_checkpoint_responses_rls.py` + `tests/test_attendance_rls.py`: under `SET ROLE meli_app`, user A's row is invisible/immutable to user B (SELECT hides, UPDATE/DELETE affect 0 rows, INSERT of A's `user_id` rejected by WITH CHECK), GUC switch-back restores visibility, blank GUC fails closed. Skip-guard when `meli_app` absent. Seed/teardown on `async_engine`.
   - Commit `test(checkpoints): RLS owner-isolation for responses + attendance`.
 
 ### Frontend (mobile-first for student S033–S042; pull Figma per screen)
 
-- [ ] **T15 — Extract `ConfidenceScaleInput` + extend `use-checkpoints`.**
+- [x] **T15 — Extract `ConfidenceScaleInput` + extend `use-checkpoints`.**
   - Extract the `scale` branch of `components/join/readiness-question.tsx` into `components/patterns/confidence-scale-input.tsx` (props: `scale`, `value`, `onChange`, `disabled`; −2..+2 from config; mobile-first single-column). Refactor `readiness-question.tsx` to consume it (existing readiness tests stay green). Extend `hooks/use-checkpoints.ts`: publish-path mutations (approve/schedule/publish/close), results + history queries, launch mutation, student intro/response/history/revisit, and a `useCheckpointMonitor` WS client mirroring `use-live-quiz.ts`. Update the P1 `CheckpointStatus` type to include `live`. Vitest for the extracted component + a submission mutation.
   - Commit `feat(patterns): extract ConfidenceScaleInput + extend use-checkpoints`.
 
-- [ ] **T16 — Teacher sessions list/detail/edit-release (T037–T039) + workspace tab.**
+- [x] **T16 — Teacher sessions list/detail/edit-release (T037–T039) + workspace tab.**
   - Flip a Sessions/Checkpoints tab `enabled` in `course-workspace-shell.tsx` `TABS` + add the route under `teacher/courses/[courseId]/sessions/`. Sessions list (T037), detail (T038), edit + release-state control (T039, reuses the P1 meetings release-state endpoint). i18n under `teacher.sessions.*`. Pull `1372:86/88/90`.
   - Commit `feat(teacher): sessions list/detail/edit-release + workspace tab`.
 
-- [ ] **T17 — Teacher checkpoint studio + card editor + remove/carry-over modals (T040–T043).**
+- [x] **T17 — Teacher checkpoint studio + card editor + remove/carry-over modals (T040–T043).**
   - Studio by session (T040) listing draft cards with `ReviewStateChip`; review-point card editor (T041); remove-reason modal (T042, `removed_reason` enum); carry-over suggestion modal (T043, `carried_from_id`). Reuse P1 card CRUD mutations. Pull `1372:92/94/96/98`.
   - Commit `feat(teacher): checkpoint studio + card editor + remove/carry-over modals`.
 
-- [ ] **T18 — Teacher publish confirmation + QR launch + live monitor (T044–T046).**
+- [x] **T18 — Teacher publish confirmation + QR launch + live monitor (T044–T046).**
   - Publish confirmation dialog surfacing the `REVIEW_REQUIRED` gate as a `StateBanner` (PublishGateDialog pattern) (T044); QR launch panel rendering the signed token as a QR + window countdown (T045); live monitor consuming `useCheckpointMonitor` WS (submission count + confidence distribution + close) (T046). Pull `1372:100/102/104`.
   - Commit `feat(teacher): publish confirm + QR launch + live monitor`.
 
-- [ ] **T19 — Teacher attendance/results/history/archive/no-data (T047–T051).**
+- [x] **T19 — Teacher attendance/results/history/archive/no-data (T047–T051).**
   - Attendance roster result + manual-override modal with reason (T047); closed results view (T048); checkpoint history (T049); completed-sessions archive (T050); waiting/no-data EmptyState (T051, designed reason+next-action). Pull `1372:106/108/110/112/114`.
   - Commit `feat(teacher): attendance roster + results + history + archive + no-data`.
 
-- [ ] **T20 — Student QR landing → intro → confidence → comments → complete (S033–S037, MOBILE-FIRST).**
+- [x] **T20 — Student QR landing → intro → confidence → comments → complete (S033–S037, MOBILE-FIRST).**
   - Route `student/attend/[token]/` (QR landing S033, posts to `/attend/{token}`, routes into intro); checkpoint intro (S034); confidence cards using `ConfidenceScaleInput` (S035); final-comments card (S036); complete (S037). Keyboard-completable, `prefers-reduced-motion`, single-column. i18n `student.checkpoint.*`. Pull `1372:272/274/276/278/280`.
   - Commit `feat(student): QR landing → checkpoint confidence flow (mobile-first)`.
 
-- [ ] **T21 — Student missed/late + history + follow-up + revisit + attendance confirmed (S038–S042).**
+- [x] **T21 — Student missed/late + history + follow-up + revisit + attendance confirmed (S038–S042).**
   - Missed/late state (S038); checkpoint history (S039); follow-up-suggested (S040); revisit response (S041, `revisit-response` endpoint); attendance confirmed (S042). Pull `1372:282/284/286/288/290`. Playwright happy-path spec (QR scan → confidence → complete → attendance confirmed) where infra allows; else vitest against mocked hooks (per P0/P1/P2 offline convention). P3 close-out: update roadmap Phase Tracker + Handoff Log.
   - Commit `feat(student): checkpoint missed/history/follow-up/revisit/attendance + P3 close-out`.
 
@@ -174,15 +174,15 @@ Each task: failing test first → minimal impl → refactor → code review (`/c
 
 ## Self-review checklist (spec §4.2/§4.3 coverage before P3 close-out)
 
-- [ ] Full status machine reachable end-to-end: `draft→…→archived`, illegal transitions refused (T1/T5), `test_p1_has_no_publish_route` deleted + replaced.
-- [ ] `checkpoint_responses`: unique `(card_id,user_id)`, confidence −2..+2 CHECK, on_time/late derived, "missed" derived (T2/T6/T7).
-- [ ] Response submission emits exactly ONE `learning_event` (`during_class`) + enqueues `update_concept_mastery` for tagged review_point cards — no parallel evidence path (T7, Decision 5).
-- [ ] `attendance_records`: present/late/excused/absent, qr vs manual_override, override reason+by, unique `(meeting_id,user_id)`, participation-only never mastery (T3/T11).
-- [ ] QR security: signed (PyJWT HS256), short-lived + window-bound (`exp`), rotating, single active launch, single-use per student, scan rate-limited (T4/T9/T10, Decision 3).
-- [ ] Live monitor reuses the live-quiz `ConnectionManager` — no new WS system (T12, Decision 4).
-- [ ] RLS enforced + proven for both new student-owned tables under `meli_app` (T14, Decision 2).
-- [ ] Confidence scale is config-driven; `ConfidenceScaleInput` extracted + reused by readiness AND checkpoint cards (T15, Decision 6).
-- [ ] Student S033–S042 flow is mobile-first, keyboard-completable, empty/waiting states designed (T20/T21).
-- [ ] `close_due_checkpoints` cron idempotent + registered (T13).
-- [ ] Gates return typed codes (`REVIEW_REQUIRED`, `QR_NOT_AVAILABLE`) the UI maps to designed states (T5/T7/T9/T18).
-- [ ] No hardcoded strings (next-intl), no hardcoded colors (tokens), conventional commits, code review per task cluster.
+- [x] Full status machine reachable end-to-end: `draft→…→archived`, illegal transitions refused (T1/T5), `test_p1_has_no_publish_route` deleted + replaced.
+- [x] `checkpoint_responses`: unique `(card_id,user_id)`, confidence −2..+2 CHECK, on_time/late derived, "missed" derived (T2/T6/T7).
+- [x] Response submission emits exactly ONE `learning_event` (`during_class`) + enqueues `update_concept_mastery` for tagged review_point cards — no parallel evidence path (T7, Decision 5).
+- [x] `attendance_records`: present/late/excused/absent, qr vs manual_override, override reason+by, unique `(meeting_id,user_id)`, participation-only never mastery (T3/T11).
+- [x] QR security: signed (PyJWT HS256), short-lived + window-bound (`exp`), rotating, single active launch, single-use per student, scan rate-limited (T4/T9/T10, Decision 3).
+- [x] Live monitor reuses the live-quiz `ConnectionManager` — no new WS system (T12, Decision 4).
+- [x] RLS enforced + proven for both new student-owned tables under `meli_app` (T14, Decision 2).
+- [x] Confidence scale is config-driven; `ConfidenceScaleInput` extracted + reused by readiness AND checkpoint cards (T15, Decision 6).
+- [x] Student S033–S042 flow is mobile-first, keyboard-completable, empty/waiting states designed (T20/T21).
+- [x] `close_due_checkpoints` cron idempotent + registered (T13).
+- [x] Gates return typed codes (`REVIEW_REQUIRED`, `QR_NOT_AVAILABLE`) the UI maps to designed states (T5/T7/T9/T18).
+- [x] No hardcoded strings (next-intl), no hardcoded colors (tokens), conventional commits, code review per task cluster.
