@@ -48,6 +48,7 @@ async def _accessible_course(
         select(Course).join(Enrollment, Enrollment.course_id == Course.id).where(
             Course.id == course_id,
             Enrollment.user_id == user.id,
+            Enrollment.status == "active",
             Course.deleted_at.is_(None),
         )
     )
