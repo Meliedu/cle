@@ -1,6 +1,6 @@
 # Resume Pointer — read this first in any fresh session
 
-**Last updated:** 2026-07-07
+**Last updated:** 2026-07-07 (P2 complete)
 
 ## Active effort: Meli × CLE Checkpoint Loop (Figma "final" flow, 160 screens, 8 phases)
 
@@ -10,7 +10,7 @@
    `docs/superpowers/specs/2026-07-06-meli-cle-checkpoint-loop-design.md`
 3. Follow the roadmap's **Session bootstrap protocol** — it tells you which phase is next, whether its detailed plan exists, and how to execute + hand off.
 
-Current state: **P1 (Course setup wizard & gates) is COMPLETE** — all 17 tasks shipped on `feat/cle-p0-shell` (see the roadmap Handoff Log entry dated 2026-07-07 "P1 COMPLETE" for SHAs, the migration head chain, new routers/task types, verification numbers, and the known pre-existing backend-failure list). P0 is also complete. **Next action: write the P2 plan (student entry & enrollment) via `superpowers:writing-plans`** from the P2 phase brief + spec, then execute. P2 reuses P1's `assert_course_open` gate (`context_status='approved'`) + `join_mode`/`enroll_code_active`.
+Current state: **P2 (Student entry & enrollment) is COMPLETE** — all 16 tasks shipped on `feat/cle-p0-shell` (see the roadmap Handoff Log entry dated 2026-07-07 "P2 COMPLETE" for SHAs, the migration head chain, new tables/router/endpoints, the join funnel + teacher enrollment screens, verification numbers, and the known pre-existing backend-failure list). P0 and P1 are also complete. **Next action: write the P3 plan (checkpoint loop core) via `superpowers:writing-plans`** from the P3 phase brief + spec, then execute. P3 builds on P2's active enrollments + P1's checkpoint drafts, and adds `checkpoint_responses` (+RLS following the `readiness_responses` pattern established in P2).
 
 Note: `docs/` is gitignored — commit doc files with `git add -f`.
 
