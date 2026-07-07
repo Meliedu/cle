@@ -47,6 +47,7 @@ from app.models.course import Course
 from app.models.user import User
 from app.schemas.activity import (
     ActivityCreate,
+    ActivityIntro,
     ActivityRead,
     ActivityResponseResult,
     ActivityResponseSubmit,
@@ -403,6 +404,29 @@ async def _open_activity_for_student(
     if act.status not in OPEN_STATUSES:
         raise _activity_not_open("This activity is not open.")
     return act
+
+
+@router.get(
+    "/{activity_id}/intro",
+    response_model=APIResponse[ActivityIntro],
+)
+async def get_activity_intro(
+    activity_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> APIResponse[ActivityIntro]:
+    """Student-facing read of an OPEN activity's public shape (F9 runner).
+
+    Enrollment-scoped (``verify_enrollment``, active-only) and gated to
+    ``published``/``live`` — the SAME guard as the B9 response-submit endpoint
+    (``_open_activity_for_student``): 404 when it doesn't exist, 403 when the
+    caller isn't actively enrolled, ``ACTIVITY_NOT_OPEN`` (409) for a
+    draft/closed/archived activity. The owner CRUD read (``GET /activities/{id}``)
+    is untouched and still reads ANY status. Returns the slim ``ActivityIntro``
+    projection so no owner-internal columns leak (activities carry no answer key).
+    """
+    act = await _open_activity_for_student(activity_id, user, db)
+    return APIResponse(success=True, data=ActivityIntro.model_validate(act))
 
 
 @router.post(

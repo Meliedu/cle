@@ -9,7 +9,7 @@ import { PageHeader, StateBanner } from "@/components/patterns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError } from "@/lib/api";
 import {
-  useActivity,
+  useActivityIntro,
   useSubmitActivityResponse,
   type ActivityResponsePayload,
   type ActivityResponseRecord,
@@ -34,7 +34,9 @@ interface ActivityRunnerProps {
 
 /**
  * S053–S058 / S073 — the student activity flow orchestrator. Loads the activity
- * (F1 `useActivity`) and submits per-format answers (`useSubmitActivityResponse`),
+ * via the student-safe intro read (`useActivityIntro` → `GET /activities/{id}/intro`,
+ * enrollment-scoped + `published`/`live` only) and submits per-format answers
+ * (`useSubmitActivityResponse`),
  * folding the read + submit state into one focused, mobile-first screen:
  *
  *   loading → (read blocked / not-yet-open / `ACTIVITY_NOT_OPEN` 409) waiting
@@ -47,7 +49,7 @@ interface ActivityRunnerProps {
  */
 export function ActivityRunner({ courseId, activityId }: ActivityRunnerProps) {
   const t = useTranslations("student.activities.runner");
-  const { data: activity, isLoading, isError } = useActivity(activityId);
+  const { data: activity, isLoading, isError } = useActivityIntro(activityId);
   const submit = useSubmitActivityResponse(activityId);
 
   const [record, setRecord] = useState<ActivityResponseRecord | null>(null);

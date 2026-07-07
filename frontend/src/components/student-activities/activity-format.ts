@@ -1,7 +1,7 @@
 import type {
-  Activity,
   ActivityConfig,
   ActivityResponsePayload,
+  ActivityStatus,
 } from "@/hooks/use-activities";
 
 /**
@@ -58,7 +58,9 @@ export function reactionEntries(
 }
 
 /** An activity accepts responses only while `published` or `live` (backend B9). */
-export function isActivityOpen(activity: Activity): boolean {
+export function isActivityOpen(activity: {
+  readonly status: ActivityStatus;
+}): boolean {
   return activity.status === "published" || activity.status === "live";
 }
 

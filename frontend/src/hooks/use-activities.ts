@@ -70,6 +70,31 @@ export interface Activity {
   readonly updated_at: string;
 }
 
+/**
+ * Mirrors `ActivityIntro` — the student-facing public shape returned by
+ * `GET /activities/{id}/intro` (backend B9 intro read). A slim projection of
+ * {@link Activity}: it carries everything the F9 runner needs to render the
+ * interaction (`format`, `config`, `title`) plus the score-disclosure fields,
+ * but omits owner-internal columns (`meeting_id`, `score_category_id`,
+ * `created_at`/`updated_at`).
+ */
+export interface ActivityIntro {
+  readonly id: string;
+  readonly course_id: string;
+  readonly format: ActivityFormat;
+  readonly title: string;
+  readonly config: ActivityConfig;
+  readonly status: ActivityStatus;
+  readonly open_at: string | null;
+  readonly due_at: string | null;
+  readonly close_at: string | null;
+  readonly anonymous: boolean;
+  readonly score_bearing: boolean;
+  readonly points: number | null;
+  readonly grading_mode: GradingMode | null;
+  readonly late_rule: LateRule | null;
+}
+
 /** Per-format student submission payload (backend B9). */
 export interface SwipeResponsePayload {
   readonly prompt_index: number;
@@ -108,6 +133,7 @@ export interface ActivityResults {
 export const activityKeys = {
   list: (courseId: string) => ["activities", courseId] as const,
   detail: (activityId: string) => ["activity", activityId] as const,
+  intro: (activityId: string) => ["activity", activityId, "intro"] as const,
   results: (activityId: string) =>
     ["activity", activityId, "results"] as const,
 };
@@ -146,6 +172,21 @@ export function useActivity(activityId: string | null) {
   return useAuthedQuery<Activity>({
     queryKey: activityKeys.detail(activityId ?? ""),
     path: `/activities/${activityId}`,
+    enabled: Boolean(activityId),
+  });
+}
+
+/**
+ * GET `/activities/{id}/intro` — the student-facing public shape of an OPEN
+ * activity (backend B9 intro read). Enrollment-scoped + gated to
+ * `published`/`live`; a draft/closed/archived activity is refused with the typed
+ * `ACTIVITY_NOT_OPEN` (409), a non-enrolled caller with 403. This is the read the
+ * F9 student runner points at — NOT the owner-only `useActivity`.
+ */
+export function useActivityIntro(activityId: string | null) {
+  return useAuthedQuery<ActivityIntro>({
+    queryKey: activityKeys.intro(activityId ?? ""),
+    path: `/activities/${activityId}/intro`,
     enabled: Boolean(activityId),
   });
 }

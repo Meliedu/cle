@@ -486,6 +486,105 @@ async def test_submit_progress_user_id_is_authenticated_caller(
     assert len(rows) == 2
 
 
+# ----- student intro read (open activity public shape) -----
+
+@pytest.mark.asyncio
+async def test_intro_published_returns_public_shape(
+    db_session: AsyncSession, owned_course: Course, enrolled_student: User
+):
+    act = await _seed_activity(
+        db_session, owned_course, status="published",
+        score_bearing=True, grading_mode="participation",
+    )
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.get(f"/api/activities/{act.id}/intro")
+    app.dependency_overrides.clear()
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    # Public renderable shape: the student can render swipe/vote/comment config.
+    assert data["id"] == str(act.id)
+    assert data["course_id"] == str(owned_course.id)
+    assert data["format"] == "swipe"
+    assert data["title"] == "Warm-up"
+    assert data["config"] == {"prompts": ["Agree or disagree?"]}
+    assert data["status"] == "published"
+    assert data["anonymous"] is False
+    # Score-disclosure fields so the student sees whether it's graded.
+    assert data["score_bearing"] is True
+    assert data["grading_mode"] == "participation"
+    assert "points" in data
+    assert "late_rule" in data
+    assert "open_at" in data and "due_at" in data and "close_at" in data
+
+
+@pytest.mark.asyncio
+async def test_intro_live_returns_config(
+    db_session: AsyncSession, owned_course: Course, enrolled_student: User
+):
+    act = await _seed_activity(
+        db_session, owned_course, status="live", format="vote",
+        config={"options": ["A", "B"]},
+    )
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.get(f"/api/activities/{act.id}/intro")
+    app.dependency_overrides.clear()
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["config"] == {"options": ["A", "B"]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_status", ["draft", "closed", "archived"])
+async def test_intro_not_open_status_refused(
+    db_session: AsyncSession, owned_course: Course, enrolled_student: User,
+    bad_status: str,
+):
+    act = await _seed_activity(db_session, owned_course, status=bad_status)
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.get(f"/api/activities/{act.id}/intro")
+    app.dependency_overrides.clear()
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "ACTIVITY_NOT_OPEN"
+
+
+@pytest.mark.asyncio
+async def test_intro_not_enrolled_403(
+    db_session: AsyncSession, owned_course: Course
+):
+    act = await _seed_activity(db_session, owned_course, status="published")
+    outsider = User(
+        better_auth_id="actr_intro_outsider",
+        email="actrintrooutsider@connect.ust.hk",
+        full_name="Intro Outsider", role="student",
+    )
+    db_session.add(outsider)
+    await db_session.commit()
+    async with _student_client(db_session, outsider) as ac:
+        r = await ac.get(f"/api/activities/{act.id}/intro")
+    app.dependency_overrides.clear()
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_intro_missing_activity_404(
+    db_session: AsyncSession, enrolled_student: User
+):
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.get(f"/api/activities/{uuid.uuid4()}/intro")
+    app.dependency_overrides.clear()
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_owner_get_activity_any_status_unchanged(
+    async_client: AsyncClient, db_session: AsyncSession, owned_course: Course
+):
+    # The owner CRUD read (GET /activities/{id}) still reads a draft — unchanged.
+    act = await _seed_activity(db_session, owned_course, status="draft")
+    r = await async_client.get(f"/api/activities/{act.id}")
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["status"] == "draft"
+
+
 # ----- teacher results -----
 
 @pytest.mark.asyncio

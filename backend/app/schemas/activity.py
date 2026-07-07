@@ -81,6 +81,36 @@ class ActivityRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ActivityIntro(BaseModel):
+    """Student-facing public shape of an OPEN activity (B9 intro read).
+
+    A slim projection of ``ActivityRead`` that carries only what the student
+    runner (F9) needs to render the swipe/vote/comment interaction plus the
+    score-disclosure fields (so the student sees whether it's graded). Activities
+    carry NO answer key, so ``config`` is safe to expose; owner-internal columns
+    (``score_category_id``, ``created_at``/``updated_at``) are intentionally
+    omitted.
+    """
+
+    id: uuid.UUID
+    course_id: uuid.UUID
+    format: str
+    title: str
+    config: dict | None
+    status: str
+    open_at: datetime | None
+    due_at: datetime | None
+    close_at: datetime | None
+    anonymous: bool
+    # Score-disclosure: the student sees if/how this activity is graded.
+    score_bearing: bool
+    points: Decimal | None
+    grading_mode: str | None
+    late_rule: str | None
+
+    model_config = {"from_attributes": True}
+
+
 class ActivityResponseSubmit(BaseModel):
     """A student submission to one activity (B9).
 

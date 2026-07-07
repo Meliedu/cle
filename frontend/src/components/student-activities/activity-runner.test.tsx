@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import messages from "../../../messages/en.json";
 import { ActivityRunner } from "./activity-runner";
 import {
-  useActivity,
+  useActivityIntro,
   useSubmitActivityResponse,
-  type Activity,
+  type ActivityIntro,
 } from "@/hooks/use-activities";
 
 vi.mock("@/hooks/use-activities", async (importOriginal) => {
@@ -15,19 +15,18 @@ vi.mock("@/hooks/use-activities", async (importOriginal) => {
     await importOriginal<typeof import("@/hooks/use-activities")>();
   return {
     ...actual,
-    useActivity: vi.fn(),
+    useActivityIntro: vi.fn(),
     useSubmitActivityResponse: vi.fn(),
   };
 });
 
-const mockUseActivity = vi.mocked(useActivity);
+const mockUseActivityIntro = vi.mocked(useActivityIntro);
 const mockUseSubmit = vi.mocked(useSubmitActivityResponse);
 
-function makeActivity(overrides: Partial<Activity> = {}): Activity {
+function makeActivity(overrides: Partial<ActivityIntro> = {}): ActivityIntro {
   return {
     id: "a1",
     course_id: "c1",
-    meeting_id: null,
     format: "vote",
     title: "Which stance is stronger?",
     config: { options: ["Option A", "Option B"] },
@@ -36,27 +35,24 @@ function makeActivity(overrides: Partial<Activity> = {}): Activity {
     due_at: null,
     close_at: null,
     anonymous: false,
-    score_category_id: null,
     points: null,
     grading_mode: null,
     late_rule: null,
     score_bearing: false,
-    created_at: "2026-07-01T00:00:00Z",
-    updated_at: "2026-07-01T00:00:00Z",
     ...overrides,
   };
 }
 
 function setActivity(
-  data: Activity | undefined,
-  extra: Partial<ReturnType<typeof useActivity>> = {}
+  data: ActivityIntro | undefined,
+  extra: Partial<ReturnType<typeof useActivityIntro>> = {}
 ) {
-  mockUseActivity.mockReturnValue({
+  mockUseActivityIntro.mockReturnValue({
     data,
     isLoading: false,
     isError: false,
     ...extra,
-  } as unknown as ReturnType<typeof useActivity>);
+  } as unknown as ReturnType<typeof useActivityIntro>);
 }
 
 const mutateAsync = vi.fn();
