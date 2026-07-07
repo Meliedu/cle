@@ -26,12 +26,29 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_owned_course, require_instructor
-from app.models.activity import Activity
+from app.api._helpers import verify_enrollment
+from app.api.deps import (
+    get_current_user,
+    get_db,
+    get_owned_course,
+    require_instructor,
+)
+from app.models.activity import Activity, ActivityResponse
 from app.models.course import Course
 from app.models.user import User
-from app.schemas.activity import ActivityCreate, ActivityRead, ActivityUpdate
+from app.schemas.activity import (
+    ActivityCreate,
+    ActivityRead,
+    ActivityResponseResult,
+    ActivityResponseSubmit,
+    ActivityResults,
+    ActivityUpdate,
+)
 from app.schemas.common import APIResponse
+from app.services.activity_responses import (
+    OPEN_STATUSES,
+    submit_activity_response,
+)
 from app.services.score_policy import assert_score_policy_complete
 from app.services.work_items import upsert_work_item
 
@@ -339,3 +356,98 @@ async def publish_activity(
     await db.commit()
     await db.refresh(act)
     return APIResponse(success=True, data=ActivityRead.model_validate(act))
+
+
+# ----- student response submission (B9) -----
+
+
+def _activity_not_open(message: str) -> HTTPException:
+    """A typed ``ACTIVITY_NOT_OPEN`` gate refusal (§3.4), HTTP 409.
+
+    The student flow (F9) switches on this to render the "waiting / closed"
+    states rather than a generic error.
+    """
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={"code": "ACTIVITY_NOT_OPEN", "message": message},
+    )
+
+
+async def _open_activity_for_student(
+    activity_id: uuid.UUID, user: User, db: AsyncSession
+) -> Activity:
+    """Resolve an activity a student may currently answer.
+
+    404 when it doesn't exist / is soft-deleted; 403 when the caller isn't
+    actively enrolled (``verify_enrollment``); ``ACTIVITY_NOT_OPEN`` (409) when
+    it isn't ``published``/``live``.
+    """
+    act = await db.get(Activity, activity_id)
+    if act is None or act.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    await verify_enrollment(db, act.course_id, user.id)
+    if act.status not in OPEN_STATUSES:
+        raise _activity_not_open("This activity is not open.")
+    return act
+
+
+@router.post(
+    "/{activity_id}/responses",
+    response_model=APIResponse[ActivityResponseResult],
+    status_code=201,
+)
+async def submit_response(
+    activity_id: uuid.UUID,
+    body: ActivityResponseSubmit,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> APIResponse[ActivityResponseResult]:
+    """Upsert this student's activity submission + fire the participation seam.
+
+    Enrollment-scoped (``verify_enrollment``, active-only); the ``user_id`` is the
+    authenticated caller, so a student can only ever write their own row.
+    """
+    act = await _open_activity_for_student(activity_id, user, db)
+    response = await submit_activity_response(
+        db,
+        activity=act,
+        user_id=user.id,
+        payload=body.payload,
+    )
+    return APIResponse(
+        success=True, data=ActivityResponseResult.model_validate(response)
+    )
+
+
+@router.get(
+    "/{activity_id}/results",
+    response_model=APIResponse[ActivityResults],
+)
+async def get_activity_results(
+    activity_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+) -> APIResponse[ActivityResults]:
+    """Teacher evidence/aggregate view for an activity (owner-guarded).
+
+    The privileged app connection sees every student's submission; a student gets
+    403 (``require_instructor``), a non-owner instructor 404 (``_owned_activity``).
+    """
+    act = await _owned_activity(activity_id, user, db)
+    rows = (
+        await db.execute(
+            select(ActivityResponse).where(
+                ActivityResponse.activity_id == act.id
+            )
+        )
+    ).scalars().all()
+    return APIResponse(
+        success=True,
+        data=ActivityResults(
+            activity_id=act.id,
+            format=act.format,
+            status=act.status,
+            submission_count=len(rows),
+            responses=[ActivityResponseResult.model_validate(r) for r in rows],
+        ),
+    )

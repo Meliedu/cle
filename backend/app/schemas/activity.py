@@ -79,3 +79,42 @@ class ActivityRead(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ActivityResponseSubmit(BaseModel):
+    """A student submission to one activity (B9).
+
+    ``payload`` is a free, format-specific dict — the service interprets it per
+    ``format`` (swipe: which prompt + L/R; vote: chosen option; comment_reaction:
+    a reaction/comment object that STACKS inside the stored payload).
+    """
+
+    payload: dict
+
+
+class ActivityResponseResult(BaseModel):
+    """One persisted student submission row (result / evidence view)."""
+
+    id: uuid.UUID
+    activity_id: uuid.UUID
+    user_id: uuid.UUID
+    payload: dict | None
+    status: str
+    submitted_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ActivityResults(BaseModel):
+    """Teacher evidence/aggregate view for one activity (B9, owner-guarded).
+
+    ``submission_count`` is the number of student submissions; ``responses`` is
+    the per-student evidence. A richer format-specific live ``distribution`` is
+    computed by the B10 monitor (``compute_activity_monitor_state``).
+    """
+
+    activity_id: uuid.UUID
+    format: str
+    status: str
+    submission_count: int
+    responses: list[ActivityResponseResult]
