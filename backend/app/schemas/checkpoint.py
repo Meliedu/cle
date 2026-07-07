@@ -51,6 +51,10 @@ class CheckpointResponse(BaseModel):
     release_at: datetime | None = None
     close_at: datetime | None = None
     close_rule: CloseRule | None = None
+    # The prior checkpoint a ``follow_up`` carries its review points from
+    # (§4.2 carry-over). NULL for first-run ``session`` checkpoints. Surfaced so
+    # the teacher studio can flag the carry-over lineage (P3 T043).
+    carried_from_id: uuid.UUID | None = None
     generation_meta: dict | None
     created_at: datetime
     updated_at: datetime

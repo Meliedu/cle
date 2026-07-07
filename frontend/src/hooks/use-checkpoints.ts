@@ -47,6 +47,8 @@ export interface Checkpoint {
   readonly release_at?: string | null;
   readonly close_at?: string | null;
   readonly close_rule?: CloseRule | null;
+  /** Prior checkpoint a `follow_up` carries its review points from (§4.2). */
+  readonly carried_from_id?: string | null;
   readonly generation_meta: Record<string, unknown> | null;
   readonly created_at: string;
   readonly updated_at: string;

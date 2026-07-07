@@ -696,6 +696,10 @@
       "title": "Sessions",
       "subtitle": "Review each session and its checkpoints. Open a session to manage its release and checkpoint.",
       "manageInSetup": "Add in setup",
+      "viewHistory": "History",
+      "attendance": {
+        "title": "Attendance"
+      },
       "untitled": "Untitled session",
       "placeholder": "—",
       "sessionLabel": "Session {index}",
@@ -795,6 +799,227 @@
             }
           }
         }
+      }
+    },
+    "studio": {
+      "eyebrow": "Checkpoint studio",
+      "backToSession": "Back to session",
+      "subtitle": "Review the drafted cards, edit a review point, or remove one with a reason before you approve and publish this check-in.",
+      "subtitleLocked": "This checkpoint has left draft, so its cards are locked. It moves through its lifecycle from here.",
+      "notFound": {
+        "title": "We couldn't find this checkpoint",
+        "reason": "It may have been removed or belongs to another session. Return to the session."
+      },
+      "status": {
+        "draft": "Draft",
+        "teacher_editing": "Editing",
+        "approved": "Approved",
+        "scheduled": "Scheduled",
+        "published": "Published",
+        "live": "Live",
+        "closed": "Closed",
+        "archived": "Archived"
+      },
+      "cards": {
+        "title": "Cards",
+        "count": "{count, plural, one {# card} other {# cards}}",
+        "emptyTitle": "No cards yet",
+        "emptyReason": "This checkpoint has no cards. Draft cards are generated from your materials in setup."
+      },
+      "promptLabel": "Review point {position}",
+      "kind": {
+        "review_point": "Review point",
+        "final_comments": "Final comments"
+      },
+      "removed": {
+        "not_needed": "Removed — not needed",
+        "duplicate": "Removed — duplicate",
+        "not_covered": "Removed — not covered",
+        "other": "Removed"
+      },
+      "edit": "Edit",
+      "save": "Save",
+      "cancel": "Cancel",
+      "remove": "Remove",
+      "restore": "Restore",
+      "fixed": "Fixed card",
+      "errors": {
+        "generic": "Something went wrong. Please try again.",
+        "REVIEW_REQUIRED": "This checkpoint has left draft, so its cards can no longer be edited.",
+        "FINAL_CARD_FIXED": "The final-comments card is fixed and can't be removed.",
+        "REMOVE_REASON_REQUIRED": "Choose a reason before removing this card."
+      },
+      "removeDialog": {
+        "title": "Remove this card?",
+        "subtitle": "Removed cards stay on record with your reason so the check-in is explainable later.",
+        "reasonLabel": "Reason",
+        "reason": {
+          "not_needed": "Not needed",
+          "duplicate": "Duplicate of another card",
+          "not_covered": "Not covered this session",
+          "other": "Other"
+        },
+        "noteLabel": "Note (optional)",
+        "notePlaceholder": "Add context for this removal",
+        "cancel": "Cancel",
+        "confirm": "Remove card"
+      },
+      "carryOver": {
+        "bannerTitle": "This is a follow-up checkpoint",
+        "bannerReason": "Its review points were carried forward from an earlier checkpoint students found difficult.",
+        "review": "Review carry-over",
+        "title": "Carried-over review points",
+        "subtitle": "This follow-up revisits the weak points from a previous checkpoint. Compare them before you publish.",
+        "carriedFrom": "Carried forward from “{title}”.",
+        "carriedFromUnknown": "Carried forward from an earlier checkpoint.",
+        "dismiss": "Close",
+        "viewSource": "Open source checkpoint"
+      }
+    },
+    "checkpoint": {
+      "lifecycle": {
+        "title": "Lifecycle",
+        "hint": {
+          "draft": "Approve this checkpoint once its cards are ready.",
+          "teacher_editing": "Approve this checkpoint once its cards are ready.",
+          "approved": "Publish to open it for students, or keep editing its cards first.",
+          "scheduled": "Scheduled for release. Publish now to open it early.",
+          "published": "Open for students. Show the QR to take attendance and watch responses land live.",
+          "live": "Live now. Show the QR to take attendance and watch responses land.",
+          "closed": "This checkpoint is closed. Its results are final.",
+          "archived": "This checkpoint is archived."
+        },
+        "approve": "Approve checkpoint",
+        "publish": "Publish checkpoint",
+        "close": "Close checkpoint",
+        "approveError": "We couldn't approve this checkpoint. Add a review point and the final card, then try again.",
+        "closeError": "We couldn't close this checkpoint. Try again.",
+        "blockedTitle": "Can't do that yet",
+        "closedTitle": "Checkpoint closed",
+        "closedReason": "Students can no longer respond, and its results are final."
+      },
+      "publish": {
+        "title": "Publish this checkpoint?",
+        "subtitle": "Publishing releases it to enrolled students right away. They can respond until it closes.",
+        "requirementsLabel": "Publish requirements",
+        "requirements": {
+          "session": "Attached to a session"
+        },
+        "closeRuleLabel": "When should it close?",
+        "closeRule": {
+          "end_of_session": "At the end of the session",
+          "at_close_at": "At a specific time",
+          "manual": "When I close it manually"
+        },
+        "closeAtLabel": "Close time",
+        "gate": {
+          "title": "Not ready to publish",
+          "generic": "We couldn't publish this checkpoint. Try again.",
+          "genericReason": "This checkpoint doesn't meet the publish requirements yet."
+        },
+        "cancel": "Cancel",
+        "confirm": "Publish now"
+      },
+      "qr": {
+        "launchTitle": "Take attendance with a QR code",
+        "launchReason": "Launch a signed, time-boxed QR students scan to check in and open the checkpoint.",
+        "launch": "Launch QR",
+        "qrAlt": "Attendance QR code",
+        "countdownLabel": "until this code expires",
+        "expired": "This code has expired",
+        "rotate": "Rotate code",
+        "fallbackLabel": "Scan link",
+        "unavailableTitle": "QR isn't available",
+        "unavailableReason": "This checkpoint must be a published, session-bound check-in with QR enabled.",
+        "generic": "We couldn't launch the QR code. Try again."
+      },
+      "monitor": {
+        "title": "Live responses",
+        "status": {
+          "live": "Live",
+          "connecting": "Connecting…",
+          "closed": "Closed"
+        },
+        "submissions": "Responses",
+        "distributionLabel": "Confidence distribution",
+        "closedNotice": "This checkpoint has closed. No more responses will arrive."
+      }
+    },
+    "attendance": {
+      "status": {
+        "present": "Present",
+        "late": "Late",
+        "excused": "Excused",
+        "absent": "Absent"
+      },
+      "empty": {
+        "title": "No attendance yet",
+        "reason": "Once you launch a check-in and students scan the QR, their attendance appears here."
+      },
+      "overriddenNote": "Overridden — {reason}",
+      "cannotOverride": "No scan on record to override.",
+      "override": {
+        "trigger": "Override",
+        "title": "Override attendance",
+        "subtitle": "Correct the attendance status for {name}.",
+        "statusLabel": "Status",
+        "status": {
+          "present": "Present",
+          "late": "Late",
+          "excused": "Excused",
+          "absent": "Absent"
+        },
+        "reasonLabel": "Reason",
+        "reasonPlaceholder": "Why are you changing this?",
+        "reasonHint": "A reason is required and kept on record.",
+        "error": "We couldn't save the override. Try again.",
+        "cancel": "Cancel",
+        "confirm": "Save override"
+      }
+    },
+    "results": {
+      "summary": {
+        "active": "Active students",
+        "responded": "Responded",
+        "missed": "Missed"
+      },
+      "kind": {
+        "review_point": "Review point",
+        "final_comments": "Final comments"
+      },
+      "responseCount": "{count, plural, one {# response} other {# responses}}",
+      "textResponses": "{count, plural, one {# written response} other {# written responses}}",
+      "distributionLabel": "Confidence distribution",
+      "empty": {
+        "title": "No results yet",
+        "reason": "Results appear once this checkpoint has closed and students have responded."
+      }
+    },
+    "history": {
+      "back": "Back to sessions",
+      "title": "History & archive",
+      "subtitle": "Closed checkpoints and completed sessions for this course. Open a checkpoint to review its results.",
+      "untitled": "Untitled session",
+      "checkpointsHeading": "Checkpoint history",
+      "sessionsHeading": "Completed sessions",
+      "noCheckpoints": "No closed checkpoints yet.",
+      "noSessions": "No completed sessions yet.",
+      "viewResults": "View results",
+      "noSessionLink": "Not linked to a session",
+      "status": {
+        "draft": "Draft",
+        "teacher_editing": "Editing",
+        "approved": "Approved",
+        "scheduled": "Scheduled",
+        "published": "Published",
+        "live": "Live",
+        "closed": "Closed",
+        "archived": "Archived"
+      },
+      "empty": {
+        "title": "Nothing archived yet",
+        "reason": "Once checkpoints close and sessions are taught, they'll be recorded here for review.",
+        "action": "Back to sessions"
       }
     },
     "enrollment": {
