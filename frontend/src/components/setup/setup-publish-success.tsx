@@ -28,7 +28,7 @@ function courseInitials(name: string): string {
     .filter(Boolean)
     .map((word) => word[0]?.toUpperCase() ?? "")
     .join("");
-  return (letters.slice(0, 2) || name.slice(0, 2).toUpperCase() || "C").padEnd(1, "");
+  return letters.slice(0, 2) || name.slice(0, 2).toUpperCase() || "C";
 }
 
 /**
@@ -90,8 +90,13 @@ export function SetupPublishSuccess({ courseId, onShowCode }: SetupPublishSucces
             {t("whatsNext")}
           </p>
           <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
+            {/*
+              The teacher course-detail workspace ships in P4; until then link to
+              the course list (which exists and now shows the published course)
+              rather than `/teacher/courses/{id}`, which has no page and 404s.
+            */}
             <NextActionLink
-              href={`/teacher/courses/${courseId}`}
+              href="/teacher/courses"
               icon={FolderOpen}
               title={t("openCourse")}
               hint={t("openCourseHint")}
