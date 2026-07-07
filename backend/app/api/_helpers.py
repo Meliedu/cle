@@ -13,11 +13,18 @@ async def verify_enrollment(
     course_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> None:
-    """Require an active enrollment in a non-soft-deleted course.
+    """Require an *active* enrollment in a non-soft-deleted course.
 
     Joins to ``Course`` so soft-deleted courses fail verification in a single
     query, avoiding the stale-course / stale-enrollment gap that would appear
     if we checked enrollment alone.
+
+    The ``status == "active"`` clause is load-bearing security: P2 join-approval
+    creates ``status='pending'`` rows for code+approval courses (and rejected
+    students keep a ``status='rejected'`` row). Without this filter a pending or
+    rejected student would clear the gate and reach the entire student surface
+    (checkpoint responses, quizzes, flashcards, mastery writes, …) for a course
+    the teacher never admitted them to.
     """
     result = await db.execute(
         select(Enrollment)
@@ -25,6 +32,7 @@ async def verify_enrollment(
         .where(
             Enrollment.course_id == course_id,
             Enrollment.user_id == user_id,
+            Enrollment.status == "active",
             Course.deleted_at.is_(None),
         )
     )

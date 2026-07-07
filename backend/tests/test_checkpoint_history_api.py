@@ -387,3 +387,96 @@ async def test_revisit_non_enrolled_rejected(
         )
     app.dependency_overrides.clear()
     assert r.status_code == 403
+
+
+# ----- enrollment gate: pending/rejected students blocked (HIGH-sev fix) -----
+
+
+@pytest_asyncio.fixture
+async def pending_student(db_session: AsyncSession, owned_course: Course) -> User:
+    """A student with a ``status='pending'`` enrollment (P2 join-approval).
+
+    The teacher has NOT admitted them — every student-surface gate
+    (``verify_enrollment``) must reject them with 403.
+    """
+    student = User(
+        better_auth_id="chkh_pending_01", email="pending@connect.ust.hk",
+        full_name="Pending Student", role="student",
+    )
+    db_session.add(student)
+    await db_session.flush()
+    db_session.add(
+        Enrollment(
+            course_id=owned_course.id, user_id=student.id,
+            role="student", status="pending",
+        )
+    )
+    await db_session.commit()
+    await db_session.refresh(student)
+    return student
+
+
+@pytest.mark.asyncio
+async def test_pending_student_blocked_on_intro(
+    db_session: AsyncSession, owned_course: Course, pending_student: User
+):
+    made = await _make_checkpoint(db_session, owned_course, status="published")
+    async with _student_client(db_session, pending_student) as ac:
+        r = await ac.get(f"/api/checkpoints/{made['cp'].id}/intro")
+    app.dependency_overrides.clear()
+    assert r.status_code == 403, r.text
+
+
+@pytest.mark.asyncio
+async def test_pending_student_blocked_on_submit(
+    db_session: AsyncSession, owned_course: Course, pending_student: User
+):
+    made = await _make_checkpoint(db_session, owned_course, status="published")
+    async with _student_client(db_session, pending_student) as ac:
+        r = await ac.post(
+            f"/api/checkpoints/{made['cp'].id}/responses",
+            json={"card_id": str(made["review"].id), "confidence": 1},
+        )
+    app.dependency_overrides.clear()
+    assert r.status_code == 403, r.text
+    # And nothing was written for the un-admitted student.
+    rows = (
+        await db_session.execute(
+            select(CheckpointResponse).where(
+                CheckpointResponse.user_id == pending_student.id
+            )
+        )
+    ).scalars().all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_pending_student_blocked_on_history(
+    db_session: AsyncSession, owned_course: Course, pending_student: User
+):
+    await _make_checkpoint(db_session, owned_course, status="published")
+    async with _student_client(db_session, pending_student) as ac:
+        r = await ac.get(f"/api/users/me/courses/{owned_course.id}/checkpoints")
+    app.dependency_overrides.clear()
+    assert r.status_code == 403, r.text
+
+
+@pytest.mark.asyncio
+async def test_active_student_still_allowed_after_gate_fix(
+    db_session: AsyncSession, owned_course: Course, enrolled_student: User
+):
+    """Guard against over-tightening: the active student keeps full access."""
+    made = await _make_checkpoint(db_session, owned_course, status="published")
+    async with _student_client(db_session, enrolled_student) as ac:
+        intro = await ac.get(f"/api/checkpoints/{made['cp'].id}/intro")
+        submit = await ac.post(
+            f"/api/checkpoints/{made['cp'].id}/responses",
+            json={"card_id": str(made["review"].id), "confidence": 1},
+        )
+        history = await ac.get(
+            f"/api/users/me/courses/{owned_course.id}/checkpoints"
+        )
+    app.dependency_overrides.clear()
+    assert intro.status_code == 200, intro.text
+    assert submit.status_code in (200, 201), submit.text
+    assert history.status_code == 200, history.text
