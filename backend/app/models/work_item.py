@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     String,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -75,4 +76,45 @@ class WorkItem(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
+    )
+
+
+class WorkItemProgress(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A single student's state for one checklist item (spec §4.6).
+
+    Student-owned row table (Decision 2): RLS owner-isolation on ``user_id`` is
+    enabled in the migration only (never declared on the ORM) — the same shape
+    as ``CheckpointResponse``. Owner is ``user_id``; enforcement runs under the
+    non-superuser ``meli_app`` role via the ``app.current_user_id`` GUC.
+
+    ``status`` ships the FULL spec §4.6 lifecycle now
+    (``pending|in_progress|submitted|late|missed|completed|follow_up_assigned``)
+    so no later widening is needed. One row per ``(work_item_id, user_id)`` — a
+    state transition upserts in place (Decision 3).
+    """
+
+    __tablename__ = "work_item_progress"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending','in_progress','submitted','late',"
+            "'missed','completed','follow_up_assigned')",
+            name="ck_work_item_progress_status_valid",
+        ),
+        UniqueConstraint(
+            "work_item_id", "user_id", name="uq_work_item_progress_item_user"
+        ),
+    )
+
+    work_item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("work_items.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="pending", server_default=text("'pending'")
     )
