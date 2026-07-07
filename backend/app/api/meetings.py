@@ -2,12 +2,20 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, get_owned_course
-from app.models import Assignment, Course, CourseMeeting, Enrollment, User
+from app.models import (
+    Assignment,
+    Course,
+    CourseMeeting,
+    Enrollment,
+    User,
+    WorkItem,
+    WorkItemProgress,
+)
 from app.schemas.common import APIResponse
 from app.schemas.curriculum import (
     CourseMeetingCreate,
@@ -247,6 +255,36 @@ async def calendar_feed(
         await db.execute(select(Assignment).where(*assignment_filter))
     ).scalars().all()
 
+    # P4 B7 (Decision 5): merge a THIRD source — course work_items whose
+    # ``due_at`` OR ``close_at`` falls in [from_date, to_date). The event ``at``
+    # uses ``due_at`` when present, else ``close_at``. work_items carry no
+    # published/visibility axis of their own here (they are teacher-authored and
+    # already gated by course access), so both roles see the same rows; only a
+    # student gets their OWN ``work_item_progress.status`` overlaid (owner-scoped).
+    in_window = lambda col: (col >= from_date) & (col < to_date)  # noqa: E731
+    work_items = (
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.course_id == course_id,
+                WorkItem.deleted_at.is_(None),
+                or_(in_window(WorkItem.due_at), in_window(WorkItem.close_at)),
+            )
+        )
+    ).scalars().all()
+
+    # Owner-scoped progress overlay: only the calling student's own rows.
+    progress_by_item: dict[uuid.UUID, str] = {}
+    if not is_instructor and work_items:
+        progress_rows = (
+            await db.execute(
+                select(WorkItemProgress).where(
+                    WorkItemProgress.user_id == user.id,
+                    WorkItemProgress.work_item_id.in_([w.id for w in work_items]),
+                )
+            )
+        ).scalars().all()
+        progress_by_item = {p.work_item_id: p.status for p in progress_rows}
+
     events: list[dict] = []
     for m in meetings:
         events.append({
@@ -267,5 +305,19 @@ async def calendar_feed(
             "assignment_kind": a.kind,
             "weight": float(a.weight) if a.weight is not None else None,
         })
+    for w in work_items:
+        event_at = w.due_at if w.due_at is not None else w.close_at
+        event = {
+            "id": str(w.id),
+            "kind": "work_item",
+            "title": w.title,
+            "at": event_at.isoformat(),
+            "source_kind": w.source_kind,
+            "required": w.required,
+        }
+        # Student-only: overlay this student's own progress (default pending).
+        if not is_instructor:
+            event["status"] = progress_by_item.get(w.id, "pending")
+        events.append(event)
     events.sort(key=lambda e: e["at"])
     return APIResponse(success=True, data=events)
