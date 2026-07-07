@@ -16,8 +16,11 @@ import {
   type ReadinessAnswer,
 } from "./readiness-question";
 
-/** The readiness phases this step can render (both are config question sets). */
-export type ReadinessPhaseName = "eligibility_survey" | "ready_check";
+/** The readiness phases this step can render (each is a config question set). */
+export type ReadinessPhaseName =
+  | "eligibility_survey"
+  | "ready_check"
+  | "diagnostic";
 
 interface StepReadinessPhaseProps {
   readonly phase: ReadinessPhaseName;

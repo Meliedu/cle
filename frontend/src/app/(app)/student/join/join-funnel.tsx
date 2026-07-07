@@ -9,6 +9,10 @@ import { Button } from "@/components/ui/button";
 import { StepCodeEntry } from "@/components/join/step-code-entry";
 import { StepShortPreview } from "@/components/join/step-short-preview";
 import { StepReadinessPhase } from "@/components/join/step-readiness-phase";
+import { StepDiagnostic } from "@/components/join/step-diagnostic";
+import { StepRecommendation } from "@/components/join/step-recommendation";
+import { StepDeepPreview } from "@/components/join/step-deep-preview";
+import { StepReadinessSummary } from "@/components/join/step-readiness-summary";
 import {
   StateInvalidCode,
   type InvalidCodeReason,
@@ -157,15 +161,44 @@ export function JoinFunnel() {
           phase="ready_check"
           courseId={state.courseId}
           code={state.code}
-          onDone={() => goTo("recommendation")}
+          onDone={() => goTo("diagnostic")}
           onBack={() => goTo("survey")}
+        />
+      ) : state.step === "diagnostic" && state.courseId ? (
+        <StepDiagnostic
+          courseId={state.courseId}
+          code={state.code}
+          onDone={() => goTo("recommendation")}
+          onBack={() => goTo("ready_check")}
+        />
+      ) : state.step === "recommendation" && state.courseId ? (
+        <StepRecommendation
+          courseId={state.courseId}
+          code={state.code}
+          onContinue={() => goTo("deep_preview")}
+          onBack={() => goTo("diagnostic")}
+        />
+      ) : state.step === "deep_preview" && state.courseId ? (
+        <StepDeepPreview
+          courseId={state.courseId}
+          code={state.code}
+          onContinue={() => goTo("summary")}
+          onBack={() => goTo("recommendation")}
+        />
+      ) : state.step === "summary" && state.courseId ? (
+        <StepReadinessSummary
+          courseId={state.courseId}
+          code={state.code}
+          onJoin={() => goTo("success")}
+          onBack={() => goTo("deep_preview")}
         />
       ) : (
         <div className="space-y-6">
           {/*
-            Placeholder for the post-ready-check steps (S008–S013) that Task 11
-            and Task 12 fill in: recommendation, deep preview, summary, and the
-            terminal join states. Until then the funnel parks here rather than
+            Placeholder for the terminal join states (S012/S013) that Task 12
+            fills in: course-not-open, pending-approval, and join-success. The
+            readiness summary's "Join course" CTA advances here; until Task 12
+            wires the enroll action the funnel parks on this state rather than
             dead-ending on a blank div.
           */}
           <StateBanner

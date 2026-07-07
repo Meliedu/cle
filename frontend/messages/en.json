@@ -657,9 +657,64 @@
         "continue": "Continue",
         "submitting": "Saving…"
       },
+      "diagnostic": {
+        "skipTitle": "No diagnostic for this course",
+        "skipReason": "Your instructor hasn't set up a diagnostic task, so you can move straight to your recommendation.",
+        "back": "Back",
+        "continue": "Continue"
+      },
+      "recommendation": {
+        "eyebrow": "Your recommendation",
+        "body": "Based on your ready check, here's a suggested starting point.",
+        "confidence": "Average confidence: {value}",
+        "levels": {
+          "foundation": "Foundation level",
+          "intermediate": "Intermediate level",
+          "advanced": "Advanced level",
+          "unknown": "Suggested starting point"
+        },
+        "claimLimitTitle": "About this recommendation",
+        "claimLimitFallback": "This is guidance to help you get started, not a placement decision.",
+        "loadingTitle": "Preparing your recommendation",
+        "loadingReason": "We're reviewing your readiness answers.",
+        "errorTitle": "We couldn't prepare your recommendation",
+        "errorReason": "Something went wrong computing your recommendation. Please try again.",
+        "retry": "Try again",
+        "back": "Back",
+        "continue": "Continue"
+      },
+      "deepPreview": {
+        "eyebrow": "What's inside",
+        "sessions": "Sessions",
+        "objectives": "Objectives",
+        "notOpenTitle": "Not open for joining yet",
+        "notOpenReason": "The full course preview opens once your instructor publishes the course. You can still continue and join when it's ready.",
+        "errorTitle": "We couldn't load the full preview",
+        "errorReason": "The detailed preview is unavailable right now. You can still continue.",
+        "back": "Back",
+        "continue": "Continue"
+      },
+      "summary": {
+        "eyebrow": "Almost there",
+        "title": "You're ready to join",
+        "body": "Here's what you've completed. Join the course to get started.",
+        "phases": {
+          "eligibility_survey": "Eligibility survey",
+          "ready_check": "Ready check",
+          "diagnostic": "Diagnostic task",
+          "recommendation": "Recommendation"
+        },
+        "noPhases": "No readiness steps were required for this course.",
+        "recommendationEcho": "Suggested starting point: {level}",
+        "claimLimitTitle": "Before you join",
+        "errorTitle": "We couldn't load your summary",
+        "errorReason": "Your readiness summary is unavailable right now. Please try again.",
+        "back": "Back",
+        "join": "Join course"
+      },
       "comingSoon": {
-        "title": "More readiness steps coming soon",
-        "reason": "The recommendation and summary steps are on their way.",
+        "title": "Finishing your join",
+        "reason": "The final join step is on its way.",
         "back": "Enter a different code"
       }
     }
