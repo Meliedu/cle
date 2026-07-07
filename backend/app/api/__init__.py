@@ -20,6 +20,7 @@ from app.api.concept_tags import router as concept_tags_router
 from app.api.concepts import router as concepts_router
 from app.api.config import router as config_router
 from app.api.courses import router as courses_router
+from app.api.documents import materials_router as materials_router
 from app.api.documents import router as documents_router
 from app.api.flashcards import router as flashcards_router
 from app.api.instructor_alerts import router as instructor_alerts_router
@@ -50,6 +51,7 @@ api_router.include_router(config_router)
 api_router.include_router(courses_router)
 api_router.include_router(readiness_router)
 api_router.include_router(documents_router)
+api_router.include_router(materials_router)
 api_router.include_router(canvas_router)
 api_router.include_router(canvas_oauth_router)
 api_router.include_router(rag_router)
