@@ -3,7 +3,7 @@ from app.models.base import Base
 from app.models.cron_run import CronRun
 from app.models.canvas import CanvasSyncEvent, CanvasUserCredential, PendingEnrollment
 from app.models.integration import CanvasIntegration
-from app.models.checkpoint import Checkpoint, CheckpointCard
+from app.models.checkpoint import Checkpoint, CheckpointCard, CheckpointResponse
 from app.models.chunk import Chunk
 from app.models.course import Course, Enrollment
 from app.models.document import Document
@@ -69,6 +69,7 @@ __all__ = [
     "Enrollment",
     "Checkpoint",
     "CheckpointCard",
+    "CheckpointResponse",
     "ScoreCategory",
     "Document",
     "Chunk",

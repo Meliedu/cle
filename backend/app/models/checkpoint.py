@@ -9,6 +9,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -108,3 +109,52 @@ class CheckpointCard(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base)
     )
     removed_reason: Mapped[str | None] = mapped_column(String(20))
     removed_note: Mapped[str | None] = mapped_column(String)
+
+
+class CheckpointResponse(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A student's answer to a single checkpoint card (spec §4.2).
+
+    Student-owned row table (Decision 2): RLS owner-isolation on ``user_id`` is
+    enabled in the migration only (never declared on the ORM). ``confidence`` is
+    the −2..+2 scale and is NULL for ``final_comments`` cards (which carry
+    ``text_response`` instead); ``status`` is ``on_time``/``late`` derived at
+    submission from the checkpoint close time. One row per ``(card_id, user_id)``
+    — a resubmit upserts in place.
+    """
+
+    __tablename__ = "checkpoint_responses"
+    __table_args__ = (
+        CheckConstraint(
+            "confidence IS NULL OR confidence BETWEEN -2 AND 2",
+            name="ck_checkpoint_responses_confidence_range",
+        ),
+        CheckConstraint(
+            "status IN ('on_time','late')",
+            name="ck_checkpoint_responses_status_valid",
+        ),
+        UniqueConstraint(
+            "card_id", "user_id", name="uq_checkpoint_responses_card_user"
+        ),
+    )
+
+    checkpoint_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("checkpoints.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    card_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("checkpoint_cards.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    confidence: Mapped[int | None] = mapped_column(Integer)
+    text_response: Mapped[str | None] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
