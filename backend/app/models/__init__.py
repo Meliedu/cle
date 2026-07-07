@@ -1,4 +1,5 @@
 from app.models.api_usage import ApiUsage
+from app.models.attendance import AttendanceRecord
 from app.models.base import Base
 from app.models.cron_run import CronRun
 from app.models.canvas import CanvasSyncEvent, CanvasUserCredential, PendingEnrollment
@@ -70,6 +71,7 @@ __all__ = [
     "Checkpoint",
     "CheckpointCard",
     "CheckpointResponse",
+    "AttendanceRecord",
     "ScoreCategory",
     "Document",
     "Chunk",
