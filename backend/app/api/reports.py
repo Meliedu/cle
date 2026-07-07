@@ -24,10 +24,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_owned_course, require_instructor
 from app.database import get_db
 from app.models.course import Course
+from app.models.evidence import LearningNote
 from app.models.report import Report
 from app.models.user import User
 from app.schemas.common import APIResponse
-from app.schemas.report import ReportResponse, ReportUpdate
+from app.schemas.report import (
+    EvidenceAppendixItem,
+    ReportExportResponse,
+    ReportResponse,
+    ReportShareSettings,
+    ReportShareSettingsResponse,
+    ReportUpdate,
+)
 from app.services.audit import record_audit_event
 from app.services.worker import _utcnow, enqueue_draft_reports
 
@@ -41,6 +49,57 @@ _VALID_PERIODS = ("weekly", "end_term")
 # A report's typed ``body`` is only editable while it is still a ``draft`` — once
 # reviewed/sent it is frozen (edits would desync the reviewed/sent evidence).
 _EDITABLE_STATUSES = {"draft"}
+
+# Only reviewed / instructor-edited notes may surface in an export appendix — an
+# unreviewed id that leaked into ``evidence_refs`` is filtered out defensively so
+# no unreviewed content ever reaches an export (Core §0.2, Decision 1).
+_APPENDIX_STATUSES = ("reviewed", "edited")
+
+# Where the export-share flags live. B6 adds NO migration, so the flags are
+# persisted under a reserved ``share_settings`` key inside the report's ``body``
+# JSONB (operational metadata, kept separate from the drafted content sections).
+_SHARE_SETTINGS_KEY = "share_settings"
+
+
+def _require_sendable(report: Report) -> None:
+    """The §3.4 "report can send" gate (Decision 3).
+
+    Send/export are refused (409 ``REPORT_NOT_REVIEWED``) unless the report has
+    been reviewed AND carries evidence — a report NEVER leaves review without
+    reviewed evidence refs behind it.
+    """
+    if report.status != "reviewed" or not report.evidence_refs:
+        raise _conflict(
+            "REPORT_NOT_REVIEWED",
+            "A report can only be sent or exported once it is reviewed and has "
+            "evidence refs.",
+        )
+
+
+def _read_share_settings(report: Report) -> ReportShareSettings:
+    """Resolve a report's stored export-share flags (defaults when unset)."""
+    raw = (report.body or {}).get(_SHARE_SETTINGS_KEY)
+    if isinstance(raw, dict):
+        return ReportShareSettings.model_validate(raw)
+    return ReportShareSettings()
+
+
+async def _resolve_appendix(
+    report: Report, db: AsyncSession
+) -> list[EvidenceAppendixItem]:
+    """Resolve ``evidence_refs`` → reviewed ``LearningNote`` rows only.
+
+    Filters to ``review_status IN ('reviewed','edited')`` — an unreviewed id that
+    leaked into ``evidence_refs`` is excluded (defensive; Core §0.2).
+    """
+    if not report.evidence_refs:
+        return []
+    stmt = select(LearningNote).where(
+        LearningNote.id.in_(report.evidence_refs),
+        LearningNote.review_status.in_(_APPENDIX_STATUSES),
+    )
+    notes = (await db.execute(stmt)).scalars().all()
+    return [EvidenceAppendixItem.model_validate(n) for n in notes]
 
 
 async def _get_owned_report(
@@ -200,3 +259,117 @@ async def approve_report(
     await db.commit()
     await db.refresh(report)
     return APIResponse(success=True, data=ReportResponse.model_validate(report))
+
+
+@report_item_router.post(
+    "/{report_id}/send", response_model=APIResponse[ReportResponse]
+)
+async def send_report(
+    report_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+) -> APIResponse[ReportResponse]:
+    """``reviewed`` → ``sent`` (Decision 3).
+
+    GATED: refuses 409 ``REPORT_NOT_REVIEWED`` unless the report is ``reviewed``
+    AND has non-empty ``evidence_refs``. On success sets ``sent_at`` and appends
+    an append-only ``audit_events`` (``report.send``) row atomically with the
+    transition (the student delivery state, S069, then flips to "sent").
+    """
+    report = await _get_owned_report(report_id, user, db)
+    _require_sendable(report)
+    report.status = "sent"
+    report.sent_at = _utcnow()
+    await record_audit_event(
+        db,
+        course_id=report.course_id,
+        actor_id=user.id,
+        event_type="report.send",
+        target_kind="report",
+        target_id=report.id,
+    )
+    await db.commit()
+    await db.refresh(report)
+    return APIResponse(success=True, data=ReportResponse.model_validate(report))
+
+
+@report_item_router.post(
+    "/{report_id}/export", response_model=APIResponse[ReportExportResponse]
+)
+async def export_report(
+    report_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+) -> APIResponse[ReportExportResponse]:
+    """Export a reviewed report with its reviewed-evidence appendix (Decision 3).
+
+    Same gate as ``/send`` (409 ``REPORT_NOT_REVIEWED``). Appends an entry to the
+    report's ``export_history`` JSONB and an append-only ``audit_events``
+    (``report.export``) row, then returns the export payload. The evidence
+    appendix resolves ``evidence_refs`` → reviewed notes ONLY — an unreviewed id
+    is filtered out defensively so no unreviewed content is ever exported.
+    """
+    report = await _get_owned_report(report_id, user, db)
+    _require_sendable(report)
+
+    exported_at = _utcnow()
+    appendix = await _resolve_appendix(report, db)
+
+    # Immutable append: reassign a fresh list so SQLAlchemy flags the JSONB dirty
+    # (append-only export log — mirrors how B5 reassigns ``report.body``).
+    entry = {
+        "exported_at": exported_at.isoformat(),
+        "actor_id": str(user.id),
+        "evidence_count": len(appendix),
+    }
+    report.export_history = [*(report.export_history or []), entry]
+
+    await record_audit_event(
+        db,
+        course_id=report.course_id,
+        actor_id=user.id,
+        event_type="report.export",
+        target_kind="report",
+        target_id=report.id,
+        metadata={"evidence_count": len(appendix)},
+    )
+    await db.commit()
+    await db.refresh(report)
+
+    payload = ReportExportResponse(
+        report=ReportResponse.model_validate(report),
+        evidence_appendix=appendix,
+        share_settings=_read_share_settings(report),
+        exported_at=exported_at,
+    )
+    return APIResponse(success=True, data=payload)
+
+
+@report_item_router.patch(
+    "/{report_id}/share-settings",
+    response_model=APIResponse[ReportShareSettingsResponse],
+)
+async def update_share_settings(
+    report_id: uuid.UUID,
+    settings: ReportShareSettings,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+) -> APIResponse[ReportShareSettingsResponse]:
+    """Persist a report's export-share flags (owner-guarded via its course).
+
+    Stored under ``body['share_settings']`` (B6 adds no migration). Share flags
+    are operational metadata, so they are settable regardless of report status
+    (unlike the frozen content sections) — an immutable dict reassign flags the
+    JSONB dirty.
+    """
+    report = await _get_owned_report(report_id, user, db)
+    report.body = {**(report.body or {}), _SHARE_SETTINGS_KEY: settings.model_dump()}
+    await db.commit()
+    await db.refresh(report)
+    return APIResponse(
+        success=True,
+        data=ReportShareSettingsResponse(
+            report_id=report.id,
+            share_settings=_read_share_settings(report),
+        ),
+    )
