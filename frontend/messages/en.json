@@ -744,6 +744,76 @@
           "title": "No students yet",
           "reason": "Share the enrollment code so students can join this course."
         }
+      },
+      "requests": {
+        "title": "Join requests",
+        "subtitle": "Approve only the students who should attend this course.",
+        "noName": "Unnamed student",
+        "requestedAt": "Requested {date}",
+        "approve": "Approve",
+        "deny": "Deny",
+        "actionError": "We couldn't update this request. Please try again.",
+        "empty": {
+          "title": "No pending requests",
+          "reason": "New join requests will appear here for your approval."
+        },
+        "error": {
+          "title": "Couldn't load join requests",
+          "reason": "We couldn't load the pending requests. Please try again."
+        },
+        "stale": {
+          "title": "Request already decided",
+          "reason": "This request was already handled elsewhere. The list has been refreshed."
+        }
+      },
+      "codeModal": {
+        "trigger": "Manage code",
+        "title": "Course join code",
+        "subtitle": "Share this code with students who should join. It stays hidden until you reveal it.",
+        "loading": "Loading join code…",
+        "codeLabel": "Course join code",
+        "active": "Active",
+        "inactive": "Inactive",
+        "codeMode": "Instant join",
+        "approvalMode": "Approval required",
+        "reveal": "Reveal",
+        "hide": "Hide",
+        "copy": "Copy",
+        "copied": "Copied",
+        "rotate": "New code",
+        "reactivate": "Reactivate with new code",
+        "deactivate": "Deactivate join access",
+        "activeHint": "Students who enter this code can join the course.",
+        "inactiveHint": "Joining is turned off. Rotate to a fresh code to reopen it.",
+        "copyError": "We couldn't copy the code. Reveal it and copy manually.",
+        "rotateError": "We couldn't rotate the code. Please try again.",
+        "deactivateError": "We couldn't deactivate the code. Please try again."
+      },
+      "scoreCategories": {
+        "title": "Score categories",
+        "subtitle": "How each kind of activity counts toward the course record.",
+        "edit": "Edit in setup",
+        "ungraded": "Practice",
+        "weightValue": "{weight}%",
+        "noPoints": "—",
+        "columns": {
+          "category": "Category",
+          "weight": "Weight",
+          "points": "Points pool",
+          "status": "Status"
+        },
+        "status": {
+          "graded": "Counts toward record",
+          "practice": "Practice only"
+        },
+        "empty": {
+          "title": "No score categories yet",
+          "reason": "Add categories in the setup score-policy step to shape how activities count."
+        },
+        "error": {
+          "title": "Couldn't load score categories",
+          "reason": "We couldn't load the score categories. Please try again."
+        }
       }
     }
   },

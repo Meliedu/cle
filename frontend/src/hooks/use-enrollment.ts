@@ -119,6 +119,79 @@ export function useJoinRequests(courseId: string) {
   });
 }
 
+// ----- join-request approve / deny (T033) -----
+
+/**
+ * Shared query-key helpers so the approval screen invalidates exactly the two
+ * lists a decision mutates: the pending `join-requests` list (the row leaves it)
+ * and the `roster` (an approve adds the student as an active enrollment).
+ */
+export const enrollmentKeys = {
+  joinRequests: (courseId: string) => ["join-requests", courseId] as const,
+  roster: (courseId: string) => ["roster", courseId] as const,
+};
+
+/**
+ * True when a decision failed because the request was already approved/denied
+ * by someone else (backend 409 `NOT_PENDING`). The UI treats this as benign:
+ * the list is simply stale, so it refetches rather than surfacing an error.
+ */
+export function isNotPendingError(error: unknown): boolean {
+  return error instanceof ApiError && error.code === "NOT_PENDING";
+}
+
+/**
+ * Factory for the approve/deny mutations — both POST to a decision endpoint,
+ * return the decided `JoinRequest`, and invalidate the join-requests + roster
+ * queries so an approved student appears in the roster and both leave the
+ * pending list. Invalidate-on-settle (not optimistic): a decision also has a
+ * server-side gate (`NOT_PENDING`) whose outcome the caller must observe, so we
+ * revalidate from the server rather than guess. Mirrors the use-setup mutation
+ * idiom (getToken → apiFetch → invalidate).
+ */
+function useDecideJoinRequest(courseId: string, decision: "approve" | "deny") {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation<JoinRequest, Error, string>({
+    mutationFn: async (enrollmentId: string) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const response = await apiFetch<ApiEnvelope<JoinRequest>>(
+        `/courses/${courseId}/join-requests/${enrollmentId}/${decision}`,
+        { method: "POST", token }
+      );
+      return response.data;
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({
+        queryKey: enrollmentKeys.joinRequests(courseId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: enrollmentKeys.roster(courseId),
+      });
+    },
+  });
+}
+
+/**
+ * POST `/courses/{id}/join-requests/{enrollment_id}/approve` — move a pending
+ * enrollment to `active` (the student joins the roster). Invalidates both the
+ * pending list and the roster on settle.
+ */
+export function useApproveJoinRequest(courseId: string) {
+  return useDecideJoinRequest(courseId, "approve");
+}
+
+/**
+ * POST `/courses/{id}/join-requests/{enrollment_id}/deny` — move a pending
+ * enrollment to `rejected` (the row leaves the pending list; never enters the
+ * roster). Invalidates both lists on settle.
+ */
+export function useDenyJoinRequest(courseId: string) {
+  return useDecideJoinRequest(courseId, "deny");
+}
+
 // ----- typed join errors -----
 
 /**
