@@ -6,6 +6,7 @@ import messages from "../../../messages/en.json";
 import { CourseInsightsView } from "./course-insights-view";
 import {
   useCourseInsights,
+  useEffectiveness,
   useSignal,
   useEvidenceSource,
   type CourseInsights,
@@ -14,12 +15,14 @@ import { useCourseSignals } from "./use-teacher-signals";
 
 vi.mock("@/hooks/use-insights", () => ({
   useCourseInsights: vi.fn(),
+  useEffectiveness: vi.fn(),
   useSignal: vi.fn(),
   useEvidenceSource: vi.fn(),
 }));
 vi.mock("./use-teacher-signals", () => ({ useCourseSignals: vi.fn() }));
 
 const mockUseCourseInsights = vi.mocked(useCourseInsights);
+const mockUseEffectiveness = vi.mocked(useEffectiveness);
 const mockUseCourseSignals = vi.mocked(useCourseSignals);
 const mockUseSignal = vi.mocked(useSignal);
 const mockUseEvidenceSource = vi.mocked(useEvidenceSource);
@@ -57,6 +60,11 @@ beforeEach(() => {
     isLoading: false,
     isError: false,
   } as unknown as ReturnType<typeof useCourseSignals>);
+  mockUseEffectiveness.mockReturnValue({
+    data: { has_evidence: false, total: 0 },
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof useEffectiveness>);
   mockUseSignal.mockReturnValue({
     data: undefined,
     isLoading: false,

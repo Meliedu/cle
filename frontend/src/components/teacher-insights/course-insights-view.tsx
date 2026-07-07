@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, StateBanner } from "@/components/patterns";
 import { useCourseInsights } from "@/hooks/use-insights";
 
+import { EffectivenessTracker } from "./effectiveness-tracker";
 import { SignalDetailDrawer } from "./signal-detail-drawer";
 import { useCourseSignals, type TeacherSignal } from "./use-teacher-signals";
 import { InsightCard, ProgressBar, StatTile } from "./insights-primitives";
@@ -181,6 +182,8 @@ export function CourseInsightsView({ courseId }: CourseInsightsViewProps) {
       </div>
 
       <SignalsPanel courseId={courseId} onOpen={setOpenSignalId} />
+
+      <EffectivenessTracker courseId={courseId} />
 
       <SignalDetailDrawer
         signalId={openSignalId}

@@ -1902,6 +1902,29 @@
         "resolved": "Resolved",
         "needs_review": "Needs review",
         "carried_forward": "Carried forward"
+      },
+      "effectiveness": {
+        "title": "Follow-up effectiveness",
+        "subtitle": "Did your follow-ups move the needle? The read side of the evidence loop.",
+        "total": "{count, plural, one {# follow-up tracked} other {# follow-ups tracked}}",
+        "improved": "Improved",
+        "resolved": "Resolved",
+        "persistent": "Still persisting",
+        "needsReview": "Needs review",
+        "byType": "By follow-up type",
+        "typeTotal": "{count, plural, one {# follow-up} other {# follow-ups}}",
+        "emptyTitle": "No follow-up outcomes yet",
+        "emptyReason": "Once you assign follow-ups and students revisit them, their improved-vs-persistent outcomes appear here.",
+        "loadErrorTitle": "We couldn't load effectiveness",
+        "loadErrorReason": "Please check your connection and try again."
+      },
+      "actionType": {
+        "revisit_checkpoint": "Revisit checkpoint",
+        "targeted_practice": "Targeted practice",
+        "practice": "Targeted practice",
+        "review_material": "Review material",
+        "reflection": "Reflection",
+        "other": "Follow-up"
       }
     }
   },

@@ -18,8 +18,9 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StateBanner } from "@/components/patterns";
-import { useSignal, useEvidenceSource } from "@/hooks/use-insights";
+import { useSignal } from "@/hooks/use-insights";
 
+import { EvidenceSourceView } from "./evidence-source-view";
 import { outcomeToneClass } from "./insights-format";
 
 /**
@@ -162,7 +163,7 @@ function DrawerBody({ signalId }: { readonly signalId: string }) {
         </div>
       )}
 
-      <EvidenceSection eventId={eventId} />
+      <EvidenceSourceView eventId={eventId} compact />
     </div>
   );
 }
@@ -187,64 +188,3 @@ function DetailBlock({ icon: Icon, label, children }: DetailBlockProps) {
   );
 }
 
-/**
- * Inline "where this came from" block over `useEvidenceSource`. F6 extends the
- * standalone `EvidenceSourceView` for the full T078 panel; here it stays a
- * compact summary within the drawer.
- */
-function EvidenceSection({ eventId }: { readonly eventId: string | null }) {
-  const t = useTranslations("teacher.insights");
-  const { data: source, isLoading } = useEvidenceSource(eventId);
-
-  if (eventId === null) {
-    return (
-      <div className="rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] p-3 text-[12px] text-[var(--color-text-muted)]">
-        {t("evidence.empty")}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-hover)] p-4">
-      <p className="text-[12px] font-semibold text-[var(--color-text)]">
-        {t("evidence.title")}
-      </p>
-      {isLoading || !source ? (
-        <Skeleton className="h-12 w-full" />
-      ) : (
-        <dl className="grid grid-cols-2 gap-3 text-[12px]">
-          <SourceRow label={t("evidence.source")}>
-            {t.has(`evidence.sourceKind.${source.source_kind}`)
-              ? t(`evidence.sourceKind.${source.source_kind}`)
-              : source.source_kind}
-          </SourceRow>
-          <SourceRow label={t("evidence.stage")}>{source.stage}</SourceRow>
-          {source.context_anchor ? (
-            <SourceRow label={t("evidence.anchor")}>
-              {typeof source.context_anchor === "string"
-                ? source.context_anchor
-                : JSON.stringify(source.context_anchor)}
-            </SourceRow>
-          ) : null}
-        </dl>
-      )}
-    </div>
-  );
-}
-
-function SourceRow({
-  label,
-  children,
-}: {
-  readonly label: string;
-  readonly children: React.ReactNode;
-}) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-[var(--color-text-muted)]">{label}</dt>
-      <dd className="mt-0.5 truncate font-medium text-[var(--color-text)]">
-        {children}
-      </dd>
-    </div>
-  );
-}
