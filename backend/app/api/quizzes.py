@@ -28,6 +28,7 @@ from app.models.user import User
 from app.models.work_item import WorkItem
 from app.schemas.common import APIResponse
 from app.services.gamification import award_xp
+from app.services.question_grading import grade_question, validate_question_shape
 from app.services.score_policy import assert_score_policy_complete
 from app.services.work_items import upsert_progress, upsert_work_item
 from app.schemas.quiz import (
@@ -76,7 +77,9 @@ def _enqueue_mastery_for_quiz(
         question = questions_by_id.get(qid)
         if question is None:
             continue
-        outcome = 1.0 if answer == question.correct_answer else 0.0
+        # P5 B7: route every type through grade_question (MC stays identical:
+        # grade_question returns exactly 1.0 if answer==correct_answer else 0.0).
+        outcome = grade_question(question, answer)
         db.add(
             Task(
                 task_type="update_concept_mastery",
@@ -561,10 +564,15 @@ async def add_question(
     )
     next_index = count_result.scalar_one()
 
+    # P5 B7: shape-validate the stored payload per type (Decision 2). MC keeps
+    # its existing key-in-options guard via the Pydantic model_validator; the
+    # new types are validated here (their `correct_answer` is JSON-encoded).
+    validate_question_shape(body.type, body.options, body.correct_answer)
+
     question = Question(
         quiz_id=quiz_id,
         question_index=next_index,
-        type="multiple_choice",
+        type=body.type,
         question_text=body.question_text,
         options=body.options,
         correct_answer=body.correct_answer,
@@ -620,19 +628,47 @@ async def update_question(
         if not text:
             raise HTTPException(status_code=400, detail="Question text cannot be empty")
         question.question_text = text
-    if body.options is not None:
-        question.options = body.options
-    if body.correct_answer is not None:
-        # The Pydantic model_validator enforces correct_answer ∈ options when
-        # both are sent together. For partial updates (only correct_answer),
-        # validate against the current row's options.
-        target_options = body.options if body.options is not None else question.options
-        if target_options and body.correct_answer not in target_options:
-            raise HTTPException(
-                status_code=400,
-                detail="correct_answer must be one of the option keys",
+
+    # P5 B7: resolve the EFFECTIVE type (an explicit change wins, else the row's
+    # current type) so shape validation and the MC guard route correctly.
+    effective_type = body.type if body.type is not None else question.type
+
+    if effective_type == "multiple_choice":
+        # MC path UNCHANGED: apply options first, then enforce key-in-options
+        # (the Pydantic model_validator already covers the both-sent case; this
+        # covers a partial update against the current row's options).
+        if body.options is not None:
+            question.options = body.options
+        if body.correct_answer is not None:
+            target_options = (
+                body.options if body.options is not None else question.options
             )
-        question.correct_answer = body.correct_answer
+            if target_options and body.correct_answer not in target_options:
+                raise HTTPException(
+                    status_code=400,
+                    detail="correct_answer must be one of the option keys",
+                )
+            question.correct_answer = body.correct_answer
+    else:
+        # New renderer: validate the resulting stored shape (Decision 2). Use
+        # the effective options + correct_answer (fall back to the existing row
+        # values for fields the partial update omits).
+        effective_options = (
+            body.options if body.options is not None else question.options
+        )
+        effective_correct = (
+            body.correct_answer
+            if body.correct_answer is not None
+            else question.correct_answer
+        )
+        validate_question_shape(effective_type, effective_options, effective_correct)
+        if body.options is not None:
+            question.options = body.options
+        if body.correct_answer is not None:
+            question.correct_answer = body.correct_answer
+
+    if body.type is not None:
+        question.type = body.type
     if body.explanation is not None:
         question.explanation = body.explanation
     if body.difficulty is not None:
@@ -792,7 +828,8 @@ async def submit_attempt(
     for question in quiz.questions:
         q_id_str = str(question.id)
         selected = body.answers.get(q_id_str, "")
-        is_correct = selected == question.correct_answer
+        # P5 B7: per-type grading (MC identical to the old `selected == correct`).
+        is_correct = grade_question(question, selected) == 1.0
         if is_correct:
             correct_count += 1
 
