@@ -1207,6 +1207,131 @@
           "reason": "We couldn't load the score categories. Please try again."
         }
       }
+    },
+    "materials": {
+      "title": "Materials",
+      "subtitle": "Organize the files and links used across sessions and activities.",
+      "actions": {
+        "upload": "Upload material",
+        "addLink": "Add link",
+        "dismiss": "Dismiss"
+      },
+      "folders": {
+        "title": "Folders",
+        "note": "Session folders come from your course setup.",
+        "all": "All materials",
+        "unassigned": "Unassigned",
+        "session": "Session {index}"
+      },
+      "release": {
+        "locked": "Hidden",
+        "released": "Released",
+        "completed": "Completed",
+        "archived": "Archived"
+      },
+      "table": {
+        "name": "Name",
+        "type": "Type",
+        "session": "Session",
+        "status": "Status",
+        "unassigned": "Unassigned",
+        "empty": "No files in this folder yet."
+      },
+      "type": {
+        "pdf": "PDF",
+        "docx": "Word document",
+        "pptx": "Presentation",
+        "video": "Video",
+        "audio": "Audio",
+        "link": "Link",
+        "file": "File"
+      },
+      "docStatus": {
+        "ready": "Ready",
+        "processing": "Processing",
+        "pending": "Queued",
+        "failed": "Failed"
+      },
+      "upload": {
+        "title": "Upload materials",
+        "hint": "Files stay private to you until their session is released to students.",
+        "done": "Done",
+        "afterTitle": "After upload",
+        "savedTitle": "Saved to Materials",
+        "savedBody": "Files are added to your course library right away.",
+        "releaseTitle": "Released with sessions",
+        "releaseBody": "Students see a material once you assign it to a session and release that session."
+      },
+      "link": {
+        "title": "Add link",
+        "subtitle": "Attach an external resource to this course.",
+        "urlLabel": "Link URL",
+        "urlPlaceholder": "https://example.com/article",
+        "urlInvalid": "Enter a valid URL starting with http:// or https://.",
+        "nameLabel": "Title",
+        "namePlaceholder": "Give the resource a name",
+        "sessionLabel": "Session",
+        "sessionNone": "Unassigned",
+        "descriptionLabel": "Description",
+        "descriptionPlaceholder": "What is this resource about? (optional)",
+        "cancel": "Cancel",
+        "submit": "Add link",
+        "unsupportedTitle": "Links aren't stored yet",
+        "unsupportedBody": "This build stores uploaded files. External links will be saved once the resource backend lands, so this link wasn't added."
+      },
+      "empty": {
+        "title": "No materials yet",
+        "reason": "Upload files or add links to make them available for sessions, checkpoints, and practice builders.",
+        "upload": "Upload materials",
+        "addLink": "Add link"
+      },
+      "loadError": {
+        "title": "Couldn't load materials",
+        "reason": "Something went wrong loading this course's materials. Refresh to try again."
+      },
+      "detail": {
+        "title": "Material details",
+        "type": "Type",
+        "session": "Session",
+        "uploaded": "Uploaded",
+        "size": "Size",
+        "unassigned": "Unassigned",
+        "openPreview": "Open preview",
+        "assign": "Assign to session",
+        "remove": "Remove"
+      },
+      "preview": {
+        "back": "Back to materials",
+        "openInNewTab": "Open in new tab",
+        "download": "Download",
+        "errorTitle": "Preview unavailable",
+        "errorReason": "We couldn't open a secure preview for this file. Download it to view instead.",
+        "expiresNote": "This preview link is private to you and expires in a few minutes.",
+        "inlineUnavailableTitle": "Preview isn't available inline",
+        "inlineUnavailableReason": "This file type can't be shown in the browser. Open it in a new tab to view."
+      },
+      "assign": {
+        "title": "Assign material",
+        "subtitle": "Choose where \"{name}\" should appear.",
+        "sessionLabel": "Assign to session",
+        "unassign": "Unassigned",
+        "cancel": "Cancel",
+        "submit": "Save assignment",
+        "errorTitle": "Couldn't assign material",
+        "notFound": "That session no longer exists. Refresh and pick another.",
+        "genericError": "Something went wrong assigning this material. Please try again."
+      },
+      "remove": {
+        "title": "Remove material?",
+        "subtitle": "Choose what should happen to \"{name}\".",
+        "optionUnassignTitle": "Move to Unassigned",
+        "optionUnassignBody": "Keeps the file in your course library, unlinked from any session.",
+        "optionDeleteTitle": "Delete from course",
+        "optionDeleteBody": "Permanently removes the file from this course for everyone. This can't be undone.",
+        "cancel": "Cancel",
+        "confirmUnassign": "Move to Unassigned",
+        "confirmDelete": "Delete permanently"
+      }
     }
   },
   "student": {
