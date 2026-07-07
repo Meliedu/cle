@@ -82,6 +82,18 @@ class QuizDetailResponse(BaseModel):
     questions: list[QuestionResponse]
     created_at: datetime
 
+    # --- P5 B6 score-bearing disclosure (Decision 5/7) ---
+    # Surfaced so the student landing (S050) can show the graded-vs-practice
+    # disclosure BEFORE starting: whether the attempt counts, its point value,
+    # the late policy, and the deadline window. Answer keys stay redacted in
+    # ``questions`` (students get ``correct_answer=None``).
+    assessment_purpose: str = "practice"
+    score_bearing: bool = False
+    points: Decimal | None = None
+    late_rule: str | None = None
+    due_at: datetime | None = None
+    close_at: datetime | None = None
+
     model_config = {"from_attributes": True}
 
 

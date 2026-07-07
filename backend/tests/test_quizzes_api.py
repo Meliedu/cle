@@ -31,9 +31,9 @@ from app.api.deps import get_current_user
 from app.database import get_db
 from app.main import app
 from app.models import Course, Enrollment, User
-from app.models.quiz import Quiz
+from app.models.quiz import Question, Quiz
 from app.models.score import ScoreCategory
-from app.models.work_item import WorkItem
+from app.models.work_item import WorkItem, WorkItemProgress
 
 
 @pytest_asyncio.fixture
@@ -312,3 +312,280 @@ async def test_publish_work_item_rolls_back_on_failure(
         assert rows == []
         q_after = await verify.get(Quiz, quiz_id)
         assert q_after.is_published is False
+
+
+# --------------------------------------------------------------------------- #
+#  P5 B6: attempt → transactional work_item_progress + score disclosure read   #
+# --------------------------------------------------------------------------- #
+
+
+@pytest_asyncio.fixture
+async def enrolled_student(
+    db_session: AsyncSession, owned_course: Course
+) -> User:
+    student = User(
+        better_auth_id="qz_b6_student_01",
+        email="qzb6student@connect.ust.hk",
+        full_name="Quiz B6 Student",
+        role="student",
+    )
+    db_session.add(student)
+    await db_session.flush()
+    db_session.add(
+        Enrollment(
+            course_id=owned_course.id,
+            user_id=student.id,
+            role="student",
+            status="active",
+        )
+    )
+    await db_session.commit()
+    await db_session.refresh(student)
+    return student
+
+
+def _student_client(db_session: AsyncSession, student: User) -> AsyncClient:
+    async def override_db():
+        yield db_session
+
+    async def override_user():
+        return student
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_user] = override_user
+    return AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": "Bearer x"},
+    )
+
+
+async def _add_question(
+    db_session: AsyncSession, quiz: Quiz, *, index: int = 0
+) -> Question:
+    q = Question(
+        quiz_id=quiz.id,
+        question_index=index,
+        type="multiple_choice",
+        question_text="What is 2+2?",
+        options={"a": "3", "b": "4"},
+        correct_answer="b",
+        explanation="Because arithmetic.",
+    )
+    db_session.add(q)
+    await db_session.commit()
+    await db_session.refresh(q)
+    return q
+
+
+async def _make_quiz_work_item(
+    db_session: AsyncSession, course: Course, quiz: Quiz
+) -> WorkItem:
+    """The `quiz` work_item the gated publish path would have created (B5)."""
+    wi = WorkItem(
+        course_id=course.id,
+        source_kind="quiz",
+        source_id=quiz.id,
+        title=quiz.title,
+        required=True,
+        score_bearing=True,
+        due_at=quiz.close_at,
+        close_at=quiz.close_at,
+        created_by=course.instructor_id,
+    )
+    db_session.add(wi)
+    await db_session.commit()
+    await db_session.refresh(wi)
+    return wi
+
+
+async def _progress_rows(
+    db_session: AsyncSession, wi_id: uuid.UUID
+) -> list[WorkItemProgress]:
+    return list(
+        (
+            await db_session.execute(
+                select(WorkItemProgress).where(
+                    WorkItemProgress.work_item_id == wi_id
+                )
+            )
+        ).scalars().all()
+    )
+
+
+@pytest.mark.asyncio
+async def test_attempt_writes_progress_completed(
+    db_session: AsyncSession, owned_course: Course,
+    score_category: ScoreCategory, logged_in_user: User,
+    enrolled_student: User,
+):
+    """A student attempt on a published quiz flips their work_item_progress to
+    `completed` (single-shot quiz, before close_at)."""
+    close = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=2)
+    quiz = await _make_quiz(
+        db_session, owned_course, logged_in_user.id,
+        assessment_purpose="graded", score_bearing=True,
+        score_category_id=score_category.id, points=Decimal("10.00"),
+        grading_mode="auto", close_at=close, is_published=True,
+    )
+    question = await _add_question(db_session, quiz)
+    wi = await _make_quiz_work_item(db_session, owned_course, quiz)
+
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.post(
+            f"/api/quizzes/{quiz.id}/attempt",
+            json={"answers": {str(question.id): "b"}},
+        )
+        assert r.status_code in (200, 201), r.text
+    app.dependency_overrides.clear()
+
+    rows = await _progress_rows(db_session, wi.id)
+    assert len(rows) == 1
+    assert rows[0].user_id == enrolled_student.id
+    assert rows[0].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_attempt_progress_late_when_past_close_at(
+    db_session: AsyncSession, owned_course: Course,
+    score_category: ScoreCategory, logged_in_user: User,
+    enrolled_student: User,
+):
+    """An attempt after `close_at` records the progress row as `late`."""
+    close = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(minutes=5)
+    quiz = await _make_quiz(
+        db_session, owned_course, logged_in_user.id,
+        assessment_purpose="graded", score_bearing=True,
+        score_category_id=score_category.id, points=Decimal("10.00"),
+        grading_mode="auto", close_at=close, is_published=True,
+    )
+    question = await _add_question(db_session, quiz)
+    wi = await _make_quiz_work_item(db_session, owned_course, quiz)
+
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.post(
+            f"/api/quizzes/{quiz.id}/attempt",
+            json={"answers": {str(question.id): "b"}},
+        )
+        assert r.status_code in (200, 201), r.text
+    app.dependency_overrides.clear()
+
+    rows = await _progress_rows(db_session, wi.id)
+    assert len(rows) == 1
+    assert rows[0].status == "late"
+
+
+@pytest.mark.asyncio
+async def test_attempt_progress_survives_evidence_block_failure(
+    db_session: AsyncSession, owned_course: Course,
+    score_category: ScoreCategory, logged_in_user: User,
+    enrolled_student: User, monkeypatch,
+):
+    """Progress rides the attempt's OWN commit — a forced failure of the
+    best-effort evidence block (mastery / learning-event) must NOT lose it."""
+    from tests.conftest import test_session_factory
+
+    close = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=2)
+    quiz = await _make_quiz(
+        db_session, owned_course, logged_in_user.id,
+        assessment_purpose="graded", score_bearing=True,
+        score_category_id=score_category.id, points=Decimal("10.00"),
+        grading_mode="auto", close_at=close, is_published=True,
+    )
+    question = await _add_question(db_session, quiz)
+    wi = await _make_quiz_work_item(db_session, owned_course, quiz)
+    wi_id = wi.id
+    student_id = enrolled_student.id
+
+    import app.api.quizzes as quizzes_mod
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("evidence seam down")
+
+    monkeypatch.setattr(quizzes_mod, "record_attempt_event", _boom)
+
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.post(
+            f"/api/quizzes/{quiz.id}/attempt",
+            json={"answers": {str(question.id): "b"}},
+        )
+        assert r.status_code in (200, 201), r.text
+    app.dependency_overrides.clear()
+
+    # Verify on an INDEPENDENT connection that the progress row is durable even
+    # though the evidence block blew up — it rode the attempt's own commit.
+    async with test_session_factory() as verify:
+        rows = (
+            await verify.execute(
+                select(WorkItemProgress).where(
+                    WorkItemProgress.work_item_id == wi_id
+                )
+            )
+        ).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].user_id == student_id
+        assert rows[0].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_attempt_missing_work_item_is_noop(
+    db_session: AsyncSession, owned_course: Course, logged_in_user: User,
+):
+    """A creator previewing an UNPUBLISHED quiz (no work_item exists) attempts
+    it → 201 and no progress row is written — a no-op, never a 500."""
+    quiz = await _make_quiz(
+        db_session, owned_course, logged_in_user.id,
+        assessment_purpose="practice", is_published=False,
+    )
+    question = await _add_question(db_session, quiz)
+
+    # The creator (logged_in_user) attempts their own unpublished quiz.
+    async with _student_client(db_session, logged_in_user) as ac:
+        r = await ac.post(
+            f"/api/quizzes/{quiz.id}/attempt",
+            json={"answers": {str(question.id): "b"}},
+        )
+    app.dependency_overrides.clear()
+    assert r.status_code in (200, 201), r.text
+
+    # No work_item for this quiz ⇒ no progress rows anywhere.
+    prog = (
+        await db_session.execute(select(WorkItemProgress))
+    ).scalars().all()
+    assert prog == []
+
+
+@pytest.mark.asyncio
+async def test_get_quiz_exposes_disclosure_fields_redacts_answer_for_student(
+    db_session: AsyncSession, owned_course: Course,
+    score_category: ScoreCategory, logged_in_user: User,
+    enrolled_student: User,
+):
+    """GET /quizzes/{id} surfaces the score-bearing disclosure (S050) —
+    assessment_purpose/score_bearing/points/late_rule/due_at/close_at — while
+    `correct_answer` stays redacted (None) for the student."""
+    due = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=1)
+    close = due + timedelta(days=1)
+    quiz = await _make_quiz(
+        db_session, owned_course, logged_in_user.id,
+        assessment_purpose="graded", score_bearing=True,
+        score_category_id=score_category.id, points=Decimal("15.00"),
+        grading_mode="auto", late_rule="accept_late",
+        due_at=due, close_at=close, is_published=True,
+    )
+    await _add_question(db_session, quiz)
+
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.get(f"/api/quizzes/{quiz.id}")
+        assert r.status_code == 200, r.text
+    app.dependency_overrides.clear()
+
+    data = r.json()["data"]
+    assert data["assessment_purpose"] == "graded"
+    assert data["score_bearing"] is True
+    assert Decimal(str(data["points"])) == Decimal("15.00")
+    assert data["late_rule"] == "accept_late"
+    assert data["due_at"] is not None
+    assert data["close_at"] is not None
+    # Answer key stays redacted for the student.
+    assert data["questions"][0]["correct_answer"] is None

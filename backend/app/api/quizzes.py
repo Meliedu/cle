@@ -25,10 +25,11 @@ from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument, QuizFolde
 from app.models.session import LiveSession
 from app.models.task import Task
 from app.models.user import User
+from app.models.work_item import WorkItem
 from app.schemas.common import APIResponse
 from app.services.gamification import award_xp
 from app.services.score_policy import assert_score_policy_complete
-from app.services.work_items import upsert_work_item
+from app.services.work_items import upsert_progress, upsert_work_item
 from app.schemas.quiz import (
     QuestionCreate,
     QuestionResponse,
@@ -200,6 +201,14 @@ async def get_quiz(
             is_published=quiz.is_published,
             questions=question_responses,
             created_at=quiz.created_at,
+            # Score-bearing disclosure (P5 B6): the student landing shows this
+            # BEFORE start (S050). `correct_answer` above is still redacted.
+            assessment_purpose=quiz.assessment_purpose,
+            score_bearing=quiz.score_bearing,
+            points=quiz.points,
+            late_rule=quiz.late_rule,
+            due_at=quiz.due_at,
+            close_at=quiz.close_at,
         ),
     )
 
@@ -817,6 +826,40 @@ async def submit_attempt(
         completed_at=now,
     )
     db.add(attempt)
+
+    # Transactional checklist progress (P5 B6, Decision 5): the student's
+    # ``work_item_progress`` for this quiz's work_item rides the ATTEMPT's OWN
+    # commit below — NOT the best-effort evidence block, so progress durability
+    # equals attempt durability. A single-shot quiz attempt is ``completed`` on
+    # submit unless it lands after ``close_at`` (``late``). A missing work_item
+    # (an unpublished creator-preview attempt that never got a spine row) is a
+    # no-op, never a 500. Resolve by (course, source_kind ∈ practice|quiz,
+    # source) — mirror ``submit_checkpoint_response``.
+    work_item = (
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.course_id == quiz.course_id,
+                WorkItem.source_kind.in_(("quiz", "practice")),
+                WorkItem.source_id == quiz.id,
+                WorkItem.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if work_item is not None:
+        progress_status = (
+            "late"
+            if quiz.close_at is not None and now > quiz.close_at
+            else "completed"
+        )
+        # ``user.id`` is the authenticated caller — a student can only ever
+        # write their own progress row.
+        await upsert_progress(
+            db,
+            work_item_id=work_item.id,
+            user_id=user.id,
+            status=progress_status,
+        )
+
     await db.commit()
     await db.refresh(attempt)
 
@@ -832,6 +875,20 @@ async def submit_attempt(
         quiz_time_seconds=attempt.time_taken_seconds,
     )
     await db.commit()
+
+    # Capture the response primitives up front: the best-effort evidence block
+    # below rolls back on failure, which EXPIRES ``attempt`` — a later attribute
+    # read while building the response would then trigger lazy async IO
+    # (MissingGreenlet) or a 500. Locals are immune (mirror
+    # ``submit_checkpoint_response``), so an evidence-seam failure still returns
+    # the durable attempt cleanly.
+    attempt_id = attempt.id
+    attempt_quiz_id = attempt.quiz_id
+    attempt_score = attempt.score
+    attempt_total = attempt.total_questions
+    attempt_correct = attempt.correct_count
+    attempt_time = attempt.time_taken_seconds
+    attempt_completed_at = attempt.completed_at
 
     # Enqueue mastery updates after the attempt is durable. A failure here
     # must not roll back the student's attempt; we log and swallow.
@@ -869,14 +926,14 @@ async def submit_attempt(
     return APIResponse(
         success=True,
         data=QuizAttemptResponse(
-            id=attempt.id,
-            quiz_id=attempt.quiz_id,
-            score=attempt.score,
-            total_questions=attempt.total_questions,
-            correct_count=attempt.correct_count,
-            time_taken_seconds=attempt.time_taken_seconds,
+            id=attempt_id,
+            quiz_id=attempt_quiz_id,
+            score=attempt_score,
+            total_questions=attempt_total,
+            correct_count=attempt_correct,
+            time_taken_seconds=attempt_time,
             results=results,
-            completed_at=attempt.completed_at,
+            completed_at=attempt_completed_at,
         ),
     )
 
