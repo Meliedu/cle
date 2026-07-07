@@ -5,6 +5,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     String,
     UniqueConstraint,
     text,
@@ -61,4 +62,63 @@ class AttendanceRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     checked_in_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class CheckpointLaunch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A teacher's QR launch of a checkpoint for a meeting (spec §4.3, Decision 3).
+
+    Operational / teacher-owned — **no RLS** (unlike ``checkpoint_responses`` /
+    ``attendance_records``). It carries the signed QR-launch token (PyJWT HS256,
+    minted in T9 mirroring ``canvas_oauth.encode_state``) plus its ``jti`` and the
+    ``window_start``/``window_end`` bounds echoed into the token's ``exp``.
+
+    ``status`` is ``active``/``closed``. A **partial unique index on
+    ``(checkpoint_id) WHERE status='active'``** enforces a single active launch
+    per checkpoint: a rotate closes the prior launch (``status='closed'``) then
+    issues a fresh active row, so only one live QR exists at a time.
+    """
+
+    __tablename__ = "checkpoint_launches"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active','closed')",
+            name="ck_checkpoint_launches_status_valid",
+        ),
+        # Single active launch per checkpoint (Decision 3). Closed rows are
+        # excluded so rotation (close old → open new) never trips the constraint.
+        Index(
+            "uq_checkpoint_launches_one_active",
+            "checkpoint_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+        ),
+        Index("ix_checkpoint_launches_meeting_id", "meeting_id"),
+    )
+
+    checkpoint_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("checkpoints.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    meeting_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("course_meetings.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token: Mapped[str] = mapped_column(String, nullable=False)
+    jti: Mapped[str] = mapped_column(String, nullable=False)
+    window_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    window_end: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    launched_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", server_default=text("'active'")
     )

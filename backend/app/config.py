@@ -95,6 +95,15 @@ class Settings(BaseSettings):
         "url:GET|/api/v1/files/:id"
     )
 
+    # Checkpoint QR launch token (P3). Signing key for the PyJWT HS256
+    # launch token (mirrors canvas_state_secret; see services/checkpoint_qr.py
+    # in T9). 32+ random bytes. Generate with:
+    #   python -c "import secrets; print(secrets.token_urlsafe(48))"
+    # The ≥32-byte length is NOT enforced at startup so dev/test stay bootable
+    # with checkpoints unconfigured — the T9 launch service validates it at the
+    # moment a launch is actually attempted (fails closed with QR_NOT_AVAILABLE).
+    checkpoint_token_secret: str | None = None
+
     # App
     backend_url: str = "http://localhost:8000"
     frontend_url: str = "http://localhost:3000"
