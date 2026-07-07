@@ -43,7 +43,7 @@ const TABS: readonly TabDef[] = [
   { id: "setup", segment: "setup", enabled: true },
   { id: "materials", segment: "materials", enabled: true },
   { id: "activities", segment: "activities", enabled: true },
-  { id: "insights", segment: "insights", enabled: false },
+  { id: "insights", segment: "insights", enabled: true },
 ];
 
 export function isCoursePublished(course: CourseResponse): boolean {
