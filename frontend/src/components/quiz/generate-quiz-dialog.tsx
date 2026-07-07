@@ -34,6 +34,14 @@ interface GenerateQuizDialogProps {
   readonly courseId: string;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
+  /**
+   * P5 F2/F3 — the practice-vs-graded axis stamped on the generated quiz
+   * (`quizzes.assessment_purpose`, Decision 1). When omitted the backend
+   * defaults the quiz to `practice`; the graded quiz builder passes `"graded"`
+   * so the score-policy flow (F3) applies. Distinct from `purpose`
+   * (`after_class`), which stays fixed for authored quizzes.
+   */
+  readonly assessmentPurpose?: "practice" | "graded";
 }
 
 interface FormState {
@@ -66,6 +74,7 @@ export function GenerateQuizDialog({
   courseId,
   open,
   onOpenChange,
+  assessmentPurpose,
 }: GenerateQuizDialogProps) {
   const { getToken } = useAuth();
   const { trackJob } = useGenerationJobs();
@@ -101,6 +110,7 @@ export function GenerateQuizDialog({
               num_questions: form.numQuestions,
               document_ids: selectedIds.length > 0 ? selectedIds : undefined,
               purpose: "after_class",
+              assessment_purpose: assessmentPurpose,
               question_types: form.types,
               mcq_option_count: form.optionCount,
               difficulty: form.difficulty,
@@ -128,7 +138,15 @@ export function GenerateQuizDialog({
         setIsSubmitting(false);
       }
     },
-    [form, courseId, selectedIds, onOpenChange, getToken, trackJob]
+    [
+      form,
+      courseId,
+      selectedIds,
+      onOpenChange,
+      getToken,
+      trackJob,
+      assessmentPurpose,
+    ]
   );
 
   const handleOpenChange = useCallback(

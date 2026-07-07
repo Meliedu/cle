@@ -1208,6 +1208,86 @@
         }
       }
     },
+    "practice": {
+      "status": {
+        "published": "Published",
+        "draft": "Draft"
+      },
+      "typeLabel": {
+        "multiple_choice": "Multiple choice",
+        "true_false": "True / False",
+        "matching": "Matching",
+        "ordering": "Ordering",
+        "short_answer": "Short answer",
+        "other": "Question"
+      },
+      "list": {
+        "title": "Practice",
+        "subtitle": "Low-stakes question sets students can retry as often as they like. Practice never counts toward a grade.",
+        "generate": "Generate practice",
+        "questionCount": "{count, plural, one {# question} other {# questions}}",
+        "justNow": "Just now",
+        "loadErrorTitle": "Couldn't load practice",
+        "loadError": "Something went wrong loading this course's practice sets. Try again in a moment.",
+        "empty": {
+          "title": "No practice yet",
+          "reason": "Generate a focused set of questions from your course materials so students can rehearse before class.",
+          "action": "Generate practice"
+        }
+      },
+      "builder": {
+        "subtitle": "Review and refine the questions, then publish when it's ready for students.",
+        "viewResults": "View results",
+        "back": "Back to practice",
+        "notFoundTitle": "Practice not found",
+        "notFound": "This practice set may have been deleted, or you don't have access to it.",
+        "questionsTitle": "Practice questions",
+        "generate": "Generate questions",
+        "addQuestion": "Add question",
+        "editQuestion": "Edit question",
+        "deleteQuestion": "Delete question",
+        "empty": {
+          "title": "No questions yet",
+          "reason": "Generate questions from your materials, or add one by hand to get started."
+        },
+        "deleteConfirm": {
+          "title": "Delete question",
+          "body": "This removes the question from the practice set. This can't be undone.",
+          "cancel": "Cancel",
+          "confirm": "Delete"
+        }
+      },
+      "publish": {
+        "title": "Ready to publish",
+        "subtitle": "Practice publishes straight to students — no scoring setup required.",
+        "checklist": {
+          "questions": "{count, plural, =0 {No questions yet} one {# question ready} other {# questions ready}}",
+          "noScore": "Practice doesn't need a score category or a due date. It appears on the checklist as optional and is never marked missed."
+        },
+        "publishedTitle": "Published to students",
+        "publishedReason": "Students can find this practice in their activities. Re-publish to push edits.",
+        "publishError": "Couldn't publish this practice. Try again in a moment.",
+        "publishing": "Publishing…",
+        "publish": "Publish practice",
+        "republish": "Re-publish"
+      },
+      "results": {
+        "back": "Back to builder",
+        "title": "Practice results",
+        "subtitle": "How students are doing on this practice set.",
+        "loadErrorTitle": "Couldn't load results",
+        "loadError": "Something went wrong loading this practice. Try again in a moment.",
+        "unpublished": {
+          "title": "Publish to collect attempts",
+          "reason": "This practice hasn't been published yet, so there are no student attempts to report on.",
+          "action": "Go to builder"
+        },
+        "awaiting": {
+          "title": "Waiting for attempts",
+          "reason": "Results appear here as students work through this practice. Check back once they've started."
+        }
+      }
+    },
     "activities": {
       "empty": {
         "title": "Activities workspace",
