@@ -22,7 +22,15 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    WebSocketException,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +41,7 @@ from app.api.deps import (
     get_owned_course,
     require_instructor,
 )
+from app.database import async_session_factory
 from app.models.activity import Activity, ActivityResponse
 from app.models.course import Course
 from app.models.user import User
@@ -45,10 +54,15 @@ from app.schemas.activity import (
     ActivityUpdate,
 )
 from app.schemas.common import APIResponse
+from app.services.activity_monitor import (
+    compute_activity_monitor_state,
+    monitor_manager,
+)
 from app.services.activity_responses import (
     OPEN_STATUSES,
     submit_activity_response,
 )
+from app.services.auth import verify_jwt
 from app.services.score_policy import assert_score_policy_complete
 from app.services.work_items import upsert_work_item
 
@@ -451,3 +465,77 @@ async def get_activity_results(
             responses=[ActivityResponseResult.model_validate(r) for r in rows],
         ),
     )
+
+
+# ----- teacher live monitor WebSocket (P5 B10, Decision 6) -----
+#
+# Reuses the live-quiz ``ConnectionManager`` class via ``monitor_manager`` — no
+# new WS framework. Auth preamble is copied from ``checkpoints.py``'s
+# ``websocket_monitor`` (``?token=`` → ``verify_jwt`` → resolve user), keeping the
+# OWNER check: only the activity's course instructor may monitor. The monitor is
+# read-only — inbound frames are drained and ignored; the server only ever pushes
+# ``state``/``submission``/``closed``.
+
+
+@router.websocket("/{activity_id}/monitor")
+async def websocket_monitor(
+    websocket: WebSocket,
+    activity_id: str,
+    token: str = "",
+):
+    """Teacher live-monitor stream for one activity.
+
+    On connect the owner receives ``{type: "state", submission_count,
+    distribution}``; thereafter the hub pushes ``submission`` (a student response
+    landed) and ``closed`` (the activity closed) broadcasts.
+    """
+    if not token:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+    try:
+        verified = verify_jwt(token)
+    except Exception as exc:  # noqa: BLE001 — any verify failure is a policy reject
+        logger.warning("Monitor WS auth failed for activity %s: %s", activity_id, exc)
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+
+    auth_user_id = verified.claims.get("sub")
+    if not auth_user_id:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+
+    try:
+        act_uuid = uuid.UUID(activity_id)
+    except ValueError:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+
+    # Resolve user + OWNER-guard the activity, then snapshot the initial state —
+    # all in one short-lived session that is released before the read-loop.
+    async with async_session_factory() as db:
+        user = (
+            await db.execute(
+                select(User).where(User.better_auth_id == auth_user_id)
+            )
+        ).scalar_one_or_none()
+        if user is None:
+            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+
+        act = await db.get(Activity, act_uuid)
+        if act is None or act.deleted_at is not None:
+            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+        course = await db.get(Course, act.course_id)
+        if (
+            course is None
+            or course.deleted_at is not None
+            or course.instructor_id != user.id
+        ):
+            # Owner-only: a non-owner (or student) is rejected before accept.
+            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+
+        initial_state = await compute_activity_monitor_state(db, act_uuid)
+
+    await monitor_manager.connect(activity_id, websocket)
+    try:
+        await websocket.send_json({"type": "state", **initial_state})
+        # Read-only monitor: drain (and ignore) inbound frames until disconnect.
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        monitor_manager.disconnect(activity_id, websocket)
