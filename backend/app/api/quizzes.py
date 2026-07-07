@@ -27,6 +27,8 @@ from app.models.task import Task
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.services.gamification import award_xp
+from app.services.score_policy import assert_score_policy_complete
+from app.services.work_items import upsert_work_item
 from app.schemas.quiz import (
     QuestionCreate,
     QuestionResponse,
@@ -410,7 +412,50 @@ async def publish_quiz(
             detail="Quiz not found",
         )
 
-    quiz.is_published = not quiz.is_published
+    # Practice-vs-graded is the NEW `assessment_purpose` axis (P5 B1, Decision 1),
+    # NOT the legacy `purpose`/`quiz_type`. A GRADED quiz is GATED (its score
+    # policy must be complete before it can go student-visible) and one-way
+    # published; a PRACTICE quiz skips the gate and keeps the toggle path.
+    is_graded = quiz.assessment_purpose == "graded"
+
+    if is_graded:
+        # Gate BEFORE flipping any state: `SCORE_POLICY_INCOMPLETE` (422) raises
+        # here, so nothing is published and no work_item is written (atomicity).
+        assert_score_policy_complete(quiz)
+        quiz.is_published = True
+    else:
+        quiz.is_published = not quiz.is_published
+
+    # Transactional checklist-spine write (P4 B4, Decision 4): the publish's
+    # work_item rides publish's OWN commit below, so a failure here rolls back
+    # the publish too. `source_kind` maps from `assessment_purpose`
+    # (graded→`quiz`, practice→`practice`); a practice item is
+    # `required=False, score_bearing=False` so `mark_missed_work_items` never
+    # marks it missed (Decision 8). Idempotent on the
+    # (course, source_kind, source) unique index.
+    work_item = await upsert_work_item(
+        db,
+        course_id=quiz.course_id,
+        source_kind="quiz" if is_graded else "practice",
+        source_id=quiz.id,
+        title=quiz.title,
+        required=is_graded,
+        score_bearing=is_graded,
+        due_at=quiz.close_at,
+        close_at=quiz.close_at,
+        created_by=user.id,
+    )
+    # `on_conflict_do_nothing` returns the EXISTING row unchanged on re-publish;
+    # keep due_at/close_at/title in sync with the quiz's current schedule
+    # (choice b) so an edited close time / retitle tracks on the checklist —
+    # mirror `publish_checkpoint`.
+    if work_item.due_at != quiz.close_at:
+        work_item.due_at = quiz.close_at
+    if work_item.close_at != quiz.close_at:
+        work_item.close_at = quiz.close_at
+    if work_item.title != quiz.title:
+        work_item.title = quiz.title
+
     await db.commit()
     await db.refresh(quiz)
 
