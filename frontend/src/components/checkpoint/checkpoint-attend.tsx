@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 
 import { EmptyState } from "@/components/patterns";
-import { useScanAttendance } from "@/hooks/use-checkpoints";
+import {
+  useScanAttendance,
+  type AttendanceStatus,
+} from "@/hooks/use-checkpoints";
 
 import { CheckpointRunner } from "./checkpoint-runner";
 import { ScanErrorState } from "./scan-error-state";
@@ -71,6 +74,10 @@ export function CheckpointAttend({ token }: CheckpointAttendProps) {
     return (
       <CheckpointRunner
         checkpointId={scan.data.checkpoint_id}
+        attendance={{
+          status: scan.data.status as AttendanceStatus,
+          checkedInAt: scan.data.checked_in_at,
+        }}
         onExit={backToCourses}
         onViewHistory={backToCourses}
       />

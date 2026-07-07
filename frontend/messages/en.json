@@ -1108,6 +1108,81 @@
         "next2": "The class summary helps your instructor decide what to revisit.",
         "backToSession": "Back to session",
         "viewHistory": "View checkpoint history"
+      },
+      "missed": {
+        "title": "Checkpoint closed",
+        "reason": "The check-in window for this checkpoint has ended.",
+        "attendanceNot": "Attendance was not recorded",
+        "attendanceLate": "Attendance recorded — submitted late",
+        "submitted": "{count} of {total} cards submitted",
+        "closedAt": "Closed {time}",
+        "backToSession": "Back to session",
+        "viewHistory": "View checkpoint history",
+        "help": "If this looks wrong, contact your instructor."
+      },
+      "history": {
+        "title": "Checkpoint history",
+        "subtitle": "Review the core points from each class.",
+        "filterLabel": "Filter checkpoints",
+        "filter": {
+          "all": "All",
+          "needs_revisit": "Needs revisit",
+          "completed": "Completed"
+        },
+        "reviewPoints": "{responded} of {total} review points answered",
+        "review": "Review",
+        "status": {
+          "complete": "Completed",
+          "late": "Late",
+          "missed": "Missed",
+          "upcoming": "Upcoming"
+        },
+        "emptyTitle": "No checkpoints yet",
+        "emptyReason": "Checkpoints from your classes will show up here once your instructor runs them.",
+        "loadErrorTitle": "We couldn't load your history",
+        "loadErrorReason": "Please check your connection and try again."
+      },
+      "followUp": {
+        "eyebrow": "Follow-up suggested",
+        "title": "Strengthen a weak spot",
+        "subtitle": "Focus on one area to feel more confident in your next checkpoint.",
+        "lastConfidence": "Last time you rated this {value}.",
+        "lastConfidenceLabelled": "Last time you said: {value}.",
+        "reason": "This point is likely to come up again in your next checkpoint.",
+        "start": "Start follow-up",
+        "viewHistory": "Back to history",
+        "footer": "Working on this now helps you feel more confident next time.",
+        "emptyTitle": "You're on track",
+        "emptyReason": "Nothing was flagged from your last checkpoint — no revisit needed right now.",
+        "loadErrorTitle": "We couldn't load your follow-up",
+        "loadErrorReason": "Please check your connection and try again."
+      },
+      "revisit": {
+        "question": "How clear is this topic now?",
+        "next": "Next card",
+        "submit": "Submit follow-up",
+        "submitError": "We couldn't save that answer. Please try again.",
+        "loadErrorTitle": "We couldn't load this follow-up",
+        "loadErrorReason": "This follow-up isn't available right now. Please try again later.",
+        "doneTitle": "Follow-up complete",
+        "improved": "Nice — your confidence went up by {delta}.",
+        "same": "Thanks for revisiting this.",
+        "backToHistory": "Back to history"
+      },
+      "confirmed": {
+        "title": "Attendance confirmed",
+        "reason": "Your attendance was recorded from your checkpoint submission.",
+        "statusLabel": "Marked {status}",
+        "statusValue": {
+          "present": "present",
+          "late": "late",
+          "excused": "excused",
+          "absent": "absent"
+        },
+        "checkedInAt": "Checked in {time}",
+        "submittedChip": "Checkpoint submitted",
+        "backToSession": "Back to session",
+        "viewResponse": "View response"
       }
     }
   }

@@ -8,19 +8,31 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   useCheckpointIntro,
   useSubmitCheckpointResponse,
+  type AttendanceStatus,
   type StudentCheckpointCard,
 } from "@/hooks/use-checkpoints";
 import { usePilotConfig } from "@/hooks/use-pilot-config";
+import { ApiError } from "@/lib/api";
 
+import { AttendanceConfirmed } from "./attendance-confirmed";
 import { CheckpointComplete } from "./checkpoint-complete";
 import { CheckpointIntro } from "./checkpoint-intro";
+import { CheckpointMissed } from "./checkpoint-missed";
 import { ConfidenceCard } from "./confidence-card";
 import { FinalCommentsCard } from "./final-comments-card";
+
+/** Attendance context from an upstream QR scan (attend flow), when present. */
+export interface RunnerAttendance {
+  readonly status: AttendanceStatus;
+  readonly checkedInAt: string | null;
+}
 
 interface CheckpointRunnerProps {
   readonly checkpointId: string;
   /** Course id so a submission invalidates the student's history cache (S039). */
   readonly courseId?: string;
+  /** Attendance already recorded upstream (a successful scan). Drives S038/S042. */
+  readonly attendance?: RunnerAttendance;
   /** Leave the checkpoint (back to the session / courses). */
   readonly onExit: () => void;
   /** Open the student's checkpoint history (S039). */
@@ -40,6 +52,7 @@ type RunnerStep = "intro" | "cards" | "complete";
 export function CheckpointRunner({
   checkpointId,
   courseId,
+  attendance,
   onExit,
   onViewHistory,
 }: CheckpointRunnerProps) {
@@ -130,6 +143,24 @@ export function CheckpointRunner({
   }
 
   if (intro.isError || !intro.data) {
+    // A closed / out-of-window checkpoint 409s `QR_NOT_AVAILABLE` — that's the
+    // missed / late terminal (S038), not a generic failure. Attendance from an
+    // upstream scan means the miss is "late" (checked in) rather than absent.
+    const closed =
+      intro.error instanceof ApiError &&
+      (intro.error.code === "QR_NOT_AVAILABLE" || intro.error.status === 409);
+    if (closed) {
+      return (
+        <CheckpointMissed
+          submittedCount={0}
+          totalCount={0}
+          closedAt={null}
+          attendanceRecorded={Boolean(attendance)}
+          onBackToSession={onExit}
+          onViewHistory={onViewHistory}
+        />
+      );
+    }
     return (
       <StateBanner
         tone="warning"
@@ -140,6 +171,17 @@ export function CheckpointRunner({
   }
 
   if (total === 0) {
+    // Attendance is already recorded (scan) but there's nothing to answer —
+    // show the attendance receipt (S042) rather than an empty prompt.
+    if (attendance) {
+      return (
+        <AttendanceConfirmed
+          status={attendance.status}
+          checkedInAt={attendance.checkedInAt}
+          onBackToSession={onExit}
+        />
+      );
+    }
     return (
       <StateBanner
         tone="info"
