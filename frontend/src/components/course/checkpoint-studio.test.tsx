@@ -9,9 +9,15 @@ import {
   useCheckpoints,
   useCheckpointHistory,
   useUpdateCheckpointCard,
+  useApproveCheckpoint,
+  useCloseCheckpoint,
   type CheckpointCard,
   type CheckpointWithCards,
 } from "@/hooks/use-checkpoints";
+
+vi.mock("@/hooks/use-auth", () => ({
+  useAuth: () => ({ getToken: vi.fn().mockResolvedValue("jwt-token") }),
+}));
 
 vi.mock("@/hooks/use-checkpoints", async (importOriginal) => {
   const actual =
@@ -22,6 +28,8 @@ vi.mock("@/hooks/use-checkpoints", async (importOriginal) => {
     useCheckpoints: vi.fn(),
     useCheckpointHistory: vi.fn(),
     useUpdateCheckpointCard: vi.fn(),
+    useApproveCheckpoint: vi.fn(),
+    useCloseCheckpoint: vi.fn(),
   };
 });
 
@@ -29,6 +37,8 @@ const mockUseCheckpoint = vi.mocked(useCheckpoint);
 const mockUseCheckpoints = vi.mocked(useCheckpoints);
 const mockUseCheckpointHistory = vi.mocked(useCheckpointHistory);
 const mockUseUpdateCard = vi.mocked(useUpdateCheckpointCard);
+const mockUseApprove = vi.mocked(useApproveCheckpoint);
+const mockUseClose = vi.mocked(useCloseCheckpoint);
 
 function makeCard(overrides: Partial<CheckpointCard> = {}): CheckpointCard {
   return {
@@ -99,10 +109,19 @@ function renderStudio() {
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
-  mockUseUpdateCard.mockReturnValue({
+  const mutation = {
     mutateAsync: vi.fn(),
     isPending: false,
-  } as unknown as ReturnType<typeof useUpdateCheckpointCard>);
+  };
+  mockUseUpdateCard.mockReturnValue(
+    mutation as unknown as ReturnType<typeof useUpdateCheckpointCard>
+  );
+  mockUseApprove.mockReturnValue(
+    mutation as unknown as ReturnType<typeof useApproveCheckpoint>
+  );
+  mockUseClose.mockReturnValue(
+    mutation as unknown as ReturnType<typeof useCloseCheckpoint>
+  );
 });
 
 describe("CheckpointStudio", () => {

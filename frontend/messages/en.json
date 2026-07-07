@@ -872,6 +872,75 @@
         "viewSource": "Open source checkpoint"
       }
     },
+    "checkpoint": {
+      "lifecycle": {
+        "title": "Lifecycle",
+        "hint": {
+          "draft": "Approve this checkpoint once its cards are ready.",
+          "teacher_editing": "Approve this checkpoint once its cards are ready.",
+          "approved": "Publish to open it for students, or keep editing its cards first.",
+          "scheduled": "Scheduled for release. Publish now to open it early.",
+          "published": "Open for students. Show the QR to take attendance and watch responses land live.",
+          "live": "Live now. Show the QR to take attendance and watch responses land.",
+          "closed": "This checkpoint is closed. Its results are final.",
+          "archived": "This checkpoint is archived."
+        },
+        "approve": "Approve checkpoint",
+        "publish": "Publish checkpoint",
+        "close": "Close checkpoint",
+        "approveError": "We couldn't approve this checkpoint. Add a review point and the final card, then try again.",
+        "closeError": "We couldn't close this checkpoint. Try again.",
+        "blockedTitle": "Can't do that yet",
+        "closedTitle": "Checkpoint closed",
+        "closedReason": "Students can no longer respond, and its results are final."
+      },
+      "publish": {
+        "title": "Publish this checkpoint?",
+        "subtitle": "Publishing releases it to enrolled students right away. They can respond until it closes.",
+        "requirementsLabel": "Publish requirements",
+        "requirements": {
+          "session": "Attached to a session"
+        },
+        "closeRuleLabel": "When should it close?",
+        "closeRule": {
+          "end_of_session": "At the end of the session",
+          "at_close_at": "At a specific time",
+          "manual": "When I close it manually"
+        },
+        "closeAtLabel": "Close time",
+        "gate": {
+          "title": "Not ready to publish",
+          "generic": "We couldn't publish this checkpoint. Try again.",
+          "genericReason": "This checkpoint doesn't meet the publish requirements yet."
+        },
+        "cancel": "Cancel",
+        "confirm": "Publish now"
+      },
+      "qr": {
+        "launchTitle": "Take attendance with a QR code",
+        "launchReason": "Launch a signed, time-boxed QR students scan to check in and open the checkpoint.",
+        "launch": "Launch QR",
+        "qrAlt": "Attendance QR code",
+        "countdownLabel": "until this code expires",
+        "expired": "This code has expired",
+        "rotate": "Rotate code",
+        "fallbackLabel": "Scan link",
+        "unavailableTitle": "QR isn't available",
+        "unavailableReason": "This checkpoint must be a published, session-bound check-in with QR enabled.",
+        "generic": "We couldn't launch the QR code. Try again."
+      },
+      "monitor": {
+        "title": "Live responses",
+        "status": {
+          "live": "Live",
+          "connecting": "Connecting…",
+          "closed": "Closed"
+        },
+        "submissions": "Responses",
+        "distributionLabel": "Confidence distribution",
+        "closedNotice": "This checkpoint has closed. No more responses will arrive."
+      }
+    },
     "enrollment": {
       "title": "Enrollment",
       "subtitle": "Control who can join this course and review who has enrolled.",

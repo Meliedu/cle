@@ -19,6 +19,7 @@ import {
 import { StatusChip, checkpointTone } from "./session-status";
 import { CheckpointCardEditor } from "./checkpoint-card-editor";
 import { CarryOverDialog } from "./carry-over-dialog";
+import { CheckpointLifecyclePanel } from "./checkpoint-lifecycle-panel";
 
 interface CheckpointStudioProps {
   readonly courseId: string;
@@ -175,6 +176,8 @@ export function CheckpointStudio({
           </p>
         ) : null}
       </section>
+
+      <CheckpointLifecyclePanel courseId={courseId} checkpoint={checkpoint} />
 
       <CarryOverDialog
         open={carryOpen}
