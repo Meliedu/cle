@@ -47,6 +47,19 @@ class EnrollByCodeRequest(BaseModel):
     enroll_code: str
 
 
+class EnrollByCodeResult(BaseModel):
+    """Result of a join-by-code attempt.
+
+    ``enrollment_status`` tells the funnel whether the join landed ``active``
+    (instant join -> S013 join-success) or ``pending`` (awaits teacher approval
+    -> pending-approval screen). ``course`` mirrors the prior bare
+    ``CourseResponse`` payload so the client still has full course context.
+    """
+
+    course: CourseResponse
+    enrollment_status: str
+
+
 class EnrollmentCreate(BaseModel):
     user_email: str | None = None
     course_code: str | None = None

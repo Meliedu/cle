@@ -18,7 +18,9 @@ from app.schemas.course import (
     CourseResponse,
     CourseUpdate,
     EnrollByCodeRequest,
+    EnrollByCodeResult,
 )
+from app.services.setup import SetupGateError, assert_course_open
 
 # Avoid ambiguous chars (0/O, 1/I/L). Uppercase so codes are easy to dictate.
 _ENROLL_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -104,7 +106,11 @@ async def list_courses(
     base = (
         select(Course)
         .join(Enrollment, Enrollment.course_id == Course.id)
-        .where(Enrollment.user_id == user.id, Course.deleted_at.is_(None))
+        .where(
+            Enrollment.user_id == user.id,
+            Enrollment.status == "active",
+            Course.deleted_at.is_(None),
+        )
     )
 
     count_result = await db.execute(
@@ -132,9 +138,13 @@ async def get_course(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # Active enrollment required: a ``pending`` student (awaiting approval on a
+    # ``code_plus_approval`` course) must not read the workspace yet.
     enrollment = await db.execute(
         select(Enrollment).where(
-            Enrollment.course_id == course_id, Enrollment.user_id == user.id
+            Enrollment.course_id == course_id,
+            Enrollment.user_id == user.id,
+            Enrollment.status == "active",
         )
     )
     if not enrollment.scalar_one_or_none():
@@ -201,7 +211,7 @@ async def delete_course(
 
 @router.post(
     "/enroll-by-code",
-    response_model=APIResponse[CourseResponse],
+    response_model=APIResponse[EnrollByCodeResult],
     status_code=201,
 )
 async def enroll_by_code(
@@ -209,6 +219,15 @@ async def enroll_by_code(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Terminal student join action (Decision 1 + Decision 3).
+
+    Gate order: normalize/validate format → resolve course (404, no existence
+    leak) → code active? (``JOIN_CODE_INACTIVE``) → course open?
+    (``assert_course_open`` → ``SETUP_NOT_OPEN``) → already enrolled?
+    (idempotent, returns existing status) → create enrollment with status from
+    ``join_mode`` (``code`` → ``active`` = instant join; ``code_plus_approval``
+    → ``pending`` = awaits teacher approval).
+    """
     code = _normalize_enroll_code(body.enroll_code)
     if len(code) != _ENROLL_CODE_LENGTH:
         raise HTTPException(
@@ -228,20 +247,78 @@ async def enroll_by_code(
             detail="No course found for that code",
         )
 
+    # Code-state gate before existence/openness so a deactivated code can't be
+    # used to probe join outcomes.
+    if not course.enroll_code_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "JOIN_CODE_INACTIVE",
+                "message": "This join code is no longer active.",
+            },
+        )
+
+    # Setup gate (Decision 3): students cannot join until the teacher published.
+    try:
+        assert_course_open(course)
+    except SetupGateError as exc:  # SETUP_NOT_OPEN
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code, "message": exc.message},
+        )
+
     existing = await db.execute(
         select(Enrollment).where(
             Enrollment.course_id == course.id, Enrollment.user_id == user.id
         )
     )
-    if existing.scalar_one_or_none():
-        # Idempotent: already enrolled → return the course so the client can
-        # just navigate into it.
-        return APIResponse(success=True, data=CourseResponse.model_validate(course))
+    existing_row = existing.scalar_one_or_none()
+    if existing_row:
+        # Idempotent: already have an enrollment row (any status) → return it so
+        # the funnel routes on the current status rather than duplicating.
+        return APIResponse(
+            success=True,
+            data=EnrollByCodeResult(
+                course=CourseResponse.model_validate(course),
+                enrollment_status=existing_row.status,
+            ),
+        )
 
-    enrollment = Enrollment(course_id=course.id, user_id=user.id, role=user.role)
-    db.add(enrollment)
-    await db.commit()
-    return APIResponse(success=True, data=CourseResponse.model_validate(course))
+    # join_mode maps to the initial enrollment status (Decision 1).
+    new_status = "pending" if course.join_mode == "code_plus_approval" else "active"
+    db.add(
+        Enrollment(
+            course_id=course.id, user_id=user.id, role=user.role, status=new_status
+        )
+    )
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Race: a concurrent request created the enrollment first. Re-fetch and
+        # return its status idempotently (unique(course_id, user_id)).
+        await db.rollback()
+        raced = (
+            await db.execute(
+                select(Enrollment).where(
+                    Enrollment.course_id == course.id,
+                    Enrollment.user_id == user.id,
+                )
+            )
+        ).scalar_one()
+        return APIResponse(
+            success=True,
+            data=EnrollByCodeResult(
+                course=CourseResponse.model_validate(course),
+                enrollment_status=raced.status,
+            ),
+        )
+    return APIResponse(
+        success=True,
+        data=EnrollByCodeResult(
+            course=CourseResponse.model_validate(course),
+            enrollment_status=new_status,
+        ),
+    )
 
 
 @router.post(
