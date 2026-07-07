@@ -1554,6 +1554,37 @@
       "empty": {
         "title": "Activities arrive soon",
         "reason": "Practice sets, quizzes, and polls for this course will show up here once your instructor sets them up."
+      },
+      "runner": {
+        "fallbackTitle": "Class activity",
+        "back": "Back to activities",
+        "submittedTitle": "Response recorded",
+        "submittedReason": "Your instructor can see your response. You can keep taking part while this activity is open.",
+        "errorTitle": "We couldn't record that",
+        "errorReason": "Something went wrong submitting your response. Please try again."
+      },
+      "waiting": {
+        "title": "Waiting for your instructor to start",
+        "reason": "This activity isn't open yet. It'll come to life here the moment your instructor starts it — keep this screen open."
+      },
+      "swipe": {
+        "progress": "Card {current} of {total}",
+        "left": "Disagree",
+        "right": "Agree",
+        "doneTitle": "All done",
+        "doneReason": "You answered all {count} cards. Thanks for taking part."
+      },
+      "vote": {
+        "instructions": "Pick the option you agree with.",
+        "yourVote": "Your vote",
+        "submit": "Submit vote",
+        "submitting": "Submitting…",
+        "change": "Change my vote"
+      },
+      "comment": {
+        "instructions": "Tap a reaction to add it. You can react as many times as you like.",
+        "yourReactions": "Your reactions",
+        "empty": "You haven't reacted yet."
       }
     },
     "join": {
