@@ -18,6 +18,7 @@ from app.models.flashcard import (
 )
 from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument, QuizFolder
 from app.models.readiness import ReadinessResponse
+from app.models.report import Report
 from app.models.scheduler import SchedulerModel
 from app.models.pronunciation import (
     PronunciationFolder,
@@ -138,6 +139,7 @@ __all__ = [
     "OutcomeCheck",
     "CourseRecordItem",
     "ReadinessResponse",
+    "Report",
     "WorkItem",
     "WorkItemProgress",
     "Activity",
