@@ -1212,6 +1212,248 @@
       "empty": {
         "title": "Activities workspace",
         "reason": "Build practice sets, graded quizzes, and live activities (swipe, vote, comment) for this course. Authoring surfaces arrive next."
+      },
+      "formats": {
+        "swipe": "Swipe",
+        "vote": "Vote",
+        "comment_reaction": "Comment & react"
+      },
+      "builder": {
+        "createTitle": "New {format} activity",
+        "editTitle": "Edit activity",
+        "back": "Back to activities",
+        "titleLabel": "Activity title",
+        "titlePlaceholder": "e.g. Warm-up: agree or disagree?",
+        "hint": {
+          "swipe": "Students swipe left or right on each prompt. Add one prompt per card.",
+          "vote": "Students pick one option. Add every choice they can vote for.",
+          "comment_reaction": "Students react with a chosen emoji or tag. Add the reaction set."
+        },
+        "configLabel": {
+          "swipe": "Prompts",
+          "vote": "Options",
+          "comment_reaction": "Reactions"
+        },
+        "addPlaceholder": {
+          "swipe": "Add a prompt…",
+          "vote": "Add an option…",
+          "comment_reaction": "Add a reaction…"
+        },
+        "itemLabel": {
+          "swipe": "Prompt {index}",
+          "vote": "Option {index}",
+          "comment_reaction": "Reaction {index}"
+        },
+        "configEmpty": {
+          "swipe": {
+            "title": "No prompts yet",
+            "reason": "Add at least one prompt for students to swipe on."
+          },
+          "vote": {
+            "title": "No options yet",
+            "reason": "Add the options students will choose between."
+          },
+          "comment_reaction": {
+            "title": "No reactions yet",
+            "reason": "Add the reactions students can respond with."
+          }
+        },
+        "anonymous": {
+          "label": "Anonymous responses",
+          "hint": "Hide who submitted each response from the results view."
+        },
+        "published": {
+          "title": "Activity is published",
+          "reason": "Students can join now. Re-publish to push edits to the schedule or config."
+        },
+        "saveError": {
+          "title": "Couldn't save the activity",
+          "reason": "Something went wrong saving your changes. Please try again."
+        },
+        "list": {
+          "add": "Add",
+          "remove": "Remove entry"
+        },
+        "score": {
+          "title": "Score policy",
+          "description": "Turn on to make this activity count toward the grade record.",
+          "toggle": "Score-bearing",
+          "required": "required",
+          "fields": {
+            "category": "Score category",
+            "categoryPlaceholder": "Choose a category",
+            "points": "Points",
+            "gradingMode": "Grading mode",
+            "lateRule": "Late rule",
+            "dueAt": "Due",
+            "closeAt": "Closes",
+            "select": "Select…"
+          },
+          "gradingModes": {
+            "auto": "Auto",
+            "manual": "Manual",
+            "participation": "Participation"
+          },
+          "lateRules": {
+            "accept_late": "Accept late",
+            "reject_late": "Reject late",
+            "accept_with_flag": "Accept with flag"
+          },
+          "categoriesError": {
+            "title": "Couldn't load categories",
+            "reason": "Score categories failed to load. Add them in the setup score-policy step."
+          }
+        },
+        "actions": {
+          "save": "Save draft",
+          "publish": "Publish",
+          "republish": "Re-publish"
+        }
+      },
+      "publish": {
+        "gate": {
+          "scorePolicy": {
+            "title": "Finish the score policy to publish",
+            "reason": "This activity counts toward the grade, so these fields are required: {fields}.",
+            "fields": {
+              "score_category_id": "score category",
+              "points": "points",
+              "grading_mode": "grading mode",
+              "late_rule": "late rule",
+              "due_at": "due date",
+              "close_at": "close date"
+            }
+          },
+          "configInvalid": {
+            "title": "Activity setup is incomplete",
+            "reason": "Add at least one prompt, option, or reaction before publishing."
+          },
+          "notPublishable": {
+            "title": "This activity can't be published",
+            "reason": "It's already closed or archived. Duplicate it to run again."
+          },
+          "generic": {
+            "title": "Couldn't publish the activity",
+            "reason": "Something went wrong. Please try again."
+          }
+        }
+      },
+      "monitor": {
+        "title": "Live monitor",
+        "submissions": "Responses",
+        "distributionLabel": "Live response distribution",
+        "status": {
+          "live": "Live",
+          "connecting": "Connecting…",
+          "closed": "Closed"
+        },
+        "closedNotice": "This activity has closed. No more responses will arrive.",
+        "reducedMotionNote": "Live totals update without animation.",
+        "empty": {
+          "title": "No responses yet",
+          "reason": "The live distribution appears here as students respond."
+        },
+        "swipe": {
+          "left": "Left",
+          "right": "Right"
+        },
+        "reaction": "Reaction",
+        "option": "Option"
+      },
+      "results": {
+        "title": "Results & evidence",
+        "description": "Every submitted response, joined to the live distribution.",
+        "submissionCount": "{count} responses",
+        "anonymousNote": "Responses are anonymous — identities are hidden.",
+        "columns": {
+          "student": "Student",
+          "response": "Response",
+          "submittedAt": "Submitted"
+        },
+        "anonymousStudent": "Anonymous",
+        "empty": {
+          "title": "No responses yet",
+          "reason": "Responses appear here once students take part."
+        },
+        "error": {
+          "title": "Couldn't load results",
+          "reason": "We couldn't load this activity's responses. Please try again."
+        },
+        "swipe": {
+          "left": "Swiped left",
+          "right": "Swiped right"
+        }
+      },
+      "home": {
+        "title": "Activities",
+        "description": "Author swipe, vote, and comment activities, and jump to every practice and study surface for this course.",
+        "new": "New activity",
+        "newFormat": "New {format}",
+        "sections": {
+          "activities": "In-class activities",
+          "practice": "Practice quizzes",
+          "quiz": "Graded quizzes",
+          "foldins": "Study & live surfaces"
+        },
+        "status": {
+          "draft": "Draft",
+          "published": "Published",
+          "live": "Live",
+          "closed": "Closed",
+          "archived": "Archived"
+        },
+        "scoreBearing": "Counts toward grade",
+        "participation": "Participation only",
+        "responseCount": "{count} responses",
+        "open": "Open",
+        "manage": "Manage",
+        "emptyActivities": {
+          "title": "No activities yet",
+          "reason": "Create a swipe, vote, or comment activity to run in class."
+        },
+        "emptyPractice": {
+          "title": "No practice quizzes yet",
+          "reason": "Practice quizzes you author appear here."
+        },
+        "emptyQuiz": {
+          "title": "No graded quizzes yet",
+          "reason": "Graded quizzes you author appear here."
+        },
+        "error": {
+          "title": "Couldn't load activities",
+          "reason": "We couldn't load this course's activities. Please try again."
+        },
+        "foldins": {
+          "flashcards": {
+            "title": "Flashcards",
+            "description": "Author and review flashcard decks."
+          },
+          "pronunciation": {
+            "title": "Pronunciation",
+            "description": "Set up pronunciation practice items."
+          },
+          "revision": {
+            "title": "Adaptive revision",
+            "description": "Preview the mixed revision session."
+          },
+          "live": {
+            "title": "Live quiz",
+            "description": "Host a live quiz session."
+          }
+        }
+      }
+    },
+    "grades": {
+      "title": "Grade export",
+      "description": "Download the current grade record as a CSV.",
+      "export": {
+        "button": "Export grades (CSV)",
+        "exporting": "Preparing export…",
+        "note": "Every export is audited. Each download is recorded with who exported, when, and how many rows.",
+        "error": {
+          "title": "Export failed",
+          "reason": "We couldn't generate the grade export. Please try again."
+        }
       }
     },
     "materials": {
