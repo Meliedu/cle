@@ -38,6 +38,7 @@ from app.models.revision import (
     RevisionSession,
 )
 from app.models.user import User
+from app.models.work_item import WorkItem
 from app.models.curriculum import (
     Assignment,
     AssignmentSubmission,
@@ -130,4 +131,5 @@ __all__ = [
     "OutcomeCheck",
     "CourseRecordItem",
     "ReadinessResponse",
+    "WorkItem",
 ]
