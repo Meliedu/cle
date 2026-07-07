@@ -51,3 +51,47 @@ class ScoreCategoryResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ----- P5 B11: score record (teacher rollup + student S059) -----
+
+
+class ArtifactScore(BaseModel):
+    """One score-bearing artifact's contribution to a student's record.
+
+    ``kind`` ∈ ``quiz|activity``. ``score_pct`` is the 0–100 quiz percentage
+    (``None`` for participation-only activities). ``earned_points`` scales
+    ``points`` by that percentage for quizzes, or is the full ``points`` on a
+    submitted activity (participation-only). ``submitted`` is whether the student
+    has any graded attempt / activity response for the artifact.
+    """
+
+    kind: str
+    artifact_id: uuid.UUID
+    title: str
+    category_id: uuid.UUID | None
+    points: Decimal | None
+    score_pct: Decimal | None
+    earned_points: Decimal | None
+    submitted: bool
+
+
+class CategoryRollup(BaseModel):
+    """A student's per-category rollup (``category_id=None`` = uncategorized)."""
+
+    category_id: uuid.UUID | None
+    category_name: str | None
+    weight: Decimal | None
+    points_pool: Decimal | None
+    earned_points: Decimal
+    possible_points: Decimal
+    artifacts: list[ArtifactScore]
+
+
+class StudentScoreRecord(BaseModel):
+    """One active student's full score record (teacher list item / student self)."""
+
+    user_id: uuid.UUID
+    full_name: str | None
+    email: str
+    categories: list[CategoryRollup]

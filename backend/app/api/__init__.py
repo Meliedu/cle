@@ -40,6 +40,8 @@ from app.api.readiness import router as readiness_router
 from app.api.recalibration import router as recalibration_router
 from app.api.review import router as review_router
 from app.api.revision import router as revision_router
+from app.api.scores import me_router as scores_me_router
+from app.api.scores import record_router as scores_record_router
 from app.api.scores import router as scores_router
 from app.api.setup import router as setup_router
 from app.api.speech import router as speech_router
@@ -78,6 +80,8 @@ api_router.include_router(mastery_router)
 api_router.include_router(instructor_alerts_router)
 api_router.include_router(review_router)
 api_router.include_router(scores_router)
+api_router.include_router(scores_record_router)
+api_router.include_router(scores_me_router)
 api_router.include_router(setup_router)
 api_router.include_router(checkpoints_course_router)
 api_router.include_router(checkpoints_router)
