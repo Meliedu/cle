@@ -1405,6 +1405,7 @@
         "scoreBearing": "Counts toward grade",
         "participation": "Participation only",
         "responseCount": "{count} responses",
+        "questionCount": "{count} questions",
         "open": "Open",
         "manage": "Manage",
         "emptyActivities": {
