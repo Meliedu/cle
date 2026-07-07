@@ -1210,6 +1210,27 @@
     }
   },
   "student": {
+    "dashboard": {
+      "nextAction": {
+        "eyebrow": "Your next step",
+        "due": "Due {date}",
+        "noDue": "No due date",
+        "required": "Required",
+        "optional": "Optional",
+        "open": "Open",
+        "clearTitle": "You're all caught up",
+        "clearReason": "No tasks need your attention right now. Nice work.",
+        "source": {
+          "checkpoint": "Checkpoint",
+          "practice": "Practice",
+          "quiz": "Quiz",
+          "activity": "Activity",
+          "material": "Material",
+          "follow_up": "Follow-up",
+          "report": "Report"
+        }
+      }
+    },
     "join": {
       "title": "Join a course",
       "subtitle": "Enter the code shown by your instructor.",
