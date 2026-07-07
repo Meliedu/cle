@@ -63,7 +63,7 @@ async def create_course(
             continue
 
         enrollment = Enrollment(
-            course_id=course.id, user_id=user.id, role="instructor"
+            course_id=course.id, user_id=user.id, role="instructor", status="active"
         )
         db.add(enrollment)
 

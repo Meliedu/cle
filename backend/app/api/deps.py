@@ -154,7 +154,8 @@ async def get_current_user(
         for row in pending_rows:
             db.add(
                 Enrollment(
-                    course_id=row.course_id, user_id=user.id, role=row.role
+                    course_id=row.course_id, user_id=user.id, role=row.role,
+                    status="active",
                 )
             )
             await db.delete(row)

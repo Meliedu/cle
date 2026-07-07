@@ -78,6 +78,10 @@ class Enrollment(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "enrollments"
     __table_args__ = (
         UniqueConstraint("course_id", "user_id"),
+        CheckConstraint(
+            "status IN ('pending','active','rejected')",
+            name="ck_enrollments_status_valid",
+        ),
     )
 
     course_id: Mapped[uuid.UUID] = mapped_column(
@@ -87,6 +91,9 @@ class Enrollment(UUIDPrimaryKeyMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", server_default=text("'active'")
+    )
     enrolled_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

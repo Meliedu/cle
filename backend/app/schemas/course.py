@@ -57,6 +57,7 @@ class EnrollmentResponse(BaseModel):
     course_id: uuid.UUID
     user_id: uuid.UUID
     role: str
+    status: str
     enrolled_at: datetime
 
     model_config = {"from_attributes": True}
