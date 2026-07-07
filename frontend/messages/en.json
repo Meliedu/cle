@@ -1256,6 +1256,55 @@
         "reason": "Refresh the page to try again."
       }
     },
+    "sessions": {
+      "untitled": "Untitled session",
+      "sessionLabel": "Session {index}",
+      "backToList": "Back to sessions",
+      "focus": "Today's focus",
+      "release": {
+        "locked": "Not yet open",
+        "released": "Open",
+        "completed": "Completed",
+        "archived": "Archived"
+      },
+      "groups": {
+        "active": "Open sessions",
+        "activeEmpty": "No open sessions yet. Completed sessions appear below.",
+        "completed": "Completed sessions"
+      },
+      "facts": {
+        "date": "Date",
+        "time": "Time",
+        "venue": "Venue",
+        "venueTba": "To be announced"
+      },
+      "materials": {
+        "title": "Class materials",
+        "open": "Open",
+        "empty": "No materials for this session yet."
+      },
+      "checkIn": {
+        "title": "Class check-in",
+        "reason": "Check-ins run live in class — scan the QR your instructor shows. Review your past check-ins any time.",
+        "view": "My check-ins"
+      },
+      "locked": {
+        "title": "This session isn't open yet",
+        "reason": "It opens when your instructor releases it. The date and venue are shown above so you can plan ahead."
+      },
+      "empty": {
+        "title": "No sessions open yet",
+        "reason": "Sessions appear here once your instructor releases them."
+      },
+      "notFound": {
+        "title": "We couldn't find this session",
+        "reason": "It may not be open yet, or it was removed. Return to your sessions."
+      },
+      "error": {
+        "title": "We couldn't load your sessions",
+        "reason": "Refresh the page to try again."
+      }
+    },
     "join": {
       "title": "Join a course",
       "subtitle": "Enter the code shown by your instructor.",
