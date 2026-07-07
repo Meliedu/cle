@@ -589,3 +589,175 @@ async def test_get_quiz_exposes_disclosure_fields_redacts_answer_for_student(
     assert data["close_at"] is not None
     # Answer key stays redacted for the student.
     assert data["questions"][0]["correct_answer"] is None
+
+
+# --------------------------------------------------------------------------- #
+#  PUT /quizzes/{id}: persist score-policy fields (B1 columns) — the gap fix   #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_update_persists_score_policy_fields(
+    async_client: AsyncClient, db_session: AsyncSession, owned_course: Course,
+    score_category: ScoreCategory, logged_in_user: User,
+):
+    """PUT /quizzes/{id} with the full score policy persists ALL of it — a
+    re-read of the committed row shows the new values (previously silently
+    dropped: QuizUpdate only accepted title/description)."""
+    from tests.conftest import test_session_factory
+
+    due = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=1)
+    close = due + timedelta(days=1)
+    quiz = await _make_quiz(
+        db_session, owned_course, logged_in_user.id,
+        assessment_purpose="practice",
+    )
+    quiz_id = quiz.id
+
+    r = await async_client.put(
+        f"/api/quizzes/{quiz_id}",
+        json={
+            "assessment_purpose": "graded",
+            "score_bearing": True,
+            "score_category_id": str(score_category.id),
+            "points": 10,
+            "grading_mode": "auto",
+            "late_rule": "accept_late",
+            "due_at": due.isoformat(),
+            "close_at": close.isoformat(),
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    # Re-read the COMMITTED row on an independent connection.
+    async with test_session_factory() as verify:
+        q = await verify.get(Quiz, quiz_id)
+        assert q.assessment_purpose == "graded"
+        assert q.score_bearing is True
+        assert q.score_category_id == score_category.id
+        assert q.points == Decimal("10")
+        assert q.grading_mode == "auto"
+        assert q.late_rule == "accept_late"
+        assert q.due_at == due
+        assert q.close_at == close
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("assessment_purpose", "bogus"),
+        ("grading_mode", "bogus"),
+        ("late_rule", "bogus"),
+    ],
+)
+async def test_update_rejects_invalid_enum(
+    async_client: AsyncClient, db_session: AsyncSession, owned_course: Course,
+    logged_in_user: User, field: str, value: str,
+):
+    """An invalid enum value for a score-policy field → 422 (schema-validated
+    against the DB CHECK constraints)."""
+    quiz = await _make_quiz(
+        db_session, owned_course, logged_in_user.id,
+        assessment_purpose="practice",
+    )
+
+    r = await async_client.put(
+        f"/api/quizzes/{quiz.id}", json={field: value}
+    )
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_update_then_publish_graded_end_to_end(
+    async_client: AsyncClient, db_session: AsyncSession, owned_course: Course,
+    score_category: ScoreCategory, logged_in_user: User,
+):
+    """The end-to-end path: a practice quiz is reconfigured to graded via PUT
+    with a complete score policy, then PUBLISHES successfully — no
+    SCORE_POLICY_INCOMPLETE (proves the persisted fields satisfy the gate)."""
+    close = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=2)
+    quiz = await _make_quiz(
+        db_session, owned_course, logged_in_user.id,
+        assessment_purpose="practice",
+    )
+
+    ru = await async_client.put(
+        f"/api/quizzes/{quiz.id}",
+        json={
+            "assessment_purpose": "graded",
+            "score_bearing": True,
+            "score_category_id": str(score_category.id),
+            "points": 10,
+            "grading_mode": "auto",
+            "late_rule": "accept_late",
+            "close_at": close.isoformat(),
+        },
+    )
+    assert ru.status_code == 200, ru.text
+
+    rp = await async_client.post(f"/api/quizzes/{quiz.id}/publish")
+    assert rp.status_code == 200, rp.text
+    assert rp.json()["data"]["is_published"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_title_only_no_regression(
+    async_client: AsyncClient, db_session: AsyncSession, owned_course: Course,
+    logged_in_user: User,
+):
+    """A title/description-only update still works and leaves score-policy
+    fields untouched (partial update — exclude_unset)."""
+    from tests.conftest import test_session_factory
+
+    quiz = await _make_quiz(
+        db_session, owned_course, logged_in_user.id, title="Old title",
+        assessment_purpose="practice",
+    )
+    quiz_id = quiz.id
+
+    r = await async_client.put(
+        f"/api/quizzes/{quiz_id}",
+        json={"title": "New title", "description": "New desc"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["title"] == "New title"
+
+    async with test_session_factory() as verify:
+        q = await verify.get(Quiz, quiz_id)
+        assert q.title == "New title"
+        assert q.description == "New desc"
+        # Untouched score policy stays at its defaults.
+        assert q.assessment_purpose == "practice"
+        assert q.grading_mode is None
+        assert q.points is None
+
+
+@pytest.mark.asyncio
+async def test_update_score_policy_non_owner_404(
+    async_client: AsyncClient, db_session: AsyncSession,
+):
+    """A quiz owned by another instructor is invisible to update → 404."""
+    other = User(
+        better_auth_id="quiz_other_upd", email="quizotherupd@ust.hk",
+        full_name="Other", role="instructor",
+    )
+    db_session.add(other)
+    await db_session.flush()
+    course = Course(
+        name="ForeignQuizUpd", language="english",
+        instructor_id=other.id, enroll_code="QZUPFRGN",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    quiz = Quiz(
+        course_id=course.id, created_by=other.id, title="theirs",
+        assessment_purpose="practice",
+    )
+    db_session.add(quiz)
+    await db_session.commit()
+
+    r = await async_client.put(
+        f"/api/quizzes/{quiz.id}", json={"grading_mode": "auto"}
+    )
+    assert r.status_code == 404

@@ -8,6 +8,15 @@ from pydantic import BaseModel, model_validator
 
 QuestionDifficulty = Literal["easy", "medium", "hard"]
 
+# --- P5 score-policy enums (mirror the DB CHECK constraints on `quizzes`) ---
+# assessment_purpose ∈ practice|graded ; grading_mode ∈ auto|manual|participation ;
+# late_rule ∈ accept_late|reject_late|accept_with_flag. Used by QuizUpdate so a
+# teacher can PERSIST the graded-quiz policy (previously silently dropped) and
+# satisfy the B5 publish gate.
+AssessmentPurpose = Literal["practice", "graded"]
+GradingMode = Literal["auto", "manual", "participation"]
+LateRule = Literal["accept_late", "reject_late", "accept_with_flag"]
+
 
 class QuestionResponse(BaseModel):
     id: uuid.UUID
@@ -165,6 +174,22 @@ class QuestionUpdate(BaseModel):
 class QuizUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
+
+    # --- P5 score-policy (B1 columns) ---
+    # All optional so the update stays a partial patch: the handler applies only
+    # the fields the client actually sent (``model_dump(exclude_unset=True)``).
+    # Enums are validated here against the DB CHECK constraints so an invalid
+    # value is a 422 before it ever reaches the row. Persisting these is what
+    # lets a graded quiz satisfy the B5 publish gate.
+    assessment_purpose: AssessmentPurpose | None = None
+    score_bearing: bool | None = None
+    score_category_id: uuid.UUID | None = None
+    points: Decimal | None = None
+    grading_mode: GradingMode | None = None
+    late_rule: LateRule | None = None
+    open_at: datetime | None = None
+    due_at: datetime | None = None
+    close_at: datetime | None = None
 
 
 class QuizAttemptCreate(BaseModel):
