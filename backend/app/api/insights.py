@@ -35,6 +35,8 @@ from app.schemas.insights import (
     IloMapResponse,
     LearningProfileGroups,
     LearningProfileResponse,
+    SkillMapEntry,
+    SkillMapResponse,
 )
 
 router = APIRouter(tags=["insights"])
@@ -298,5 +300,57 @@ async def cohort_ilo_map(
         success=True,
         data=CohortIloMapResponse(
             course_id=course.id, has_evidence=any_evidence, objectives=entries
+        ),
+    )
+
+
+@router.get(
+    "/users/me/courses/{course_id}/skill-map",
+    response_model=APIResponse[SkillMapResponse],
+)
+async def my_skill_map(
+    course_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> APIResponse[SkillMapResponse]:
+    """The caller's skill-pattern map — HONEST, config-driven (pure read, B6).
+
+    One entry per pilot ``skill_taxonomy`` skill. Decision 5: NO ``skill`` link
+    exists anywhere in the schema — ``concept_tags.target_kind`` has
+    ``objective``/``checkpoint_card``/… but NOT ``skill``, and no evidence row
+    (``concept_mastery``, ``learning_notes``, …) carries a skill dimension. So
+    every cell honestly renders the no-evidence state: ``has_evidence=False``
+    with ``strength`` and ``sample_size`` both ``None``. This endpoint NEVER
+    fabricates a score — it only exposes the config taxonomy so the frontend can
+    render the "we don't have skill-level evidence yet" state.
+
+    SEAM TO EXTEND: when a future concept→skill mapping lands (e.g. a ``skill``
+    ``target_kind`` on ``concept_tags``, or a skill column on the evidence rows),
+    aggregate the caller's ``concept_mastery`` over that mapping HERE and
+    populate ``strength``/``sample_size`` + flip ``has_evidence`` — only where
+    real evidence exists. Until then, honesty over a fabricated grid.
+
+    Enrollment-scoped (``verify_enrollment`` — active enrollment only, 403
+    otherwise) so it matches the rest of the student insights surface.
+    """
+    await verify_enrollment(db, course_id, user.id)
+
+    taxonomy = get_pilot_profile().skill_taxonomy
+    skills = [
+        SkillMapEntry(
+            skill=skill,
+            label=skill.replace("_", " ").capitalize(),
+            # Decision 5: no schema link exists — every cell is no-evidence.
+            has_evidence=False,
+            strength=None,
+            sample_size=None,
+        )
+        for skill in taxonomy
+    ]
+
+    return APIResponse(
+        success=True,
+        data=SkillMapResponse(
+            course_id=course_id, has_evidence=False, skills=skills
         ),
     )

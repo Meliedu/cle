@@ -102,3 +102,37 @@ class CohortIloMapResponse(BaseModel):
     course_id: uuid.UUID
     has_evidence: bool
     objectives: list[CohortIloMapEntry]
+
+
+class SkillMapEntry(BaseModel):
+    """One pilot ``skill_taxonomy`` skill on the skill-pattern map (B6).
+
+    HONEST by construction (Decision 5): no ``skill`` link exists anywhere in the
+    schema — ``concept_tags.target_kind`` has ``objective``/``checkpoint_card``/…
+    but NOT ``skill``, and no evidence row carries a skill dimension. So every
+    entry renders the no-evidence state: ``has_evidence=False`` with
+    ``strength`` and ``sample_size`` both ``None``. The endpoint NEVER fabricates
+    a score. The fields are forward-compatible: when a future concept→skill
+    mapping lands, ``strength``/``sample_size`` populate and ``has_evidence``
+    flips — only where real evidence exists. ``skill`` is the taxonomy id;
+    ``label`` is a human-readable rendering of it.
+    """
+
+    skill: str
+    label: str
+    has_evidence: bool
+    strength: float | None
+    sample_size: int | None
+
+
+class SkillMapResponse(BaseModel):
+    """The caller's skill-pattern map for one course (one entry per pilot skill).
+
+    A config-driven grid of the pilot ``skill_taxonomy``. Today ``has_evidence``
+    is always ``False`` (no schema link exists — Decision 5); the frontend (F4)
+    renders it as the honest "we don't have skill-level evidence yet" state.
+    """
+
+    course_id: uuid.UUID
+    has_evidence: bool
+    skills: list[SkillMapEntry]
