@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/hooks/use-auth";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import type { CourseResponse } from "@/hooks/use-courses";
 import { ApiError, apiFetch, type ApiEnvelope } from "@/lib/api";
 
@@ -10,8 +11,10 @@ import { ApiError, apiFetch, type ApiEnvelope } from "@/lib/api";
  * Student enrollment hooks (P2 Task 5 endpoints). `enroll-by-code` is the
  * terminal join action; `lookup` is the non-committing resolver the join
  * funnel uses to branch a typed code before the student invests in the
- * readiness survey. Teacher-side join-request approve/deny + roster hooks are
- * deferred to Tasks 14/15 (their screens don't exist yet).
+ * readiness survey. The teacher-side join-request approve/deny mutations
+ * (T033) are deferred to Task 15; the read-only `useRoster` list query below
+ * is shared by the T029 overview stat (Task 13) and the T032 roster detail
+ * (Task 14).
  */
 
 // ----- enroll-by-code -----
@@ -54,6 +57,33 @@ export function useEnrollByCode() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["courses"] });
     },
+  });
+}
+
+// ----- roster (read-only) -----
+
+/** An active enrollment row + user info (mirrors backend `RosterEntryOut`). */
+export interface RosterEntry {
+  readonly enrollment_id: string;
+  readonly user_id: string;
+  readonly full_name: string | null;
+  readonly email: string;
+  readonly role: string;
+  readonly enrolled_at: string;
+  readonly status: string;
+}
+
+/**
+ * GET `/courses/{id}/roster` — active enrollments (students + instructors) for
+ * an owned course. Read-only list used by the teacher course overview
+ * (enrolled-student count) and the roster detail screen. The approve/deny
+ * mutations that mutate join requests live with the T033 screen (Task 15).
+ */
+export function useRoster(courseId: string) {
+  return useAuthedQuery<readonly RosterEntry[]>({
+    queryKey: ["roster", courseId],
+    path: `/courses/${courseId}/roster`,
+    enabled: Boolean(courseId),
   });
 }
 

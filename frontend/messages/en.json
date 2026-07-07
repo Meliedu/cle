@@ -615,6 +615,80 @@
         "REVIEW_REQUIRED": "This checkpoint can only be edited while it is a draft.",
         "REMOVE_REASON_REQUIRED": "Choose a reason before removing this card."
       }
+    },
+    "course": {
+      "breadcrumb": "Courses",
+      "loading": "Loading course…",
+      "loadErrorTitle": "We couldn't load this course",
+      "loadError": "Refresh the page or return to your courses.",
+      "status": {
+        "draft": "Draft",
+        "published": "Published"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "schedule": "Sessions",
+        "setup": "Setup",
+        "materials": "Materials",
+        "activities": "Activities",
+        "insights": "Insights"
+      },
+      "tabSoon": "Soon",
+      "overview": {
+        "title": "Course overview",
+        "subtitle": "A snapshot of your course, with quick links into setup and sessions.",
+        "draftBannerTitle": "This course is still in setup",
+        "draftBannerReason": "Finish and publish setup before students can join.",
+        "finishSetup": "Continue setup",
+        "stats": {
+          "sessions": "Sessions",
+          "students": "Enrolled students",
+          "materials": "Materials"
+        },
+        "access": {
+          "title": "Course access",
+          "subtitle": "Share this code so students can join. Manage it in setup.",
+          "codeHidden": "Class code hidden",
+          "codeVisible": "Class code",
+          "reveal": "Reveal",
+          "hide": "Hide",
+          "copy": "Copy",
+          "copied": "Copied",
+          "copyError": "We couldn't copy the code. Reveal it and copy manually.",
+          "active": "Accepting joins",
+          "inactive": "Joins closed",
+          "manage": "Manage in setup"
+        },
+        "links": {
+          "title": "Quick links",
+          "schedule": "View schedule",
+          "setup": "Open setup"
+        }
+      },
+      "schedule": {
+        "title": "Course schedule",
+        "subtitle": "Every session for this course. Edit sessions from setup.",
+        "loading": "Loading schedule…",
+        "editInSetup": "Edit in setup",
+        "columns": {
+          "session": "Session",
+          "date": "Date",
+          "venue": "Venue",
+          "topic": "Topic",
+          "release": "Visibility"
+        },
+        "release": {
+          "locked": "Hidden",
+          "released": "Released",
+          "completed": "Completed",
+          "archived": "Archived"
+        },
+        "placeholder": "—",
+        "empty": {
+          "title": "No sessions yet",
+          "reason": "Add sessions in the course setup schedule step."
+        }
+      }
     }
   },
   "student": {
