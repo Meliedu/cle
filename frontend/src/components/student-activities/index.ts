@@ -3,6 +3,7 @@ export { ActivityWaiting } from "./activity-waiting";
 export { SwipeActivity } from "./swipe-activity";
 export { VoteActivity } from "./vote-activity";
 export { CommentReactionActivity } from "./comment-reaction-activity";
+export { StudentScores } from "./student-scores";
 export {
   swipePrompts,
   voteOptions,

@@ -1555,6 +1555,31 @@
         "title": "Activities arrive soon",
         "reason": "Practice sets, quizzes, and polls for this course will show up here once your instructor sets them up."
       },
+      "list": {
+        "practiceHeading": "Practice & activities",
+        "practiceDescription": "Study and take part in this course at your own pace.",
+        "recordHeading": "Your record",
+        "scoresTitle": "Score & participation record",
+        "scoresDescription": "See how your graded work and activities add up."
+      },
+      "foldIn": {
+        "flashcards": {
+          "title": "Flashcards",
+          "description": "Review key terms and definitions as a deck."
+        },
+        "revision": {
+          "title": "Adaptive revision",
+          "description": "Practice questions that adapt to your level."
+        },
+        "pronunciation": {
+          "title": "Pronunciation",
+          "description": "Record yourself and get instant feedback."
+        },
+        "liveQuiz": {
+          "title": "Live quiz",
+          "description": "Join a live in-class quiz when your instructor hosts one."
+        }
+      },
       "runner": {
         "fallbackTitle": "Class activity",
         "back": "Back to activities",
@@ -1585,6 +1610,35 @@
         "instructions": "Tap a reaction to add it. You can react as many times as you like.",
         "yourReactions": "Your reactions",
         "empty": "You haven't reacted yet."
+      }
+    },
+    "scores": {
+      "title": "Score & participation record",
+      "description": "Your graded work and activities for this course, rolled up by category.",
+      "back": "Back to activities",
+      "points": "{earned} / {possible} pts",
+      "weight": "{weight}% of grade",
+      "scorePct": "{pct}%",
+      "submitted": "Submitted",
+      "notSubmitted": "Not submitted",
+      "overall": {
+        "label": "Overall",
+        "caption": "Total across all categories"
+      },
+      "category": {
+        "noArtifacts": "Nothing graded in this category yet."
+      },
+      "kind": {
+        "quiz": "Quiz",
+        "activity": "Activity"
+      },
+      "empty": {
+        "title": "No scores yet",
+        "reason": "Once you complete a graded quiz or a scored activity, your points show up here."
+      },
+      "error": {
+        "title": "We couldn't load your record",
+        "reason": "Refresh the page to try again."
       }
     },
     "join": {
