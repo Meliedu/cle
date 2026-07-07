@@ -1208,6 +1208,12 @@
         }
       }
     },
+    "activities": {
+      "empty": {
+        "title": "Activities workspace",
+        "reason": "Build practice sets, graded quizzes, and live activities (swipe, vote, comment) for this course. Authoring surfaces arrive next."
+      }
+    },
     "materials": {
       "title": "Materials",
       "subtitle": "Organize the files and links used across sessions and activities.",
