@@ -34,7 +34,7 @@ from app.models import (
     OutcomeCheck,
     ReviewAction,
 )
-from app.models.course import Course
+from app.models.course import Course, Enrollment
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.schemas.evidence import (
@@ -263,6 +263,32 @@ async def review_learning_note(
                 status_code=400,
                 detail="Follow-up requires a target user (note has no student)",
             )
+        # Access-control (MEDIUM): when the reviewer supplies an explicit target
+        # via `spec.user_id`, it must be an ACTIVE student of the note's course.
+        # Otherwise an instructor could mint a follow-up (+ work_item + progress
+        # row) for an ARBITRARY user, who could then read the reviewed note's
+        # content via GET /users/me/follow-ups/{id}. A non-enrolled TARGET is a
+        # bad request on the instructor's action (400), not a 403 on the actor.
+        # This check runs BEFORE any follow-up/work_item write, so a rejected
+        # target writes nothing. The note.user_id fallback is system-derived
+        # (set at note-drafting from a Learning Event), not actor-controlled.
+        if spec is not None and spec.user_id is not None:
+            enrolled = (
+                await db.execute(
+                    select(Enrollment.id).where(
+                        Enrollment.course_id == note.course_id,
+                        Enrollment.user_id == target_user_id,
+                        Enrollment.status == "active",
+                    )
+                )
+            ).first()
+            if enrolled is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Follow-up target is not an active student of this course"
+                    ),
+                )
         # Guarded upstream (Decision 3): reuse an existing ACTIVE follow-up for
         # this (note, student) rather than spawning a duplicate — so a re-review
         # never creates a second follow-up (and thus a second work_item).
@@ -411,6 +437,12 @@ async def get_follow_up_detail(
     # 404 (not 403) when the row belongs to another student, masking existence.
     if row is None or row.user_id != student.id:
         raise HTTPException(status_code=404, detail="Follow-up not found")
+
+    # Access-control (LOW-1): gate the reviewed-note content read on an ACTIVE
+    # enrollment — matching get_signal / list_my_follow_ups. A dropped/rejected/
+    # pending student must not retain read access to their own follow-up's
+    # reviewed note content. verify_enrollment raises 403 (owner already proven).
+    await verify_enrollment(db, row.course_id, student.id)
 
     note: LearningNote | None = None
     if row.learning_note_id is not None:

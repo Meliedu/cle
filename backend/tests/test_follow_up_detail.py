@@ -28,7 +28,7 @@ import pytest
 from app.api.deps import get_current_user
 from app.main import app
 from app.models import FollowUpAction, LearningNote, OutcomeCheck
-from app.models.course import Course
+from app.models.course import Course, Enrollment
 from app.models.user import User
 
 _AUTH = {"Authorization": "Bearer test-token"}
@@ -49,6 +49,18 @@ async def _make_course(db, instructor: User, code: str) -> Course:
     await db.commit()
     await db.refresh(course)
     return course
+
+
+async def _enroll(db, course, student, *, status="active") -> None:
+    db.add(
+        Enrollment(
+            course_id=course.id,
+            user_id=student.id,
+            role="student",
+            status=status,
+        )
+    )
+    await db.commit()
 
 
 async def _make_note(db, course, *, user_id, review_status="reviewed") -> LearningNote:
@@ -99,6 +111,7 @@ async def test_reviewed_follow_up_detail_exposes_reviewed_note_fields(
     client, db_session, test_instructor, test_student
 ):
     course = await _make_course(db_session, test_instructor, "FD0001")
+    await _enroll(db_session, course, test_student)
     note = await _make_note(db_session, course, user_id=test_student.id)
     due = (datetime.now(timezone.utc) + timedelta(days=2)).replace(microsecond=0)
     fua = await _make_follow_up(
@@ -131,6 +144,7 @@ async def test_draft_note_interpretation_never_exposed(
 ):
     """Decision 6 / Core §0.2 — an unreviewed note's content is not shown."""
     course = await _make_course(db_session, test_instructor, "FD0002")
+    await _enroll(db_session, course, test_student)
     note = await _make_note(
         db_session, course, user_id=test_student.id, review_status="draft"
     )
@@ -154,6 +168,7 @@ async def test_suggested_follow_up_returns_waiting_shape(
     client, db_session, test_instructor, test_student
 ):
     course = await _make_course(db_session, test_instructor, "FD0003")
+    await _enroll(db_session, course, test_student)
     note = await _make_note(
         db_session, course, user_id=test_student.id, review_status="draft"
     )
@@ -183,6 +198,7 @@ async def test_outcome_status_surfaced_when_present(
     client, db_session, test_instructor, test_student
 ):
     course = await _make_course(db_session, test_instructor, "FD0004")
+    await _enroll(db_session, course, test_student)
     note = await _make_note(db_session, course, user_id=test_student.id)
     fua = await _make_follow_up(
         db_session,
@@ -214,6 +230,7 @@ async def test_checkpoint_target_carries_revisit_link(
     client, db_session, test_instructor, test_student
 ):
     course = await _make_course(db_session, test_instructor, "FD0005")
+    await _enroll(db_session, course, test_student)
     note = await _make_note(db_session, course, user_id=test_student.id)
     checkpoint_id = uuid.uuid4()
     fua = await _make_follow_up(
@@ -271,3 +288,52 @@ async def test_missing_follow_up_is_404(
         f"/api/users/me/follow-ups/{uuid.uuid4()}", headers=_AUTH
     )
     assert r.status_code == 404, r.text
+
+
+@pytest.mark.asyncio
+async def test_active_enrolled_owner_gets_200(
+    client, db_session, test_instructor, test_student
+):
+    """LOW-1: an owner with an ACTIVE enrollment reads their own follow-up (200)."""
+    course = await _make_course(db_session, test_instructor, "FD0007")
+    await _enroll(db_session, course, test_student, status="active")
+    note = await _make_note(db_session, course, user_id=test_student.id)
+    fua = await _make_follow_up(db_session, course, note, user_id=test_student.id)
+
+    _act_as(test_student)
+    r = await client.get(f"/api/users/me/follow-ups/{fua.id}", headers=_AUTH)
+    assert r.status_code == 200, r.text
+
+
+@pytest.mark.parametrize(
+    ("bad_status", "code"),
+    [("pending", "FD0P01"), ("rejected", "FD0R01")],
+)
+@pytest.mark.asyncio
+async def test_non_active_enrollment_owner_is_403(
+    client, db_session, test_instructor, test_student, bad_status, code
+):
+    """LOW-1: a dropped/pending/rejected owner is refused (403) even for their
+    OWN row — the reviewed note content stays gated on active enrollment."""
+    course = await _make_course(db_session, test_instructor, code)
+    await _enroll(db_session, course, test_student, status=bad_status)
+    note = await _make_note(db_session, course, user_id=test_student.id)
+    fua = await _make_follow_up(db_session, course, note, user_id=test_student.id)
+
+    _act_as(test_student)
+    r = await client.get(f"/api/users/me/follow-ups/{fua.id}", headers=_AUTH)
+    assert r.status_code == 403, r.text
+
+
+@pytest.mark.asyncio
+async def test_no_enrollment_owner_is_403(
+    client, db_session, test_instructor, test_student
+):
+    """LOW-1: an owner with NO enrollment row is refused (403)."""
+    course = await _make_course(db_session, test_instructor, "FD0008")
+    note = await _make_note(db_session, course, user_id=test_student.id)
+    fua = await _make_follow_up(db_session, course, note, user_id=test_student.id)
+
+    _act_as(test_student)
+    r = await client.get(f"/api/users/me/follow-ups/{fua.id}", headers=_AUTH)
+    assert r.status_code == 403, r.text

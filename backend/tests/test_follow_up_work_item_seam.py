@@ -213,6 +213,101 @@ async def test_cohort_note_400s_and_writes_no_work_item(
 
 
 @pytest.mark.asyncio
+async def test_assign_followup_rejects_unenrolled_spec_target(
+    client, db_session, test_instructor, test_student
+):
+    """MEDIUM (access-control): an explicit ``spec.user_id`` that is NOT actively
+    enrolled in the note's course is rejected (400) and writes NO FollowUpAction,
+    work_item or progress row (verified on an INDEPENDENT connection)."""
+    from tests.conftest import test_session_factory
+
+    course = await _make_course(db_session, test_instructor, "FW0007")
+    note = await _make_note(db_session, course, user_id=test_student.id)
+
+    # An outsider who is NOT enrolled in the course.
+    outsider = User(
+        better_auth_id="dev_student_outsider",
+        email="outsider@connect.ust.hk",
+        full_name="Outsider",
+        role="student",
+    )
+    db_session.add(outsider)
+    await db_session.commit()
+    await db_session.refresh(outsider)
+    outsider_id = outsider.id
+    course_id = course.id
+
+    _act_as(test_instructor)
+    r = await client.post(
+        f"/api/learning-notes/{note.id}/review",
+        json={
+            "action_type": "assign_followup",
+            "follow_up": {"action_type": "practice", "user_id": str(outsider_id)},
+        },
+        headers=_AUTH,
+    )
+    assert r.status_code == 400, r.text
+
+    # Nothing persisted for the outsider — assert on an independent connection.
+    async with test_session_factory() as verify:
+        fus = (
+            await verify.execute(
+                select(FollowUpAction).where(FollowUpAction.user_id == outsider_id)
+            )
+        ).scalars().all()
+        assert fus == []
+        wis = (
+            await verify.execute(
+                select(WorkItem).where(WorkItem.course_id == course_id)
+            )
+        ).scalars().all()
+        assert wis == []
+        progress = (
+            await verify.execute(
+                select(WorkItemProgress).where(
+                    WorkItemProgress.user_id == outsider_id
+                )
+            )
+        ).scalars().all()
+        assert progress == []
+
+
+@pytest.mark.asyncio
+async def test_assign_followup_enrolled_spec_target_succeeds(
+    client, db_session, test_instructor, test_student
+):
+    """An explicit ``spec.user_id`` that IS actively enrolled still succeeds —
+    existing behavior preserved (cohort note re-targeted at an enrolled student)."""
+    course = await _make_course(db_session, test_instructor, "FW0008")
+    note = await _make_note(db_session, course, user_id=None)  # cohort note
+    await _enroll(db_session, course, test_student)  # active enrollment
+
+    _act_as(test_instructor)
+    r = await client.post(
+        f"/api/learning-notes/{note.id}/review",
+        json={
+            "action_type": "assign_followup",
+            "follow_up": {
+                "action_type": "practice",
+                "user_id": str(test_student.id),
+            },
+        },
+        headers=_AUTH,
+    )
+    assert r.status_code == 200, r.text
+
+    follow_up = (
+        await db_session.execute(
+            select(FollowUpAction).where(FollowUpAction.learning_note_id == note.id)
+        )
+    ).scalar_one()
+    assert follow_up.user_id == test_student.id
+
+    rows = await _work_items(db_session, follow_up.id)
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
 async def test_pre_commit_failure_rolls_back_follow_up_work_item_and_progress(
     client, db_session, test_instructor, test_student, monkeypatch
 ):
