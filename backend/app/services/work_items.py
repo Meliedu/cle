@@ -121,3 +121,86 @@ async def remove_work_item(db: AsyncSession, work_item: WorkItem) -> None:
     """
     work_item.deleted_at = datetime.now(timezone.utc)
     db.add(work_item)
+
+
+#: Checkpoint statuses that must own a ``checkpoint`` work_item — a checkpoint is
+#: on the student checklist once it is student-visible (spec §4.6 + Decision 4).
+_BACKFILL_STATUSES = ("published", "live", "closed", "archived")
+
+
+async def backfill_work_items(db: AsyncSession) -> int:
+    """Create one ``checkpoint`` work_item per pre-P4 published checkpoint.
+
+    Inserts a checklist row for every non-deleted checkpoint in
+    ``published|live|closed|archived`` that lacks one (Decision 4) and commits.
+    Idempotent: a re-run finds nothing missing and returns ``0`` — the
+    ``(course_id, source_kind, source_id)`` unique index + a pre-filter both
+    guard against duplicates. Does NOT synthesize historical
+    ``work_item_progress`` (progress is derived forward from new submissions).
+
+    Returns the number of work_items created on this run. Safe to run repeatedly
+    (ops/backfill entrypoint — NOT wired into startup).
+    """
+    # Local imports keep this module free of an import cycle at load time.
+    from app.models.checkpoint import Checkpoint
+    from app.models.course import Course
+
+    checkpoints = (
+        await db.execute(
+            select(Checkpoint).where(
+                Checkpoint.status.in_(_BACKFILL_STATUSES),
+                Checkpoint.deleted_at.is_(None),
+            )
+        )
+    ).scalars().all()
+    if not checkpoints:
+        return 0
+
+    cp_ids = [cp.id for cp in checkpoints]
+    already = set(
+        (
+            await db.execute(
+                select(WorkItem.source_id).where(
+                    WorkItem.source_kind == "checkpoint",
+                    WorkItem.source_id.in_(cp_ids),
+                )
+            )
+        ).scalars().all()
+    )
+
+    # The checklist row's author is the checkpoint's course instructor.
+    course_ids = {cp.course_id for cp in checkpoints}
+    instructor_by_course = {
+        cid: instr
+        for cid, instr in (
+            await db.execute(
+                select(Course.id, Course.instructor_id).where(Course.id.in_(course_ids))
+            )
+        ).all()
+    }
+
+    created = 0
+    for cp in checkpoints:
+        if cp.id in already:
+            continue
+        created_by = instructor_by_course.get(cp.course_id)
+        if created_by is None:
+            # Orphaned checkpoint (course gone) — nothing sensible to author it.
+            continue
+        await upsert_work_item(
+            db,
+            course_id=cp.course_id,
+            source_kind="checkpoint",
+            source_id=cp.id,
+            title=cp.title,
+            required=True,
+            score_bearing=False,
+            due_at=cp.close_at,
+            close_at=cp.close_at,
+            created_by=created_by,
+        )
+        created += 1
+
+    if created:
+        await db.commit()
+    return created

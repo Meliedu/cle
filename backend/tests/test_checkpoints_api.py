@@ -11,7 +11,7 @@ instructor; ``db_session``). Local ``owned_course`` / ``seed_meeting`` /
 ``draft_checkpoint_with_cards`` fixtures mirror ``test_setup_api.py``.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
@@ -26,6 +26,7 @@ from app.models import Course, Enrollment, User
 from app.models.checkpoint import Checkpoint, CheckpointCard
 from app.models.curriculum import CourseMeeting
 from app.models.task import Task
+from app.models.work_item import WorkItem
 
 
 @pytest_asyncio.fixture
@@ -635,3 +636,163 @@ async def test_student_forbidden(db_session: AsyncSession, owned_course: Course)
             assert r.status_code == 403
     finally:
         app.dependency_overrides.clear()
+
+
+# ----- B4: transactional checkpoint work_item on publish -----
+
+
+def _work_items_for(db_session: AsyncSession, cp_id: uuid.UUID):
+    return db_session.execute(
+        select(WorkItem).where(WorkItem.source_id == cp_id)
+    )
+
+
+@pytest.mark.asyncio
+async def test_publish_creates_checkpoint_work_item(
+    async_client: AsyncClient, db_session: AsyncSession,
+    logged_in_user: User, draft_checkpoint_with_cards,
+):
+    """A successful publish writes a `checkpoint` work_item atomically (B4)."""
+    cp, _ = draft_checkpoint_with_cards  # has meeting_id
+    cp.status = "approved"
+    await db_session.commit()
+
+    release = datetime.now(timezone.utc).replace(microsecond=0)
+    close = release + timedelta(hours=2)
+    r = await async_client.post(
+        f"/api/checkpoints/{cp.id}/publish",
+        json={
+            "release_at": release.isoformat(),
+            "close_at": close.isoformat(),
+            "close_rule": "at_close_at",
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    rows = (await _work_items_for(db_session, cp.id)).scalars().all()
+    assert len(rows) == 1
+    wi = rows[0]
+    assert wi.source_kind == "checkpoint"
+    assert wi.source_id == cp.id
+    assert wi.course_id == cp.course_id
+    assert wi.title == cp.title
+    assert wi.required is True
+    assert wi.score_bearing is False
+    assert wi.created_by == logged_in_user.id
+    assert wi.due_at == close
+    assert wi.close_at == close
+
+
+@pytest.mark.asyncio
+async def test_republish_does_not_duplicate_and_syncs_due_at(
+    async_client: AsyncClient, db_session: AsyncSession, draft_checkpoint_with_cards
+):
+    """Re-publishing the same checkpoint keeps ONE work_item (unique index) and
+    the row's due_at/title tracks the checkpoint's close_at (choice b)."""
+    cp, _ = draft_checkpoint_with_cards
+    cp.status = "approved"
+    await db_session.commit()
+
+    release = datetime.now(timezone.utc).replace(microsecond=0)
+    close1 = release + timedelta(hours=1)
+    r1 = await async_client.post(
+        f"/api/checkpoints/{cp.id}/publish",
+        json={
+            "release_at": release.isoformat(),
+            "close_at": close1.isoformat(),
+            "close_rule": "at_close_at",
+        },
+    )
+    assert r1.status_code == 200, r1.text
+
+    # Teacher edits the schedule, then re-publishes.
+    await db_session.refresh(cp)
+    cp.status = "approved"
+    await db_session.commit()
+    close2 = release + timedelta(hours=5)
+    r2 = await async_client.post(
+        f"/api/checkpoints/{cp.id}/publish",
+        json={
+            "release_at": release.isoformat(),
+            "close_at": close2.isoformat(),
+            "close_rule": "at_close_at",
+        },
+    )
+    assert r2.status_code == 200, r2.text
+
+    rows = (await _work_items_for(db_session, cp.id)).scalars().all()
+    assert len(rows) == 1  # no duplicate — idempotent on (course, kind, source)
+    await db_session.refresh(rows[0])
+    assert rows[0].due_at == close2  # choice b: due_at tracks close_at
+    assert rows[0].close_at == close2
+
+
+@pytest.mark.asyncio
+async def test_follow_up_kind_publish_maps_to_checkpoint_source_kind(
+    async_client: AsyncClient, db_session: AsyncSession,
+    owned_course: Course, seed_meeting: CourseMeeting,
+):
+    """A `follow_up`-KIND checkpoint publish still writes source_kind='checkpoint'
+    (the `follow_up` SPINE source_kind is reserved for P6)."""
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    cp = Checkpoint(
+        course_id=owned_course.id, meeting_id=seed_meeting.id,
+        kind="follow_up", title="Follow-up revisit", status="approved",
+        release_at=now, close_at=now + timedelta(hours=2), close_rule="at_close_at",
+    )
+    db_session.add(cp)
+    await db_session.commit()
+
+    r = await async_client.post(f"/api/checkpoints/{cp.id}/publish")
+    assert r.status_code == 200, r.text
+
+    rows = (await _work_items_for(db_session, cp.id)).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].source_kind == "checkpoint"
+
+
+@pytest.mark.asyncio
+async def test_publish_work_item_rolls_back_on_failure(
+    async_client: AsyncClient, db_session: AsyncSession,
+    draft_checkpoint_with_cards, monkeypatch,
+):
+    """If the publish transaction fails AFTER the work_item insert but before
+    commit, the work_item is rolled back too — same transaction (atomicity)."""
+    from tests.conftest import test_session_factory
+
+    cp, _ = draft_checkpoint_with_cards
+    cp.status = "approved"
+    await db_session.commit()
+    cp_id = cp.id  # capture before any in-flight failure expires the instance
+
+    import app.api.checkpoints as checkpoints_mod
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("boom after work_item insert, before commit")
+
+    # `_append_review_action` runs AFTER `upsert_work_item` but before commit.
+    monkeypatch.setattr(checkpoints_mod, "_append_review_action", _boom)
+
+    release = datetime.now(timezone.utc).isoformat()
+    close = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    # ASGITransport re-raises the unhandled error (raise_app_exceptions); either
+    # way the endpoint never reaches `await db.commit()`.
+    with pytest.raises(RuntimeError, match="boom after work_item insert"):
+        await async_client.post(
+            f"/api/checkpoints/{cp_id}/publish",
+            json={
+                "release_at": release, "close_at": close,
+                "close_rule": "at_close_at",
+            },
+        )
+
+    # Verify COMMITTED state on an independent connection: the publish never
+    # reached `await db.commit()`, so neither the status flip nor the work_item
+    # insert persisted — they shared (and rolled back with) one transaction.
+    async with test_session_factory() as verify:
+        rows = (
+            await verify.execute(select(WorkItem).where(WorkItem.source_id == cp_id))
+        ).scalars().all()
+        assert rows == []
+        cp_after = await verify.get(Checkpoint, cp_id)
+        assert cp_after.status == "approved"

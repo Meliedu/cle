@@ -84,6 +84,7 @@ from app.services.checkpoints import (
     assert_transition,
     walk_to_closed,
 )
+from app.services.work_items import upsert_work_item
 
 logger = logging.getLogger(__name__)
 
@@ -633,6 +634,35 @@ async def publish_checkpoint(
         _apply_transition(cp, "published")
     except IllegalTransition as exc:
         raise _review_required(exc.message) from exc
+
+    # Transactional checklist-spine write (P4 B4, Decision 3): a published
+    # checkpoint always has its `checkpoint` work_item atomically — the upsert
+    # rides publish's own commit below, so a failure here rolls back the publish.
+    # BOTH `session` and `follow_up` checkpoint KINDS map to the source_kind
+    # `checkpoint` (the spine's `follow_up` source_kind is reserved for P6).
+    # Idempotent on re-publish via the (course, source_kind, source) unique index.
+    work_item = await upsert_work_item(
+        db,
+        course_id=cp.course_id,
+        source_kind="checkpoint",
+        source_id=cp.id,
+        title=cp.title,
+        required=True,
+        score_bearing=False,
+        due_at=cp.close_at,
+        close_at=cp.close_at,
+        created_by=user.id,
+    )
+    # `on_conflict_do_nothing` returns the EXISTING row unchanged on re-publish;
+    # keep due_at/close_at/title in sync with the checkpoint's current schedule
+    # (choice b) so a teacher who edits the close time then re-publishes sees the
+    # checklist/calendar track it.
+    if work_item.due_at != cp.close_at:
+        work_item.due_at = cp.close_at
+    if work_item.close_at != cp.close_at:
+        work_item.close_at = cp.close_at
+    if work_item.title != cp.title:
+        work_item.title = cp.title
 
     _append_review_action(cp, "publish", from_status, user.id)
     await db.commit()
