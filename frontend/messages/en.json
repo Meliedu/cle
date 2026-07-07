@@ -1193,6 +1193,10 @@
       }
     },
     "checklist": {
+      "title": "Course checklist",
+      "summary": "{open} to do · {done} done",
+      "required": "Required",
+      "dueWhen": "Due {when}",
       "kind": {
         "checkpoint": "Checkpoint",
         "practice": "Practice",
@@ -1201,6 +1205,55 @@
         "material": "Material",
         "follow_up": "Follow-up",
         "report": "Report"
+      },
+      "status": {
+        "pending": "To do",
+        "in_progress": "In progress",
+        "submitted": "Submitted",
+        "late": "Late",
+        "missed": "Missed",
+        "completed": "Completed",
+        "follow_up_assigned": "Follow-up"
+      },
+      "groups": {
+        "open": "To do",
+        "missed": "Missed",
+        "done": "Completed"
+      },
+      "empty": {
+        "title": "Your checklist is clear",
+        "reason": "New tasks appear here as your instructor releases sessions and checkpoints."
+      },
+      "error": {
+        "title": "We couldn't load your checklist",
+        "reason": "Refresh the page to try again."
+      }
+    },
+    "schedule": {
+      "title": "Class schedule",
+      "subtitle": "Every session for this course, from your instructor's setup.",
+      "placeholder": "—",
+      "columns": {
+        "session": "Session",
+        "date": "Date",
+        "time": "Time",
+        "venue": "Venue",
+        "topic": "Topic",
+        "status": "Status"
+      },
+      "release": {
+        "locked": "Not yet open",
+        "released": "Open",
+        "completed": "Completed",
+        "archived": "Archived"
+      },
+      "empty": {
+        "title": "No sessions scheduled yet",
+        "reason": "Your instructor hasn't added any sessions. Check back soon."
+      },
+      "error": {
+        "title": "We couldn't load the schedule",
+        "reason": "Refresh the page to try again."
       }
     },
     "join": {
