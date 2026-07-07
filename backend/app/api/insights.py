@@ -11,7 +11,7 @@ recomputes them.
 import uuid
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +21,8 @@ from app.models import (
     Concept,
     ConceptMastery,
     ConceptTag,
+    LearningEvent,
+    LearningNote,
     LearningObjective,
 )
 from app.models.course import Course
@@ -31,15 +33,24 @@ from app.schemas.insights import (
     CohortIloMapEntry,
     CohortIloMapResponse,
     ConceptMasteryEntry,
+    EvidenceSource,
     IloMapEntry,
     IloMapResponse,
     LearningProfileGroups,
     LearningProfileResponse,
+    SignalDetail,
     SkillMapEntry,
     SkillMapResponse,
 )
 
 router = APIRouter(tags=["insights"])
+
+# LearningNote.review_status values that mean an instructor has reviewed the
+# note, so its AI-drafted content may be shown to the student (Core §0.2 /
+# Decision 6). Mirrors ``app/api/review.py::_REVIEWED_NOTE_STATUSES`` exactly.
+# The complement ('draft','queued') is AI-drafted and never surfaced to the
+# student; 'archived' is a removed note and 404s for the student.
+_REVIEWED_NOTE_STATUSES = frozenset({"reviewed", "edited", "merged", "split"})
 
 # Thresholds mirror ``app/api/mastery.py::cohort_mastery`` EXACTLY — do NOT
 # invent new cut points here. A mastery row only counts as evidence once its
@@ -354,3 +365,176 @@ async def my_skill_map(
             course_id=course_id, has_evidence=False, skills=skills
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Signal detail + evidence source (B7) — id-first, dual-role, re-guarded reads.
+# ---------------------------------------------------------------------------
+_SIGNAL_NOT_FOUND = "Signal not found"
+_EVIDENCE_NOT_FOUND = "Evidence not found"
+
+
+async def _owned_course_or_404(
+    db: AsyncSession, course_id: uuid.UUID, instructor: User, detail: str
+) -> Course:
+    """Re-derive + guard an instructor's ownership of a resolved row's course.
+
+    The id of the resolved row is NEVER trusted (Decision 8): we re-fetch its
+    course and require the acting instructor to own it. A missing / soft-deleted
+    / non-owned course is a 404 so existence is never leaked.
+    """
+    course = await db.get(Course, course_id)
+    if (
+        course is None
+        or course.deleted_at is not None
+        or course.instructor_id != instructor.id
+    ):
+        raise HTTPException(status_code=404, detail=detail)
+    return course
+
+
+@router.get(
+    "/signals/{signal_id}",
+    response_model=APIResponse[SignalDetail],
+)
+async def get_signal(
+    signal_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> APIResponse[SignalDetail]:
+    """One ``learning_note`` reshaped as a signal detail (dual-role, pure read).
+
+    Id-first + re-guarded (Decision 8): resolve the note, RE-DERIVE its
+    ``course_id``, and re-apply the owner/enrollment guard — a mismatch is a 404
+    with no existence leak.
+
+    - **Student**: sees ONLY their OWN (``user_id`` == caller) signal. Another
+      student's note, a cohort note (``user_id IS NULL``) and an ``archived``
+      (removed) note are all 404. A still-``draft``/``queued`` own note collapses
+      to the designed waiting shape (``waiting_for_review=True``, NO AI content —
+      Core §0.2). A ``reviewed`` own note carries its content.
+    - **Instructor**: sees ANY signal in an OWNED course, including cohort and
+      still-draft notes, always with content (they are the reviewer). Non-owner
+      → 404.
+    """
+    note = await db.get(LearningNote, signal_id)
+    if note is None:
+        raise HTTPException(status_code=404, detail=_SIGNAL_NOT_FOUND)
+
+    if user.role == "instructor":
+        await _owned_course_or_404(db, note.course_id, user, _SIGNAL_NOT_FOUND)
+        # The reviewer sees content regardless of review_status; never "waiting".
+        reveal = True
+        waiting = False
+    else:
+        # Student: the note must be their OWN (cohort user_id IS NULL never
+        # matches) — 404 masks any other row's existence.
+        if note.user_id != user.id:
+            raise HTTPException(status_code=404, detail=_SIGNAL_NOT_FOUND)
+        # Defense-in-depth: an active enrollment is still required (a dropped
+        # student cannot pull their old signals). 403 only ever fires for the
+        # caller's OWN notes, so it leaks nothing about other rows.
+        await verify_enrollment(db, note.course_id, user.id)
+        # 'archived' is a removed note — withheld from the student entirely.
+        if note.review_status == "archived":
+            raise HTTPException(status_code=404, detail=_SIGNAL_NOT_FOUND)
+        reveal = note.review_status in _REVIEWED_NOTE_STATUSES
+        waiting = not reveal
+
+    detail = SignalDetail(
+        id=note.id,
+        course_id=note.course_id,
+        user_id=note.user_id,
+        review_status=note.review_status,
+        waiting_for_review=waiting,
+        created_at=note.created_at,
+        updated_at=note.updated_at,
+        # AI content only when revealed (reviewed, or the owning instructor).
+        evidence_category=note.evidence_category if reveal else None,
+        observed_signal=note.observed_signal if reveal else None,
+        draft_interpretation=note.draft_interpretation if reveal else None,
+        limitation_note=note.limitation_note if reveal else None,
+        context_anchor=note.context_anchor if reveal else None,
+        outcome_status=note.outcome_status if reveal else None,
+        source_event_ids=list(note.source_event_ids or []) if reveal else [],
+    )
+    return APIResponse(success=True, data=detail)
+
+
+async def _anchor_for_event(
+    db: AsyncSession, event_id: uuid.UUID, *, reviewed_only: bool
+) -> dict | None:
+    """Best-effort ``context_anchor`` from a note that cites this event.
+
+    A ``learning_event`` carries no anchor of its own; the "where did this come
+    from" context lives on the ``learning_note`` that cites the event via its
+    ``source_event_ids`` JSONB array (stored as string ids). For a student we
+    restrict to REVIEWED notes so an unreviewed draft's anchor never leaks
+    (Core §0.2); for an instructor any citing note qualifies. Returns ``None``
+    when no qualifying note cites the event.
+    """
+    stmt = (
+        select(LearningNote.context_anchor)
+        .where(LearningNote.source_event_ids.contains([str(event_id)]))
+        .order_by(LearningNote.created_at)
+    )
+    if reviewed_only:
+        stmt = stmt.where(
+            LearningNote.review_status.in_(_REVIEWED_NOTE_STATUSES)
+        )
+    return (await db.execute(stmt)).scalars().first()
+
+
+@router.get(
+    "/evidence/{event_id}/source",
+    response_model=APIResponse[EvidenceSource],
+)
+async def get_evidence_source(
+    event_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> APIResponse[EvidenceSource]:
+    """One ``learning_event`` reshaped as its source view (dual-role, pure read).
+
+    The "where did this come from" panel: the raw source signal
+    (``source_kind`` / ``source_id`` / ``stage`` / ``event_type`` / ``value`` /
+    ``occurred_at``) plus the ``context_anchor`` a reviewed note attached to it.
+
+    Id-first + re-guarded (Decision 8): resolve the event, RE-DERIVE its
+    ``course_id`` / ``user_id``, and re-apply the SAME owner/enrollment guard as
+    the signal view — a student sees ONLY their own event (404 otherwise, active
+    enrollment required); an instructor sees any event in an owned course (404
+    for a non-owner). The event id is never trusted to imply access.
+    """
+    event = await db.get(LearningEvent, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail=_EVIDENCE_NOT_FOUND)
+
+    if user.role == "instructor":
+        await _owned_course_or_404(
+            db, event.course_id, user, _EVIDENCE_NOT_FOUND
+        )
+        reviewed_only = False
+    else:
+        if event.user_id != user.id:
+            raise HTTPException(status_code=404, detail=_EVIDENCE_NOT_FOUND)
+        await verify_enrollment(db, event.course_id, user.id)
+        reviewed_only = True
+
+    context_anchor = await _anchor_for_event(
+        db, event.id, reviewed_only=reviewed_only
+    )
+
+    source = EvidenceSource(
+        event_id=event.id,
+        course_id=event.course_id,
+        user_id=event.user_id,
+        source_kind=event.source_kind,
+        source_id=event.source_id,
+        stage=event.stage,
+        event_type=event.event_type,
+        value=event.value,
+        occurred_at=event.occurred_at,
+        context_anchor=context_anchor,
+    )
+    return APIResponse(success=True, data=source)

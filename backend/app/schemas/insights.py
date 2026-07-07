@@ -9,6 +9,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
+from app.schemas.evidence import EventStage, NoteReviewStatus
+
 
 class ConceptMasteryEntry(BaseModel):
     """One reshaped ``concept_mastery`` row (values read as-is, never recomputed)."""
@@ -136,3 +138,62 @@ class SkillMapResponse(BaseModel):
     course_id: uuid.UUID
     has_evidence: bool
     skills: list[SkillMapEntry]
+
+
+class SignalDetail(BaseModel):
+    """One ``learning_note`` reshaped for the "signal detail" view (B7, pure read).
+
+    Security-sensitive (Decision 8, Core §0.2): the AI-drafted content
+    (``observed_signal`` / ``draft_interpretation`` / ``limitation_note`` /
+    ``evidence_category`` / ``context_anchor``) is only populated once the note
+    is instructor-``reviewed``. ``waiting_for_review`` is the discriminator the
+    frontend uses to render the designed waiting-for-instructor-feedback state:
+    it is ``True`` for a student viewing their own still-``draft``/``queued``
+    note (content withheld). An instructor viewing an owned signal always sees
+    the content, so ``waiting_for_review`` is ``False`` for them.
+
+    Structural metadata (``id``/``course_id``/``user_id``/``review_status``/
+    timestamps) is always present — it leaks no AI interpretation and lets the
+    waiting state render its shell.
+    """
+
+    id: uuid.UUID
+    course_id: uuid.UUID
+    user_id: uuid.UUID | None
+    review_status: NoteReviewStatus
+    waiting_for_review: bool
+    created_at: datetime
+    updated_at: datetime
+
+    # AI-drafted content — None unless the note is instructor-reviewed (or the
+    # viewer is the owning instructor).
+    evidence_category: str | None = None
+    observed_signal: str | None = None
+    draft_interpretation: str | None = None
+    limitation_note: str | None = None
+    context_anchor: dict | None = None
+    outcome_status: str | None = None
+    source_event_ids: list = []
+
+
+class EvidenceSource(BaseModel):
+    """One ``learning_event`` reshaped for the "where did this come from" view (B7).
+
+    Surfaces the raw source signal (``source_kind`` / ``source_id`` / ``stage`` /
+    ``event_type`` / ``value`` / ``occurred_at``) plus the ``context_anchor`` that
+    a REVIEWED note attached to it, if any. Pure read; the event id is never
+    trusted — the caller re-derives ``course_id``/``user_id`` and re-guards
+    (Decision 8). For a student, ``context_anchor`` is only exposed from a
+    reviewed note (an unreviewed draft's anchor is withheld, Core §0.2).
+    """
+
+    event_id: uuid.UUID
+    course_id: uuid.UUID
+    user_id: uuid.UUID
+    source_kind: str
+    source_id: uuid.UUID | None
+    stage: EventStage
+    event_type: str
+    value: dict
+    occurred_at: datetime
+    context_anchor: dict | None = None
