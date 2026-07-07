@@ -234,14 +234,23 @@ async def submit_checkpoint_response(
                 )
             )
         ).scalar_one()
+        # Count on-time responses to LIVE (non-deleted) cards only (P7 B11,
+        # Decision 9.2): the live-card denominator excludes soft-deleted cards, so
+        # the on-time numerator must too — otherwise a response to a since-deleted
+        # card inflates the count and spuriously flips the item to ``completed``.
         on_time_count = (
             await db.execute(
                 select(func.count())
                 .select_from(CheckpointResponse)
+                .join(
+                    CheckpointCard,
+                    CheckpointCard.id == CheckpointResponse.card_id,
+                )
                 .where(
                     CheckpointResponse.checkpoint_id == checkpoint_id,
                     CheckpointResponse.user_id == user_id,
                     CheckpointResponse.status != "late",
+                    CheckpointCard.deleted_at.is_(None),
                 )
             )
         ).scalar_one()

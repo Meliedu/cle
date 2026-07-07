@@ -245,7 +245,15 @@ async def delete_document(
 async def _is_course_instructor(
     db: AsyncSession, course_id: uuid.UUID, user_id: uuid.UUID
 ) -> bool:
-    """True if the user holds an instructor-role enrollment in the course."""
+    """True if the user holds an instructor-role enrollment in the course.
+
+    INTENTIONAL course-staff model (P7 B11, Decision 9.3): this checks for ANY
+    ``role='instructor'`` Enrollment, NOT only the course owner
+    (``courses.instructor_id``). A co-instructor or TA enrolled as an instructor
+    is therefore treated as course staff for the document surface. This is
+    deliberate and pinned by ``tests/test_is_course_instructor.py`` — narrowing
+    it to owner-only would be a conscious, tested behaviour change.
+    """
     result = await db.execute(
         select(Enrollment.id).where(
             Enrollment.course_id == course_id,

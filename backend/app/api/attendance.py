@@ -34,6 +34,7 @@ from app.schemas.attendance import (
 )
 from app.schemas.common import APIResponse
 from app.services.checkpoint_attendance import (
+    CheckpointNotLaunchable,
     LaunchClosed,
     record_scan,
     resolve_active_launch,
@@ -204,9 +205,17 @@ async def scan_attendance(
     # non-enrolled / pending / rejected student.
     await _verify_enrollment(db, checkpoint.course_id, user.id)
 
-    record = await record_scan(
-        db, launch=launch, checkpoint=checkpoint, user_id=user.id
-    )
+    try:
+        record = await record_scan(
+            db, launch=launch, checkpoint=checkpoint, user_id=user.id
+        )
+    except CheckpointNotLaunchable as exc:
+        # Scan-time re-check (P7 B11): the checkpoint left published/live under a
+        # stale active launch — refuse with the typed code, no attendance written.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
     return APIResponse(
         success=True,
         data=ScanResponse(

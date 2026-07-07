@@ -30,7 +30,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attendance import AttendanceRecord, CheckpointLaunch
 from app.models.checkpoint import Checkpoint
-from app.services.checkpoint_qr import LaunchTokenInvalid, decode_launch_token
+from app.services.checkpoint_qr import (
+    LAUNCHABLE_STATUSES,
+    LaunchTokenInvalid,
+    decode_launch_token,
+)
 
 
 class LaunchClosed(Exception):
@@ -46,6 +50,22 @@ class LaunchClosed(Exception):
     def __init__(self, message: str) -> None:
         self.message = message
         super().__init__(message)
+
+
+class CheckpointNotLaunchable(LaunchClosed):
+    """The launch is ``active`` but its checkpoint is no longer launchable.
+
+    Scan-time defense-in-depth (P7 B11, Decision 8a): even when the
+    ``checkpoint_launches`` row is still ``active``, a scan is refused if the
+    checkpoint itself has left the ``published``/``live`` window (moved back to
+    ``draft``/``teacher_editing``/``approved``/``archived`` or soft-deleted) —
+    e.g. a stale launch that was never closed. Participation is only recorded for
+    a launchable checkpoint. Subclasses ``LaunchClosed`` (it IS a
+    no-longer-scannable launch) but carries a distinct code so the mobile flow
+    can tell "checkpoint closed under you" from "token rotated".
+    """
+
+    code = "CHECKPOINT_NOT_LIVE"
 
 
 def _utcnow() -> datetime:
@@ -101,6 +121,15 @@ async def record_scan(
     later scan never downgrades ``present`` to ``late``). Participation only —
     no learning_event / mastery is ever emitted here.
     """
+    # Scan-time checkpoint re-check (P7 B11, Decision 8a): the active launch row
+    # is not sufficient — the checkpoint must ITSELF still be launchable. Refuse
+    # (writing NO attendance) if it was moved out of published/live or
+    # soft-deleted while a stale launch lingered active.
+    if checkpoint.deleted_at is not None or checkpoint.status not in LAUNCHABLE_STATUSES:
+        raise CheckpointNotLaunchable(
+            "This checkpoint is no longer open for check-in."
+        )
+
     now = now or _utcnow()
     status = derive_scan_status(checkpoint.close_at, now)
 

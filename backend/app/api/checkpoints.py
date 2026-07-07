@@ -79,6 +79,7 @@ from app.services.checkpoint_responses import (
     is_within_window,
     submit_checkpoint_response,
 )
+from app.services.checkpoint_qr import _close_active_launches
 from app.services.checkpoints import (
     IllegalTransition,
     assert_transition,
@@ -345,6 +346,10 @@ async def delete_checkpoint(
 ) -> APIResponse[None]:
     cp = await _owned_checkpoint(checkpoint_id, user, db)
     cp.deleted_at = _utcnow()
+    # A soft-deleted checkpoint leaves published/live implicitly — close any
+    # lingering active launch so its QR token can't be scanned (P7 B11,
+    # Decision 8b). Idempotent: a no-op when nothing is active.
+    await _close_active_launches(db, cp.id)
     await db.commit()
     return APIResponse(success=True, data=None)
 
@@ -691,6 +696,11 @@ async def close_checkpoint(
             _apply_transition(cp, target)
     except IllegalTransition as exc:
         raise _review_required(exc.message) from exc
+
+    # Transitioning away from published/live invalidates any live QR (P7 B11,
+    # Decision 8b): close lingering active launches so a stale token can't be
+    # scanned. Idempotent; rides the close commit below.
+    await _close_active_launches(db, cp.id)
 
     _append_review_action(cp, "close", from_status, user.id)
     await db.commit()

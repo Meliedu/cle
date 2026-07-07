@@ -258,10 +258,13 @@ async def calendar_feed(
 
     # P4 B7 (Decision 5): merge a THIRD source — course work_items whose
     # ``due_at`` OR ``close_at`` falls in [from_date, to_date). The event ``at``
-    # uses ``due_at`` when present, else ``close_at``. work_items carry no
-    # published/visibility axis of their own here (they are teacher-authored and
-    # already gated by course access), so both roles see the same rows; only a
-    # student gets their OWN ``work_item_progress.status`` overlaid (owner-scoped).
+    # uses ``due_at`` when present, else ``close_at``. A student gets their OWN
+    # ``work_item_progress.status`` overlaid (owner-scoped).
+    #
+    # ``visible_from`` release gate (P7 B11, Decision 9.1): an item with a FUTURE
+    # ``visible_from`` is not yet released and is hidden here too (kept in lock-step
+    # with the checklist); a past or NULL ``visible_from`` shows.
+    now = datetime.now(timezone.utc)
     in_window = lambda col: (col >= from_date) & (col < to_date)  # noqa: E731
     work_items = (
         await db.execute(
@@ -269,6 +272,10 @@ async def calendar_feed(
                 WorkItem.course_id == course_id,
                 WorkItem.deleted_at.is_(None),
                 or_(in_window(WorkItem.due_at), in_window(WorkItem.close_at)),
+                or_(
+                    WorkItem.visible_from.is_(None),
+                    WorkItem.visible_from <= now,
+                ),
             )
         )
     ).scalars().all()

@@ -25,9 +25,10 @@ Two routers are exported (mirrors ``api/attendance.py``): ``course_router`` unde
 under ``/work-items`` (teacher patch/delete by item id).
 """
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._helpers import verify_enrollment as _verify_enrollment
@@ -100,13 +101,17 @@ async def _fallback_statuses(
     if not checkpoint_ids:
         return {}
 
+    # Join LIVE (non-deleted) cards only (P7 B11, Decision 9.2): keep the on-time
+    # numerator and the live-card denominator consistent so a response to a
+    # since-soft-deleted card can't spuriously derive ``completed``.
     responses = (
         await db.execute(
-            select(
-                CheckpointResponse.checkpoint_id, CheckpointResponse.status
-            ).where(
+            select(CheckpointResponse.checkpoint_id, CheckpointResponse.status)
+            .join(CheckpointCard, CheckpointCard.id == CheckpointResponse.card_id)
+            .where(
                 CheckpointResponse.checkpoint_id.in_(checkpoint_ids),
                 CheckpointResponse.user_id == user_id,
+                CheckpointCard.deleted_at.is_(None),
             )
         )
     ).all()
@@ -155,6 +160,10 @@ async def _build_checklist(
     ``work_item_progress`` row → the ``checkpoint_responses`` fallback (Decision
     4) → ``pending``.
     """
+    # ``visible_from`` release gate (P7 B11, Decision 9.1): an item with a FUTURE
+    # ``visible_from`` is not yet released, so it is hidden from the checklist; a
+    # past or NULL ``visible_from`` shows (spec §4.6 release semantics).
+    now = datetime.now(timezone.utc)
     items = list(
         (
             await db.execute(
@@ -162,6 +171,10 @@ async def _build_checklist(
                 .where(
                     WorkItem.course_id == course_id,
                     WorkItem.deleted_at.is_(None),
+                    or_(
+                        WorkItem.visible_from.is_(None),
+                        WorkItem.visible_from <= now,
+                    ),
                 )
                 .order_by(WorkItem.due_at, WorkItem.visible_from)
             )
