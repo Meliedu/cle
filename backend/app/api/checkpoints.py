@@ -33,6 +33,7 @@ from app.models.checkpoint import (
     CheckpointCard,
     CheckpointResponse as CheckpointResponseModel,
 )
+from app.models.concept import Concept, ConceptTag
 from app.models.course import Course, Enrollment
 from app.models.task import Task
 from app.models.user import User
@@ -49,7 +50,11 @@ from app.schemas.checkpoint import (
     CheckpointResponseSubmit,
     CheckpointResults,
     CheckpointScheduleRequest,
+    FollowUpSuggested,
+    FollowUpSuggestedCard,
+    RevisitResponseResult,
     StudentCheckpointCard,
+    StudentCheckpointHistoryItem,
     CheckpointWithCardsResponse,
 )
 from app.schemas.common import APIResponse
@@ -75,6 +80,21 @@ _CONFIDENCE_BUCKETS = (-2, -1, 0, 1, 2)
 
 router = APIRouter(prefix="/checkpoints", tags=["checkpoints"])
 course_router = APIRouter(prefix="/courses/{course_id}", tags=["checkpoints"])
+# Student self-scoped router (``/users/me/...``) — mirrors ``api/mastery.py``'s
+# path shape. No prefix; the enrollment guard lives in the handler.
+student_router = APIRouter(tags=["checkpoints"])
+
+# Checkpoint lifecycle states a student can ever see in their history (S039).
+# Anything still being drafted by the teacher is invisible to students.
+_STUDENT_VISIBLE_STATUSES = ("published", "live", "closed", "archived")
+
+# A checkpoint is "closed" for the student once it reaches a terminal state.
+_CLOSED_STATUSES = frozenset({"closed", "archived"})
+
+# Low-confidence threshold for the suggested follow-up (S040). On the −2..+2
+# ConfidenceScale, −2 ("no idea") and −1 ("shaky") are the weak buckets; a
+# response at or below −1 is surfaced as a card to revisit.
+_LOW_CONFIDENCE_THRESHOLD = -1
 
 
 def _utcnow() -> datetime:
@@ -725,4 +745,334 @@ async def submit_response(
     )
     return APIResponse(
         success=True, data=CheckpointResponseResult.model_validate(response)
+    )
+
+
+# ----- student history + follow-up + revisit (P3 T8, S039–S041) -----
+#
+# Student-facing, enrollment-scoped (the student's own data only — RLS is
+# defense-in-depth; the endpoint guard is `_verify_enrollment` → 403). Nothing
+# here reads another student's rows.
+
+
+def _derive_history_status(
+    cp_status: str, live_card_count: int, responses: list[CheckpointResponseModel]
+) -> str:
+    """Derive the student's per-checkpoint status (S039).
+
+    * ``missed`` — the checkpoint is closed and the student never responded.
+    * ``upcoming`` — the checkpoint is still open and the student hasn't yet
+      answered every live card.
+    * ``late`` — any response arrived late, OR the checkpoint closed while the
+      student had only partially answered.
+    * ``complete`` — the student answered every live card, none of them late.
+    """
+    closed = cp_status in _CLOSED_STATUSES
+    if not responses:
+        return "missed" if closed else "upcoming"
+    if any(r.status == "late" for r in responses):
+        return "late"
+    answered_all = len(responses) >= live_card_count and live_card_count > 0
+    if answered_all:
+        return "complete"
+    # Partial answers: late once the window has closed, still upcoming while open.
+    return "late" if closed else "upcoming"
+
+
+@student_router.get(
+    "/users/me/courses/{course_id}/checkpoints",
+    response_model=APIResponse[list[StudentCheckpointHistoryItem]],
+)
+async def my_checkpoint_history(
+    course_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_student),
+) -> APIResponse[list[StudentCheckpointHistoryItem]]:
+    """The student's own checkpoint history for a course (S039).
+
+    Enrollment-scoped (403 for a non-enrolled user). Draft/teacher-editing
+    checkpoints are invisible; every visible checkpoint carries a derived
+    per-student status.
+    """
+    await _verify_enrollment(db, course_id, user.id)
+
+    checkpoints = list(
+        (
+            await db.execute(
+                select(Checkpoint)
+                .where(
+                    Checkpoint.course_id == course_id,
+                    Checkpoint.deleted_at.is_(None),
+                    Checkpoint.status.in_(_STUDENT_VISIBLE_STATUSES),
+                )
+                .order_by(Checkpoint.created_at)
+            )
+        ).scalars().all()
+    )
+    if not checkpoints:
+        return APIResponse(success=True, data=[])
+
+    cp_ids = [cp.id for cp in checkpoints]
+
+    # Live (non-removed) card counts per checkpoint — the "answered all" denom.
+    live_cards = (
+        await db.execute(
+            select(CheckpointCard.checkpoint_id).where(
+                CheckpointCard.checkpoint_id.in_(cp_ids),
+                CheckpointCard.deleted_at.is_(None),
+            )
+        )
+    ).scalars().all()
+    live_count_by_cp: dict[uuid.UUID, int] = {}
+    for cp_id in live_cards:
+        live_count_by_cp[cp_id] = live_count_by_cp.get(cp_id, 0) + 1
+
+    # This student's responses across those checkpoints (their own rows only).
+    responses = (
+        await db.execute(
+            select(CheckpointResponseModel).where(
+                CheckpointResponseModel.checkpoint_id.in_(cp_ids),
+                CheckpointResponseModel.user_id == user.id,
+            )
+        )
+    ).scalars().all()
+    resp_by_cp: dict[uuid.UUID, list[CheckpointResponseModel]] = {}
+    for resp in responses:
+        resp_by_cp.setdefault(resp.checkpoint_id, []).append(resp)
+
+    items = [
+        StudentCheckpointHistoryItem(
+            checkpoint_id=cp.id,
+            title=cp.title,
+            kind=cp.kind,
+            status=cp.status,
+            derived_status=_derive_history_status(
+                cp.status,
+                live_count_by_cp.get(cp.id, 0),
+                resp_by_cp.get(cp.id, []),
+            ),
+            release_at=cp.release_at,
+            close_at=cp.close_at,
+            responded_count=len(resp_by_cp.get(cp.id, [])),
+            live_card_count=live_count_by_cp.get(cp.id, 0),
+        )
+        for cp in checkpoints
+    ]
+    return APIResponse(success=True, data=items)
+
+
+async def _enrolled_checkpoint_for_student(
+    checkpoint_id: uuid.UUID, user: User, db: AsyncSession
+) -> Checkpoint:
+    """Resolve a checkpoint the student is enrolled to see (404/403 only).
+
+    Unlike ``_open_checkpoint_for_student`` this does NOT require the checkpoint
+    to be open — history/follow-up reads are valid against closed checkpoints.
+    """
+    cp = await db.get(Checkpoint, checkpoint_id)
+    if cp is None or cp.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Checkpoint not found")
+    await _verify_enrollment(db, cp.course_id, user.id)
+    return cp
+
+
+async def _concept_for_card(
+    db: AsyncSession, card_id: uuid.UUID
+) -> tuple[uuid.UUID | None, str | None]:
+    """The (concept_id, concept_name) a checkpoint card is tagged with, if any.
+
+    Returns the highest-weight non-deleted concept tag (a card can carry more
+    than one). ``(None, None)`` when the card is untagged.
+    """
+    row = (
+        await db.execute(
+            select(ConceptTag.concept_id, Concept.name)
+            .join(Concept, Concept.id == ConceptTag.concept_id)
+            .where(
+                ConceptTag.target_kind == "checkpoint_card",
+                ConceptTag.target_id == card_id,
+                Concept.deleted_at.is_(None),
+            )
+            .order_by(ConceptTag.weight.desc())
+            .limit(1)
+        )
+    ).first()
+    if row is None:
+        return None, None
+    return row[0], row[1]
+
+
+@router.get(
+    "/{checkpoint_id}/follow-up-suggested",
+    response_model=APIResponse[FollowUpSuggested],
+)
+async def follow_up_suggested(
+    checkpoint_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_student),
+) -> APIResponse[FollowUpSuggested]:
+    """Suggested follow-up from the student's low-confidence responses (S040).
+
+    Enrollment-scoped. Returns the review cards where the student's own
+    confidence fell at or below ``_LOW_CONFIDENCE_THRESHOLD`` (−1), each with
+    the tagged concept when present so the follow-up can be built around it.
+    """
+    cp = await _enrolled_checkpoint_for_student(checkpoint_id, user, db)
+
+    weak_responses = (
+        await db.execute(
+            select(CheckpointResponseModel, CheckpointCard.prompt)
+            .join(
+                CheckpointCard, CheckpointCard.id == CheckpointResponseModel.card_id
+            )
+            .where(
+                CheckpointResponseModel.checkpoint_id == cp.id,
+                CheckpointResponseModel.user_id == user.id,
+                CheckpointResponseModel.confidence.is_not(None),
+                CheckpointResponseModel.confidence <= _LOW_CONFIDENCE_THRESHOLD,
+                CheckpointCard.deleted_at.is_(None),
+            )
+            .order_by(CheckpointCard.position)
+        )
+    ).all()
+
+    weak_cards: list[FollowUpSuggestedCard] = []
+    for resp, prompt in weak_responses:
+        concept_id, concept_name = await _concept_for_card(db, resp.card_id)
+        weak_cards.append(
+            FollowUpSuggestedCard(
+                card_id=resp.card_id,
+                prompt=prompt,
+                confidence=resp.confidence,  # type: ignore[arg-type]
+                concept_id=concept_id,
+                concept_name=concept_name,
+            )
+        )
+
+    return APIResponse(
+        success=True,
+        data=FollowUpSuggested(
+            checkpoint_id=cp.id,
+            threshold=_LOW_CONFIDENCE_THRESHOLD,
+            weak_cards=weak_cards,
+        ),
+    )
+
+
+def _not_a_revisit(message: str) -> HTTPException:
+    """A typed 409 for a checkpoint that can't take a revisit (§3.4)."""
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={"code": "NOT_A_REVISIT", "message": message},
+    )
+
+
+async def _confidence_before(
+    db: AsyncSession,
+    *,
+    carried_from_id: uuid.UUID,
+    concept_id: uuid.UUID | None,
+    user_id: uuid.UUID,
+) -> int | None:
+    """The student's original confidence on the carried-from checkpoint.
+
+    Matches by shared concept: find the original checkpoint's card tagged with
+    ``concept_id`` and return the student's confidence there. ``None`` when the
+    revisit card is untagged or the student never answered the original.
+    """
+    if concept_id is None:
+        return None
+    row = (
+        await db.execute(
+            select(CheckpointResponseModel.confidence)
+            .join(
+                CheckpointCard, CheckpointCard.id == CheckpointResponseModel.card_id
+            )
+            .join(
+                ConceptTag,
+                (ConceptTag.target_id == CheckpointCard.id)
+                & (ConceptTag.target_kind == "checkpoint_card"),
+            )
+            .where(
+                CheckpointResponseModel.checkpoint_id == carried_from_id,
+                CheckpointResponseModel.user_id == user_id,
+                ConceptTag.concept_id == concept_id,
+                CheckpointResponseModel.confidence.is_not(None),
+            )
+            .order_by(CheckpointResponseModel.submitted_at)
+            .limit(1)
+        )
+    ).first()
+    return row[0] if row is not None else None
+
+
+@router.post(
+    "/{checkpoint_id}/revisit-response",
+    response_model=APIResponse[RevisitResponseResult],
+    status_code=201,
+)
+async def revisit_response(
+    checkpoint_id: uuid.UUID,
+    body: CheckpointResponseSubmit,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_student),
+) -> APIResponse[RevisitResponseResult]:
+    """Re-submit against a ``follow_up`` checkpoint carrying ``carried_from_id``
+    → the original (S041).
+
+    Reuses the T7 submission service, then records a before/after confidence
+    signal (the student's original response on the carried-from checkpoint vs
+    this revisit) matched by shared concept. Enrollment-scoped; a non-follow_up
+    or uncarried checkpoint is a typed ``NOT_A_REVISIT`` 409.
+    """
+    cp = await _open_checkpoint_for_student(checkpoint_id, user, db)
+    if cp.kind != "follow_up" or cp.carried_from_id is None:
+        raise _not_a_revisit(
+            "This checkpoint is not a follow-up revisit of an earlier checkpoint."
+        )
+    carried_from_id = cp.carried_from_id
+
+    card = await db.get(CheckpointCard, body.card_id)
+    if (
+        card is None
+        or card.deleted_at is not None
+        or card.checkpoint_id != cp.id
+    ):
+        raise HTTPException(status_code=404, detail="Card not found")
+    card_id = card.id
+
+    response = await submit_checkpoint_response(
+        db,
+        checkpoint=cp,
+        card=card,
+        user_id=user.id,
+        confidence=body.confidence,
+        text_response=body.text_response,
+    )
+    confidence_after = response.confidence
+
+    # Before/after: match the original card by the revisit card's concept.
+    concept_id, _ = await _concept_for_card(db, card_id)
+    confidence_before = await _confidence_before(
+        db,
+        carried_from_id=carried_from_id,
+        concept_id=concept_id,
+        user_id=user.id,
+    )
+    delta = (
+        confidence_after - confidence_before
+        if confidence_after is not None and confidence_before is not None
+        else None
+    )
+
+    return APIResponse(
+        success=True,
+        data=RevisitResponseResult(
+            response=CheckpointResponseResult.model_validate(response),
+            carried_from_id=carried_from_id,
+            concept_id=concept_id,
+            confidence_before=confidence_before,
+            confidence_after=confidence_after,
+            delta=delta,
+        ),
     )

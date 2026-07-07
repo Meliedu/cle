@@ -178,6 +178,71 @@ class CheckpointResponseResult(BaseModel):
     model_config = {"from_attributes": True}
 
 
+HistoryDerivedStatus = Literal["complete", "late", "missed", "upcoming"]
+
+
+class StudentCheckpointHistoryItem(BaseModel):
+    """One checkpoint in the student's own history view (P3 T8, S039).
+
+    ``derived_status`` is computed per-student from their responses vs the
+    checkpoint's live cards + lifecycle state (see the router for the rules):
+    ``complete`` (answered every live card, none late), ``late`` (a late
+    response, or a closed checkpoint left partially answered), ``missed``
+    (closed with no response) or ``upcoming`` (still open, not yet complete).
+    """
+
+    checkpoint_id: uuid.UUID
+    title: str
+    kind: str
+    status: str
+    derived_status: HistoryDerivedStatus
+    release_at: datetime | None = None
+    close_at: datetime | None = None
+    responded_count: int
+    live_card_count: int
+
+
+class FollowUpSuggestedCard(BaseModel):
+    """A weak card the student should revisit (P3 T8, S040).
+
+    Surfaced when the student's own response fell at/below the low-confidence
+    threshold; ``concept_id``/``concept_name`` are attached when the card is
+    concept-tagged so the follow-up can be built around the concept."""
+
+    card_id: uuid.UUID
+    prompt: str
+    confidence: int
+    concept_id: uuid.UUID | None = None
+    concept_name: str | None = None
+
+
+class FollowUpSuggested(BaseModel):
+    """The suggested follow-up derived from a student's low-confidence
+    responses on a checkpoint (P3 T8, S040)."""
+
+    checkpoint_id: uuid.UUID
+    threshold: int
+    weak_cards: list[FollowUpSuggestedCard] = Field(default_factory=list)
+
+
+class RevisitResponseResult(BaseModel):
+    """The result of a revisit submission against a ``follow_up`` checkpoint
+    (P3 T8, S041).
+
+    Wraps the persisted follow-up response plus the before/after confidence
+    signal: ``confidence_before`` is the student's confidence on the carried-
+    from (original) checkpoint for a card sharing the revisit card's concept,
+    ``confidence_after`` is the just-submitted confidence, and ``delta`` is
+    ``after - before`` when both are present."""
+
+    response: CheckpointResponseResult
+    carried_from_id: uuid.UUID
+    concept_id: uuid.UUID | None = None
+    confidence_before: int | None = None
+    confidence_after: int | None = None
+    delta: int | None = None
+
+
 class CheckpointResults(BaseModel):
     """Teacher results payload for a single checkpoint (P3 T6).
 
