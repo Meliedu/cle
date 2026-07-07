@@ -9,6 +9,8 @@ from app.api.attendance import router as attendance_router
 from app.api.auth import router as auth_router
 from app.api.canvas import router as canvas_router
 from app.api.canvas_oauth import router as canvas_oauth_router
+from app.api.checklist import course_router as checklist_course_router
+from app.api.checklist import item_router as checklist_item_router
 from app.api.checkpoints import course_router as checkpoints_course_router
 from app.api.checkpoints import router as checkpoints_router
 from app.api.checkpoints import student_router as checkpoints_student_router
@@ -76,6 +78,8 @@ api_router.include_router(setup_router)
 api_router.include_router(checkpoints_course_router)
 api_router.include_router(checkpoints_router)
 api_router.include_router(checkpoints_student_router)
+api_router.include_router(checklist_course_router)
+api_router.include_router(checklist_item_router)
 api_router.include_router(attendance_router)
 api_router.include_router(attend_router)
 api_router.include_router(attendance_meeting_router)
