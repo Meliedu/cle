@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.analytics import router as analytics_router
 from app.api.assignments import router as assignments_router
+from app.api.attendance import attend_router
 from app.api.attendance import router as attendance_router
 from app.api.auth import router as auth_router
 from app.api.canvas import router as canvas_router
@@ -74,3 +75,4 @@ api_router.include_router(checkpoints_course_router)
 api_router.include_router(checkpoints_router)
 api_router.include_router(checkpoints_student_router)
 api_router.include_router(attendance_router)
+api_router.include_router(attend_router)

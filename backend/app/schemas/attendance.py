@@ -29,3 +29,19 @@ class LaunchResponse(BaseModel):
     status: str
 
     model_config = {"from_attributes": True}
+
+
+class ScanResponse(BaseModel):
+    """Result of a QR scan (``POST /api/attend/{token}``, P3 T10).
+
+    Carries the recorded attendance plus the ``intro_route`` the client routes
+    to next (S034 checkpoint intro). ``status`` is ``present``/``late``.
+    """
+
+    attendance_id: uuid.UUID
+    meeting_id: uuid.UUID
+    checkpoint_id: uuid.UUID
+    status: str
+    source: str
+    checked_in_at: datetime
+    intro_route: str

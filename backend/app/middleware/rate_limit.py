@@ -1,11 +1,13 @@
 """Per-user rate limiting middleware using the api_usage table.
 
-Enforces two limits on ``/api/rag/*``:
+Enforces three disjoint per-user counting classes (see ``_classify_traffic``):
 
 * Non-GET (LLM generation) — per-hour cap from ``settings.student_rate_limit``
   / ``settings.instructor_rate_limit``.
 * GET (summary reads, job polling) — per-minute cap of 60 to prevent
   unbounded DB load from aggressive client polling.
+* QR attendance scan (``/api/attend/{token}``, P3 T10) — its own per-minute
+  cap so a scan flood cannot drain the generation quota (and vice-versa).
 
 The read-check-insert sequence is serialised per user via a Postgres
 advisory transaction lock (``pg_advisory_xact_lock``) so concurrent bursts
@@ -54,6 +56,20 @@ _RATE_LIMITED_REGEXES = (
     re.compile(r"^/api/courses/[^/]+/concepts/(?:extract|replay)$"),
 )
 
+# The QR attendance scan (P3 T10). Anchored on a single token segment so a
+# nested/trailing-slash path never matches. It is rate-limited on its OWN
+# per-minute counting class (below) so a scan flood cannot drain the RAG
+# generation quota — and an exhausted RAG quota cannot block scans.
+_ATTEND_SCAN_REGEX = re.compile(r"^/api/attend/[^/]+$")
+
+# ``api_usage.endpoint`` prefix for a scan row. The disjoint count filter keys
+# off this so the scan bucket and the generation bucket never count each other.
+_ATTEND_ENDPOINT_PREFIX = "/api/attend/"
+
+# Dedicated per-minute scan cap. A legitimate student scans once (with a couple
+# of retries at most); a flood past this trips 429 on the scan bucket alone.
+_ATTEND_SCAN_PER_MINUTE = 30
+
 
 def _is_public_path(path: str) -> bool:
     return any(path.startswith(prefix) for prefix in _PUBLIC_PATH_PREFIXES)
@@ -64,7 +80,48 @@ def _is_rate_limited_path(path: str) -> bool:
         return True
     if path in _EXTRA_GENERATION_PATHS:
         return True
+    if _ATTEND_SCAN_REGEX.match(path):
+        return True
     return any(pattern.match(path) for pattern in _RATE_LIMITED_REGEXES)
+
+
+def _classify_traffic(path: str, method: str) -> str:
+    """The per-user counting class a rate-limited request belongs to.
+
+    Three disjoint classes, each with its own cap and its own counted rows:
+
+    * ``attend_scan`` — the QR scan (path-first, any method), per-minute cap.
+    * ``get_poll``    — cheap GET reads/polls under a rate-limited prefix.
+    * ``generation``  — everything else (LLM-billing POSTs), per-hour cap.
+    """
+    if _ATTEND_SCAN_REGEX.match(path):
+        return "attend_scan"
+    if method == "GET":
+        return "get_poll"
+    return "generation"
+
+
+def _usage_count_filter(traffic_class: str):
+    """The ``api_usage`` predicate isolating one class's rows from the others.
+
+    The three filters are mutually exclusive and exhaustive, so a burst in one
+    class can never be counted against another class's cap.
+    """
+    is_attend = ApiUsage.endpoint.like(_ATTEND_ENDPOINT_PREFIX + "%")
+    if traffic_class == "attend_scan":
+        return is_attend
+    if traffic_class == "get_poll":
+        return sa.and_(ApiUsage.method == "GET", sa.not_(is_attend))
+    return sa.and_(ApiUsage.method != "GET", sa.not_(is_attend))
+
+
+def _window_and_limit(traffic_class: str, role: str) -> tuple[timedelta, int, int]:
+    """``(window, effective_limit, retry_after_seconds)`` for a counting class."""
+    if traffic_class == "attend_scan":
+        return timedelta(minutes=1), _ATTEND_SCAN_PER_MINUTE, 60
+    if traffic_class == "get_poll":
+        return timedelta(minutes=1), 60, 60
+    return timedelta(hours=1), _get_rate_limit(role), 3600
 
 
 def _rate_limit_response(retry_after_seconds: int) -> dict:
@@ -118,11 +175,11 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # GET reads under /api/rag/* (e.g. fetching a persisted course summary
-        # or polling a job) are cheap individually but can hammer the DB under
-        # aggressive client polling. Apply a lighter per-minute cap instead of
-        # bypassing the limiter entirely.
-        is_get_poll = method == "GET"
+        # Each rate-limited request is bucketed into one of three disjoint
+        # counting classes (see ``_classify_traffic``): the QR scan gets its own
+        # per-minute cap, GET reads/polls a lighter per-minute cap, and LLM
+        # generation the per-hour cap. Each class only ever counts its own rows.
+        traffic_class = _classify_traffic(path, method)
 
         # Extract token from Authorization header
         headers = dict(scope.get("headers", []))
@@ -175,36 +232,32 @@ class RateLimitMiddleware:
                     ).bindparams(k=lock_key)
                 )
 
-                window = timedelta(minutes=1) if is_get_poll else timedelta(hours=1)
-                effective_limit = 60 if is_get_poll else _get_rate_limit(user.role)
+                window, effective_limit, retry_after = _window_and_limit(
+                    traffic_class, user.role
+                )
                 window_start = datetime.now(timezone.utc) - window
 
-                # Each traffic class (GET polling vs non-GET generation) has
-                # its own cap and must be counted against only its own rows.
-                # Mixing them caused aggressive poll traffic to eat the
-                # hourly generation quota and produce spurious 429s.
-                method_filter = (
-                    ApiUsage.method == "GET"
-                    if is_get_poll
-                    else ApiUsage.method != "GET"
-                )
+                # Each traffic class has its own cap and is counted against only
+                # its own rows (see ``_usage_count_filter``). Mixing them caused
+                # aggressive poll traffic to eat the hourly generation quota and
+                # produce spurious 429s; the scan class keeps a QR-scan flood
+                # from draining the generation quota (and vice-versa).
                 count_result = await session.execute(
                     select(func.count(ApiUsage.id)).where(
                         ApiUsage.user_id == user.id,
                         ApiUsage.created_at >= window_start,
-                        method_filter,
+                        _usage_count_filter(traffic_class),
                     )
                 )
                 request_count = count_result.scalar_one()
 
                 if request_count >= effective_limit:
-                    retry_after = 60 if is_get_poll else 3600
                     # Log only opaque identifiers, not PII.
                     logger.warning(
-                        "Rate limit exceeded for user_id=%s role=%s window=%s: %d/%d",
+                        "Rate limit exceeded for user_id=%s role=%s class=%s: %d/%d",
                         user.id,
                         user.role,
-                        "1m" if is_get_poll else "1h",
+                        traffic_class,
                         request_count,
                         effective_limit,
                     )
