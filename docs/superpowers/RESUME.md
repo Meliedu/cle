@@ -1,6 +1,6 @@
 # Resume Pointer — read this first in any fresh session
 
-**Last updated:** 2026-07-07 (P2 complete)
+**Last updated:** 2026-07-07 (P3 in progress — 8/21)
 
 ## Active effort: Meli × CLE Checkpoint Loop (Figma "final" flow, 160 screens, 8 phases)
 
@@ -10,7 +10,7 @@
    `docs/superpowers/specs/2026-07-06-meli-cle-checkpoint-loop-design.md`
 3. Follow the roadmap's **Session bootstrap protocol** — it tells you which phase is next, whether its detailed plan exists, and how to execute + hand off.
 
-Current state: **P2 (Student entry & enrollment) is COMPLETE** — all 16 tasks shipped on `feat/cle-p0-shell` (see the roadmap Handoff Log entry dated 2026-07-07 "P2 COMPLETE" for SHAs, the migration head chain, new tables/router/endpoints, the join funnel + teacher enrollment screens, verification numbers, and the known pre-existing backend-failure list). P0 and P1 are also complete. **Next action: write the P3 plan (checkpoint loop core) via `superpowers:writing-plans`** from the P3 phase brief + spec, then execute. P3 builds on P2's active enrollments + P1's checkpoint drafts, and adds `checkpoint_responses` (+RLS following the `readiness_responses` pattern established in P2).
+Current state: **P0, P1, P2 COMPLETE; P3 IN PROGRESS (8 of 21 tasks done, next = T9)** — all on `feat/cle-p0-shell`. The P3 detailed plan already exists: `docs/superpowers/plans/2026-07-07-meli-cle-p3-checkpoint-loop.md`. See the roadmap Handoff Log "P3 IN PROGRESS" entry for the T1–T8 commit SHAs, the migration head chain (current head `c3a9f0e1d2b4`), the new services/models, and the T9→T21 remaining list. **Next action: resume P3 at T9 (QR launch signed token).** Cadence note (in that entry): per-task = build + run tests + commit; focused review only for security-sensitive tasks (auth/RLS/token/evidence seam); comprehensive `/code-review` + `/security-review` banked for end-of-build. Known pre-existing backend failures — do NOT chase: test_alerts_evaluator, test_scheduler_integration, test_canvas_coverage, test_live_quiz_service.
 
 Note: `docs/` is gitignored — commit doc files with `git add -f`.
 

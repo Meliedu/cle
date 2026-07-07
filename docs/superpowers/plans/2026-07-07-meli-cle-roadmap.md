@@ -110,6 +110,20 @@ Phases must run in order: P1 depends on P0's config/shell; P2 on P1's setup gate
 
 ## Handoff Log (append-only; newest first)
 
+### 2026-07-07 — P3 IN PROGRESS (Checkpoint loop core) — 8 of 21 tasks done
+
+Detailed plan: `docs/superpowers/plans/2026-07-07-meli-cle-p3-checkpoint-loop.md` (21 tasks: backend T1–14, frontend T15–21). Executing on `feat/cle-p0-shell`. **NEXT TASK: T9** (QR launch service + signed token).
+
+**Done + committed (T1–T8):** T1 status-machine `assert_transition` helper `3ff1d26`; T2 `checkpoint_responses` model+RLS `c323129`; T3 `attendance_records` model+RLS `f3984ca`; T4 `checkpoint_launches` model + `checkpoint_token_secret` config `894a991`; T5 approve/schedule/publish/close endpoints + publish gate (deleted `test_p1_has_no_publish_route`) `194ec07`; T6 teacher results + history endpoints `d3599a8`; T7 student intro + response submission + **evidence seam** (mirrors quizzes.py: learning_event during_class + update_concept_mastery, outcome=(c+2)/4) `8fbf16c`; T8 student history/follow-up-suggested/revisit `47cd2e0` + **security fix** `7855c67` (verify_enrollment now requires status='active' — was letting pending/rejected students write mastery data; central fix in `_helpers.py` covering ALL student-surface consumers).
+
+**Migration head chain (P3 so far):** d94257fc717c (P2) → a1f3c7e29b04 (checkpoint_responses) → b2e4d8f1a067 (attendance_records) → c3a9f0e1d2b4 (checkpoint_launches). New service `app/services/checkpoints.py` (transition guard + T13 cron later) + `checkpoint_responses.py`. `AttemptKind.CHECKPOINT` added to mastery.py.
+
+**Remaining P3:** T9 QR launch token (PyJWT HS256 mirroring canvas_oauth, `checkpoint_token_secret` ≥32-byte check enforced at launch), T10 scan `/attend/{token}` + rate-limit extension, T11 attendance roster + manual override, T12 live monitor WS (reuse live-quiz hub), T13 close_due_checkpoints cron, T14 RLS isolation tests (checkpoint_responses + attendance), T15 extract ConfidenceScaleInput + extend use-checkpoints, T16–T19 teacher sessions/studio/publish/QR/monitor/attendance/results, T20–T21 student mobile checkpoint flow + P3 close-out.
+
+**Execution-cadence note (2026-07-07):** switched from per-task 2-stage adversarial review to a lighter cadence — implement + run tests + commit per task, focused review only on security-sensitive tasks (auth/RLS/token/evidence seam), and bank the comprehensive `/code-review` + `/security-review` for the end of the build (per the goal). Tracked security findings to address in that final gate live in the "Security findings for final /security-review" section above.
+
+
+
 ### 2026-07-07 — P2 COMPLETE (Student entry & enrollment)
 
 **All 16 P2 tasks shipped.** Detailed plan: `docs/superpowers/plans/2026-07-07-meli-cle-p2-entry-enrollment.md`. Branch `feat/cle-p0-shell`.
