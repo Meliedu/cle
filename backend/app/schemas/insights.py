@@ -176,6 +176,94 @@ class SignalDetail(BaseModel):
     source_event_ids: list = []
 
 
+class CohortMasterySummary(BaseModel):
+    """The cohort mastery summary on the teacher course-insights payload (B8).
+
+    A pure reduction of the ``api/mastery.py::cohort_mastery`` per-concept shape:
+    ``avg_mastery`` is the mean of each live concept's cohort ``avg(mastery_score)``
+    over the concepts that have any evidence (``None`` when none do — never a
+    fabricated 0); ``weak_student_signals`` sums the ``cohort_mastery`` weak count
+    (mastery < 0.5 among confidence >= 0.5) across concepts. Recomputes nothing.
+    """
+
+    concept_count: int
+    concepts_with_evidence: int
+    avg_mastery: float | None
+    weak_student_signals: int
+
+
+class AlertSeverityCounts(BaseModel):
+    """Open ``instructor_alerts`` counts by severity (B8).
+
+    These EQUAL ``GET /courses/{id}/alerts?status=open`` counted by severity —
+    the endpoint reads the same rows, it does not re-evaluate any alert.
+    """
+
+    info: int = 0
+    warning: int = 0
+    critical: int = 0
+    total: int = 0
+
+
+class ReviewQueueDepth(BaseModel):
+    """How much sits in the teacher's review queue (B8).
+
+    ``open_alerts`` = open ``instructor_alerts``; ``pending_notes`` =
+    ``learning_notes`` still in ``review_status ∈ {draft, queued}`` (AI-drafted,
+    not yet instructor-reviewed). Both are counts of existing rows.
+    """
+
+    open_alerts: int
+    pending_notes: int
+    total: int
+
+
+class CourseInsightsResponse(BaseModel):
+    """The teacher course-insights payload for one owned course (B8, pure read).
+
+    A single reshape of existing rows: the cohort mastery summary, open-alert
+    severity counts, and review-queue depth. ``has_evidence`` is the frontend
+    discriminator for the designed no-evidence state (Decision 6): ``False`` when
+    the course has no cohort mastery evidence, no open alerts, and no pending
+    notes.
+    """
+
+    course_id: uuid.UUID
+    has_evidence: bool
+    cohort_mastery: CohortMasterySummary
+    alerts: AlertSeverityCounts
+    review_queue: ReviewQueueDepth
+
+
+class EffectivenessActionGroup(BaseModel):
+    """One follow-up ``action_type`` bucket on the effectiveness tracker (B8).
+
+    ``by_status`` counts this action type's ``outcome_checks`` by status (all
+    seven CHECK statuses present, zeroed where absent). Read-only reshape.
+    """
+
+    action_type: str
+    total: int
+    by_status: dict[str, int]
+
+
+class EffectivenessResponse(BaseModel):
+    """The teacher effectiveness tracker for one owned course (B8, pure read).
+
+    The read side of the loop ``services/mastery.py::_close_follow_ups`` writes:
+    ``outcome_checks`` for the course grouped by ``status`` and, via the
+    ``OutcomeCheck → FollowUpAction`` join, by follow-up ``action_type``
+    (Decision 9). No new persistence, no new job. ``has_evidence`` is ``False``
+    when the course has no outcome checks yet (designed empty payload).
+    """
+
+    course_id: uuid.UUID
+    has_evidence: bool
+    total: int
+    by_status: dict[str, int]
+    by_action_type: list[EffectivenessActionGroup]
+
+
 class EvidenceSource(BaseModel):
     """One ``learning_event`` reshaped for the "where did this come from" view (B7).
 

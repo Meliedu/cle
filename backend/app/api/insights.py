@@ -12,7 +12,7 @@ import uuid
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._helpers import verify_enrollment
@@ -21,23 +21,32 @@ from app.models import (
     Concept,
     ConceptMastery,
     ConceptTag,
+    FollowUpAction,
+    InstructorAlert,
     LearningEvent,
     LearningNote,
     LearningObjective,
+    OutcomeCheck,
 )
 from app.models.course import Course
 from app.models.user import User
 from app.pilot import get_pilot_profile
 from app.schemas.common import APIResponse
 from app.schemas.insights import (
+    AlertSeverityCounts,
     CohortIloMapEntry,
     CohortIloMapResponse,
+    CohortMasterySummary,
     ConceptMasteryEntry,
+    CourseInsightsResponse,
+    EffectivenessActionGroup,
+    EffectivenessResponse,
     EvidenceSource,
     IloMapEntry,
     IloMapResponse,
     LearningProfileGroups,
     LearningProfileResponse,
+    ReviewQueueDepth,
     SignalDetail,
     SkillMapEntry,
     SkillMapResponse,
@@ -538,3 +547,201 @@ async def get_evidence_source(
         context_anchor=context_anchor,
     )
     return APIResponse(success=True, data=source)
+
+
+# ---------------------------------------------------------------------------
+# Teacher course insights + effectiveness tracker (B8) — reshape only, owned.
+# ---------------------------------------------------------------------------
+# Mirrors ``learning_notes.review_status`` values that mean "AI-drafted, not yet
+# instructor-reviewed" — the review-queue depth (Decision 1 / spec §5).
+_PENDING_NOTE_STATUSES = ("draft", "queued")
+
+# The full ``outcome_checks.status`` CHECK enum (``models/evidence.py``). The
+# effectiveness tracker always returns every bucket, zeroed where absent, so the
+# frontend can render a stable grid without inventing keys.
+_OUTCOME_STATUSES = (
+    "pending",
+    "completed",
+    "improved",
+    "persistent",
+    "resolved",
+    "needs_review",
+    "carried_forward",
+)
+
+
+async def _cohort_mastery_summary(
+    db: AsyncSession, course_id: uuid.UUID
+) -> CohortMasterySummary:
+    """Reduce the ``cohort_mastery`` per-concept shape to a course summary (pure read).
+
+    Runs the SAME per-concept aggregation as ``api/mastery.py::cohort_mastery``
+    (avg mastery + the weak count where mastery < 0.5 among confidence >= 0.5),
+    then collapses it: ``avg_mastery`` is the mean of each evidenced concept's
+    cohort average (``None`` when no concept has evidence — never a fabricated 0),
+    ``weak_student_signals`` sums the per-concept weak counts. Recomputes nothing.
+    """
+    rows = (
+        await db.execute(
+            select(
+                Concept.id,
+                func.avg(ConceptMastery.mastery_score).label("avg_mastery"),
+                func.count()
+                .filter(
+                    (ConceptMastery.mastery_score < _WEAK_MASTERY_THRESHOLD)
+                    & (ConceptMastery.confidence >= _MIN_CONFIDENCE)
+                )
+                .label("weak_students"),
+                func.count(ConceptMastery.user_id).label("total"),
+            )
+            .select_from(Concept)
+            .outerjoin(ConceptMastery, ConceptMastery.concept_id == Concept.id)
+            .where(
+                Concept.course_id == course_id,
+                Concept.deleted_at.is_(None),
+                Concept.canonical_id.is_(None),
+            )
+            .group_by(Concept.id)
+        )
+    ).all()
+
+    evidenced = [
+        float(r.avg_mastery)
+        for r in rows
+        if (r.total or 0) > 0 and r.avg_mastery is not None
+    ]
+    return CohortMasterySummary(
+        concept_count=len(rows),
+        concepts_with_evidence=sum(1 for r in rows if (r.total or 0) > 0),
+        avg_mastery=(sum(evidenced) / len(evidenced)) if evidenced else None,
+        weak_student_signals=sum((r.weak_students or 0) for r in rows),
+    )
+
+
+@router.get(
+    "/courses/{course_id}/insights",
+    response_model=APIResponse[CourseInsightsResponse],
+)
+async def course_insights(
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+) -> APIResponse[CourseInsightsResponse]:
+    """The teacher course-insights payload for an owned course (B8, pure read).
+
+    A single RESHAPE of existing rows — NO recompute (Decision 1): the cohort
+    mastery summary (``cohort_mastery`` shape), open ``instructor_alerts`` counts
+    by severity (these EQUAL ``GET /courses/{id}/alerts?status=open``), and
+    review-queue depth (open alerts + ``draft``/``queued`` notes).
+    ``get_owned_course`` 404s a non-owner; a course with no evidence returns the
+    designed empty payload (``has_evidence=false``).
+    """
+    cohort = await _cohort_mastery_summary(db, course.id)
+
+    alert_rows = (
+        await db.execute(
+            select(InstructorAlert.severity, func.count())
+            .where(
+                InstructorAlert.course_id == course.id,
+                InstructorAlert.status == "open",
+            )
+            .group_by(InstructorAlert.severity)
+        )
+    ).all()
+    counts = AlertSeverityCounts()
+    for severity, n in alert_rows:
+        setattr(counts, severity, n)
+    counts.total = counts.info + counts.warning + counts.critical
+
+    pending_notes = (
+        await db.execute(
+            select(func.count())
+            .select_from(LearningNote)
+            .where(
+                LearningNote.course_id == course.id,
+                LearningNote.review_status.in_(_PENDING_NOTE_STATUSES),
+            )
+        )
+    ).scalar_one()
+
+    review_queue = ReviewQueueDepth(
+        open_alerts=counts.total,
+        pending_notes=pending_notes,
+        total=counts.total + pending_notes,
+    )
+
+    has_evidence = (
+        cohort.concepts_with_evidence > 0
+        or counts.total > 0
+        or pending_notes > 0
+    )
+
+    return APIResponse(
+        success=True,
+        data=CourseInsightsResponse(
+            course_id=course.id,
+            has_evidence=has_evidence,
+            cohort_mastery=cohort,
+            alerts=counts,
+            review_queue=review_queue,
+        ),
+    )
+
+
+@router.get(
+    "/courses/{course_id}/effectiveness",
+    response_model=APIResponse[EffectivenessResponse],
+)
+async def course_effectiveness(
+    db: AsyncSession = Depends(get_db),
+    course: Course = Depends(get_owned_course),
+) -> APIResponse[EffectivenessResponse]:
+    """The teacher effectiveness tracker for an owned course (B8, pure read).
+
+    The read side of the loop ``services/mastery.py::_close_follow_ups`` writes
+    (Decision 9): the course's ``outcome_checks`` grouped by ``status`` and, via
+    the ``OutcomeCheck → FollowUpAction`` join, by follow-up ``action_type``.
+    ``get_owned_course`` 404s a non-owner; a course with no outcomes returns the
+    designed empty payload (``has_evidence=false``). No new persistence, no job.
+    """
+    rows = (
+        await db.execute(
+            select(OutcomeCheck.status, FollowUpAction.action_type)
+            .outerjoin(
+                FollowUpAction,
+                FollowUpAction.id == OutcomeCheck.follow_up_action_id,
+            )
+            .where(OutcomeCheck.course_id == course.id)
+        )
+    ).all()
+
+    by_status: dict[str, int] = {s: 0 for s in _OUTCOME_STATUSES}
+    groups: dict[str, dict[str, int]] = {}
+    for status, action_type in rows:
+        if status in by_status:
+            by_status[status] += 1
+        if action_type is not None:
+            bucket = groups.setdefault(
+                action_type, {s: 0 for s in _OUTCOME_STATUSES}
+            )
+            if status in bucket:
+                bucket[status] += 1
+
+    by_action_type = [
+        EffectivenessActionGroup(
+            action_type=action_type,
+            total=sum(bucket.values()),
+            by_status=bucket,
+        )
+        for action_type, bucket in sorted(groups.items())
+    ]
+
+    return APIResponse(
+        success=True,
+        data=EffectivenessResponse(
+            course_id=course.id,
+            has_evidence=len(rows) > 0,
+            total=len(rows),
+            by_status=by_status,
+            by_action_type=by_action_type,
+        ),
+    )
