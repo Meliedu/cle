@@ -1,4 +1,6 @@
 export { PracticeRunner } from "./practice-runner";
+export { QuizRunner } from "./quiz-runner";
+export { QuizLanding } from "./quiz-landing";
 export { QuizTaking } from "./quiz-taking";
 export { QuestionRenderer } from "./question-renderer";
 export type { RenderableQuestion } from "./question-renderer";

@@ -1588,11 +1588,11 @@
         "submitting": "Submitting…",
         "submitErrorTitle": "We couldn't submit your answers",
         "submitErrorReason": "Something went wrong submitting your answers. Please try again.",
-        "confirmTitle": "Finish this practice set?",
-        "confirmAllAnswered": "You've answered all {total} questions. Ready to see your feedback?",
+        "confirmTitle": "Submit your answers?",
+        "confirmAllAnswered": "You've answered all {total} questions. Submit now?",
         "confirmSomeBlank": "You've answered {answered} of {total}. Unanswered questions will be marked incorrect.",
         "confirmReview": "Keep reviewing",
-        "confirmSubmit": "Finish"
+        "confirmSubmit": "Submit"
       },
       "result": {
         "practiceEyebrow": "Practice complete",
@@ -1632,6 +1632,9 @@
         "lateFlag": "Accepted, flagged as late",
         "emptyTitle": "No questions yet",
         "emptyReason": "This quiz has no questions to attempt right now."
+      },
+      "taking": {
+        "submit": "Submit quiz"
       },
       "result": {
         "back": "Back to activities"
