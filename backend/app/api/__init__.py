@@ -31,6 +31,8 @@ from app.api.internal import router as internal_router
 from app.api.live import router as live_router
 from app.api.mastery import router as mastery_router
 from app.api.meetings import router as meetings_router
+from app.api.memory import item_router as memory_item_router
+from app.api.memory import router as memory_router
 from app.api.modules import router as modules_router
 from app.api.objectives import router as objectives_router
 from app.api.progress import router as progress_router
@@ -102,3 +104,5 @@ api_router.include_router(activities_router)
 api_router.include_router(reports_router)
 api_router.include_router(reports_item_router)
 api_router.include_router(reports_me_router)
+api_router.include_router(memory_router)
+api_router.include_router(memory_item_router)

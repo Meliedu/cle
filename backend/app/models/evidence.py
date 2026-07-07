@@ -272,10 +272,22 @@ class OutcomeCheck(UUIDPrimaryKeyMixin, Base):
 
 
 class CourseRecordItem(UUIDPrimaryKeyMixin, Base):
-    """OBJ-09 — durable, reviewed course memory entry (Core §5.4)."""
+    """OBJ-09 — durable, reviewed course memory entry (Core §5.4).
+
+    P7 Task B8 (Decision 5) adds the instructor-decision triplet: ``decision``
+    (``keep|revise|reject|carry_forward``, NULL = undecided), ``decided_by`` (the
+    reviewing instructor), and ``decided_at``. ``POST /memory/{id}/decide`` sets
+    these + syncs the ``carry_forward`` bool (true iff ``decision`` is
+    ``carry_forward``). ``reject`` is an audited tombstone — the table has no
+    soft-delete, so a rejected item stays (excluded from next-term import).
+    """
 
     __tablename__ = "course_record_items"
     __table_args__ = (
+        CheckConstraint(
+            "decision IN ('keep','revise','reject','carry_forward')",
+            name="ck_course_record_items_decision_valid",
+        ),
         Index(
             "idx_course_record_items_course_time",
             "course_id",
@@ -296,6 +308,13 @@ class CourseRecordItem(UUIDPrimaryKeyMixin, Base):
     carry_forward: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Instructor decision (Decision 5). NULL = undecided; CHECK enforces the enum.
+    decision: Mapped[str | None] = mapped_column(String(20))
+    # Audit FK — no ondelete (the decision trail outlives the deciding user).
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id")
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     report_history: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
