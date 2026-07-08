@@ -694,7 +694,9 @@
         "setup": "Setup",
         "materials": "Materials",
         "activities": "Activities",
-        "insights": "Insights"
+        "insights": "Insights",
+        "reports": "Reports",
+        "memory": "Memory"
       },
       "tabSoon": "Soon",
       "overview": {

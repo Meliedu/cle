@@ -19,7 +19,9 @@ export type CourseTab =
   | "setup"
   | "materials"
   | "activities"
-  | "insights";
+  | "insights"
+  | "reports"
+  | "memory";
 
 interface TabDef {
   readonly id: CourseTab;
@@ -44,6 +46,8 @@ const TABS: readonly TabDef[] = [
   { id: "materials", segment: "materials", enabled: true },
   { id: "activities", segment: "activities", enabled: true },
   { id: "insights", segment: "insights", enabled: true },
+  { id: "reports", segment: "reports", enabled: true },
+  { id: "memory", segment: "memory", enabled: true },
 ];
 
 export function isCoursePublished(course: CourseResponse): boolean {
