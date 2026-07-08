@@ -302,7 +302,8 @@ export interface SubmitActivityResponseInput {
 /**
  * POST `/activities/{id}/responses` — submit the student's per-format answer
  * (backend B9). Upserts on `(activity_id, user_id)`; `comment_reaction` stacks
- * inside `payload`. Invalidates the activity detail on success.
+ * inside `payload`. Invalidates the student-facing `intro` read and the teacher
+ * `results` monitor on success (the caches a caller actually holds).
  */
 export function useSubmitActivityResponse(activityId: string) {
   const { getToken } = useAuth();
@@ -317,8 +318,14 @@ export function useSubmitActivityResponse(activityId: string) {
           body
         ),
       onSuccess: () => {
+        // The student runner reads `intro` (not the owner-only `detail`), and
+        // the teacher monitor reads `results` — invalidate the caches a caller
+        // actually holds, mirroring `useSubmitCheckpointResponse`.
         void queryClient.invalidateQueries({
-          queryKey: activityKeys.detail(activityId),
+          queryKey: activityKeys.intro(activityId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: activityKeys.results(activityId),
         });
       },
     }

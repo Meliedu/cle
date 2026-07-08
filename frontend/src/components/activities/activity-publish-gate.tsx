@@ -85,13 +85,14 @@ function scoreFieldLabel(
   t: ReturnType<typeof useTranslations>,
   field: string
 ): string {
+  // Matches the backend `SCORE_POLICY_INCOMPLETE.missing[]` vocabulary
+  // (`score_policy.py`): the three required scalars plus a SINGLE `deadline`
+  // entry (never a raw `due_at`/`close_at`/`late_rule`).
   const known: Record<string, string> = {
     score_category_id: t("scorePolicy.fields.score_category_id"),
     points: t("scorePolicy.fields.points"),
     grading_mode: t("scorePolicy.fields.grading_mode"),
-    late_rule: t("scorePolicy.fields.late_rule"),
-    due_at: t("scorePolicy.fields.due_at"),
-    close_at: t("scorePolicy.fields.close_at"),
+    deadline: t("scorePolicy.fields.deadline"),
   };
   return known[field] ?? field;
 }

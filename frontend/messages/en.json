@@ -1551,9 +1551,7 @@
               "score_category_id": "score category",
               "points": "points",
               "grading_mode": "grading mode",
-              "late_rule": "late rule",
-              "due_at": "due date",
-              "close_at": "close date"
+              "deadline": "deadline"
             }
           },
           "configInvalid": {

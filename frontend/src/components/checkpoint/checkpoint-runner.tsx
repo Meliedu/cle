@@ -146,9 +146,11 @@ export function CheckpointRunner({
     // A closed / out-of-window checkpoint 409s `QR_NOT_AVAILABLE` — that's the
     // missed / late terminal (S038), not a generic failure. Attendance from an
     // upstream scan means the miss is "late" (checked in) rather than absent.
+    // Key ONLY on the typed code so an unrelated future 409 isn't masked as
+    // "missed" (code-based branching, consistent with the rest of the codebase).
     const closed =
       intro.error instanceof ApiError &&
-      (intro.error.code === "QR_NOT_AVAILABLE" || intro.error.status === 409);
+      intro.error.code === "QR_NOT_AVAILABLE";
     if (closed) {
       return (
         <CheckpointMissed
