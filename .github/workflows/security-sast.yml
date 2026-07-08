@@ -1,0 +1,75 @@
+# CodeQL static application security testing (SAST).
+#
+# Scans the Python backend and the JavaScript/TypeScript frontend for
+# security-relevant code patterns (injection, path traversal, unsafe
+# deserialization, XSS, etc.) using GitHub's first-party CodeQL engine.
+#
+# SAST choice: CodeQL (the GitHub standard) over Semgrep — it needs no
+# external account/token, integrates natively with the Security tab / PR
+# code-scanning annotations, and covers both of our languages in one action.
+#
+# Triggers: PRs into main and feat/* (matching the repo's branch model) and
+# a weekly schedule so newly-published queries catch pre-existing code.
+name: Security SAST (CodeQL)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+      - "feat/*"
+  schedule:
+    # Mondays 05:17 UTC — off-peak, avoids the top-of-hour scheduler stampede.
+    - cron: "17 5 * * 1"
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for CodeQL to upload results to the Security tab.
+      security-events: write
+      # Needed by the CodeQL action on private repos to read the ref.
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # 'security-and-quality' is broader than the default 'security'
+          # suite; drop to 'security-extended' if quality noise is too high.
+          queries: security-extended
+
+      # Both languages are interpreted here (no compile step), so build-mode
+      # 'none' skips autobuild. Kept explicit for future compiled additions.
+      - name: Autobuild
+        if: matrix.build-mode == 'autobuild'
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

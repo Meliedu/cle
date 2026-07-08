@@ -1,0 +1,107 @@
+# Dependency vulnerability audit (informative, not a hard gate).
+#
+# Backend:  pip-audit against backend/requirements.txt
+# Frontend: npm audit --audit-level=high in frontend/
+#
+# Posture: this workflow REPORTS advisories; it does not block merges on
+# pre-existing transitive advisories. Both audit steps use
+# `continue-on-error: true` and write a Markdown summary to the job so the
+# result is visible on every PR without becoming a spurious red X. Triage
+# happens by reading the summary / uploaded reports, not by CI failure.
+#
+# Known-accepted at time of authoring (2026-07-08) — see report notes:
+#   - Backend: cryptography, docling(-core), pyjwt, python-dotenv,
+#     python-multipart, starlette, pytest carry published advisories with
+#     available fix versions; upgrades are tracked separately (dependency
+#     bumps are out of scope for the CI-wiring task). torch/torchvision are
+#     pinned to local `+cpu` builds and are un-auditable via PyPI (skipped).
+#   - Frontend: 2 *moderate* advisories (postcss <8.5.10 via the pinned Next
+#     toolchain) — below the `--audit-level=high` gate, so they do not fail
+#     the npm job even without continue-on-error.
+#
+# Triggers: PRs into main and feat/*, plus a weekly schedule to catch newly
+# published advisories against unchanged pins.
+name: Dependency Audit
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+      - "feat/*"
+  schedule:
+    # Mondays 06:17 UTC — one hour after the SAST scan.
+    - cron: "17 6 * * 1"
+
+concurrency:
+  group: depaudit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    name: pip-audit (backend)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit
+
+      - name: Audit backend/requirements.txt
+        continue-on-error: true
+        env:
+          # requirements.txt pins torch==2.7.0+cpu / torchvision==...+cpu,
+          # which resolve only from the PyTorch CPU wheel index. Exposing it
+          # here lets pip-audit's dependency resolver see those pins instead
+          # of hard-failing on "No matching distribution".
+          PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
+        run: |
+          echo "## pip-audit (backend/requirements.txt)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          # --desc adds advisory descriptions; --skip-editable is harmless here.
+          # Do NOT pass --strict: we want the report, not a hard fail.
+          python -m pip_audit \
+            -r backend/requirements.txt \
+            --desc \
+            2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  npm-audit:
+    name: npm audit (frontend)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm ci` builds the lockfile-accurate tree that `npm audit` needs.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit (high+)
+        continue-on-error: true
+        run: |
+          echo "## npm audit --audit-level=high (frontend)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          npm audit --audit-level=high 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
