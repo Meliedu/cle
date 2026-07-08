@@ -21,6 +21,7 @@ import {
 } from "@/hooks/use-reports";
 
 import { ReportStatusChip } from "./report-status-chip";
+import { ReportActions } from "./report-actions";
 import { ReportBodyEditor } from "./report-body-editor";
 import {
   formatMasteryPercent,
@@ -109,7 +110,10 @@ export function ReportDetail({ courseId, reportId, onBack }: ReportDetailProps) 
           onDone={() => setEditing(false)}
         />
       ) : (
-        <ReportBodySections report={report} />
+        <>
+          <ReportActions courseId={courseId} report={report} />
+          <ReportBodySections report={report} />
+        </>
       )}
     </div>
   );

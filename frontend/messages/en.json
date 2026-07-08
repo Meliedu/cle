@@ -2002,6 +2002,59 @@
         "notEditableTitle": "This report can no longer be edited",
         "notEditableReason": "Only a draft can be edited. This report has already been approved, sent, or archived.",
         "genericError": "We couldn't save your changes. Please try again."
+      },
+      "actions": {
+        "approve": "Approve",
+        "send": "Send to student",
+        "exportShare": "Export & share",
+        "cancel": "Cancel",
+        "genericError": "Something went wrong. Please try again.",
+        "approveConfirmTitle": "Approve this report?",
+        "approveConfirmBody": "Approving marks the report reviewed and records you as the reviewer. You can still export or send it afterwards, but a reviewed report can no longer be edited.",
+        "approveConfirm": "Approve report",
+        "approving": "Approving…",
+        "approveInvalidReason": "This report can't be approved from its current state — only a draft can be approved.",
+        "sendConfirmTitle": "Send this report to the student?",
+        "sendConfirmBody": "The student will see this report in their archive. This can't be undone.",
+        "sendConfirm": "Send report",
+        "sending": "Sending…",
+        "sentTitle": "Sent to the student",
+        "sentReason": "Delivered on {date}. The student can see this report in their archive.",
+        "sentReasonNoDate": "This report has been delivered to the student.",
+        "archivedTitle": "This report is archived",
+        "archivedReason": "Archived reports are read-only and are no longer visible to students."
+      },
+      "gate": {
+        "title": "Not ready to send yet",
+        "reason": "A report can only be sent or exported once it has been reviewed and has at least one piece of attached evidence.",
+        "checklistLabel": "Send requirements",
+        "needsReview": "Approved / reviewed",
+        "needsEvidence": "Evidence attached"
+      },
+      "appendix": {
+        "title": "Evidence appendix",
+        "observedSignal": "Observed signal",
+        "draftInterpretation": "Interpretation",
+        "limitationNote": "Limitation",
+        "noSignal": "No signal recorded for this note.",
+        "emptyTitle": "No evidence in the appendix",
+        "emptyReason": "Only reviewed learning notes appear here. Once the notes behind this report are reviewed, they show up as traceable evidence."
+      },
+      "share": {
+        "title": "Export & share",
+        "subtitle": "Export settings for the report covering {range}.",
+        "settingsLegend": "Share settings",
+        "visibleToStudent": "Visible to student",
+        "visibleToStudentHint": "Let the student open this report in their archive once sent.",
+        "allowDownload": "Allow download",
+        "allowDownloadHint": "Include a downloadable copy of the report and its evidence.",
+        "includeAppendix": "Include evidence appendix",
+        "includeAppendixHint": "Attach the reviewed-note evidence appendix to the export.",
+        "appendixTitle": "Evidence appendix",
+        "download": "Download",
+        "close": "Close",
+        "errorTitle": "We couldn't prepare the export",
+        "errorReason": "Please close this dialog and try again."
       }
     }
   },
