@@ -2687,6 +2687,82 @@
           "reason": "Refresh the page to try again."
         }
       }
+    },
+    "reports": {
+      "title": "Your reports",
+      "subtitle": "Weekly and end-of-term summaries your instructor reviewed before sending to you.",
+      "back": "Back to course",
+      "error": {
+        "title": "We couldn't load your reports",
+        "reason": "Refresh the page to try again."
+      },
+      "empty": {
+        "title": "No reports yet",
+        "reason": "Your instructor hasn't sent a report yet. When a weekly or end-of-term report is sent, it appears here and in your HKUST email — you never see an unsent draft."
+      },
+      "filter": {
+        "label": "Filter reports by type",
+        "all": "All",
+        "weekly": "Weekly",
+        "end_term": "End-of-term"
+      },
+      "filterEmpty": {
+        "title": "Nothing in this view",
+        "reason": "No reports of this type have been sent yet. Try a different filter."
+      },
+      "period": {
+        "weekly": "Weekly report",
+        "end_term": "End-of-term report"
+      },
+      "type": {
+        "weekly": "Weekly summary",
+        "end_term": "End-of-term summary"
+      },
+      "chip": {
+        "sent": "Sent",
+        "sentOn": "Sent {date}"
+      },
+      "claimLimits": {
+        "label": "About this report"
+      },
+      "detail": {
+        "back": "Back to reports",
+        "error": {
+          "title": "We couldn't load this report",
+          "reason": "Refresh the page to try again."
+        },
+        "pending": {
+          "title": "This report is still being prepared",
+          "reason": "The summary for this report isn't ready to show yet. Check back shortly."
+        }
+      },
+      "delivery": {
+        "pending": {
+          "title": "Not sent yet",
+          "reason": "This report hasn't been delivered to you yet. You'll see it here once your instructor sends it."
+        },
+        "sent": {
+          "title": "Report sent",
+          "reason": "This report was reviewed by your instructor and delivered to your HKUST email."
+        },
+        "steps": {
+          "reviewed": {
+            "title": "Reviewed by your instructor",
+            "detail": "Checked before it reached you · {at}"
+          },
+          "sent": {
+            "title": "Sent to your HKUST email",
+            "detail": "Delivered {at}"
+          }
+        }
+      },
+      "body": {
+        "observations": "What we noticed",
+        "weakPoints": "What to keep practicing",
+        "nextActions": "Your next steps",
+        "completedWork": "{count, plural, =0 {No work completed this period} one {piece of work completed} other {pieces of work completed}}",
+        "mastery": "{pct}% mastery"
+      }
     }
   }
 }
