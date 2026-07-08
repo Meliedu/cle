@@ -1,11 +1,18 @@
 import asyncio
 
+from app.config import settings
 from app.database import async_session_factory
 from app.models.course import Course, Enrollment
 from app.models.user import User
 
 
 async def seed():
+    # Fail closed: dev/demo seed data must never reach a production database
+    # (compliance register §8: "remove ALL test data and test accounts before
+    # production"). Mirrors the guard in seed_demo.py / seed-auth.mjs.
+    if settings.environment == "production":
+        raise SystemExit("Refusing to seed dev data with ENVIRONMENT=production.")
+
     async with async_session_factory() as session:
         instructor = User(
             better_auth_id="dev_instructor_001",
