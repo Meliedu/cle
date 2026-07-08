@@ -205,6 +205,27 @@ def _fmt(value: Decimal | None) -> str:
     return "" if value is None else str(value)
 
 
+# Spreadsheet formula-trigger prefixes. A cell STARTING with one of these is
+# interpreted as a formula by Excel/Sheets/LibreOffice on open — a stored →
+# cross-user CSV/formula injection (CWE-1236). ``\t``/``\r`` are included because
+# some importers strip leading whitespace before re-evaluating the prefix.
+_CSV_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: str) -> str:
+    """Neutralize a free-text CSV cell against formula injection.
+
+    Prefixes a leading ``'`` when the value is non-empty and its first character
+    is a spreadsheet formula trigger, so the cell no longer STARTS with a
+    dangerous char. Benign values (and empty strings) are returned unchanged.
+    Numeric cells (from ``_fmt``) never need this — a leading ``-`` there is a
+    legitimate negative sign, but grades are non-negative and go through ``_fmt``.
+    """
+    if value and value[0] in _CSV_INJECTION_PREFIXES:
+        return "'" + value
+    return value
+
+
 def _build_csv(records: list[dict]) -> str:
     """Flatten score records into a gradebook CSV string.
 
@@ -220,7 +241,10 @@ def _build_csv(records: list[dict]) -> str:
         for cat in records[0]["categories"]:
             for art in cat["artifacts"]:
                 artifact_cols.append(
-                    (art["artifact_id"], f"{art['title']} ({art['kind']})")
+                    (
+                        art["artifact_id"],
+                        _csv_safe(f"{art['title']} ({art['kind']})"),
+                    )
                 )
 
     buffer = io.StringIO()
@@ -240,7 +264,7 @@ def _build_csv(records: list[dict]) -> str:
                 total_earned += art["earned_points"] or Decimal("0")
                 total_possible += art["points"] or Decimal("0")
         writer.writerow(
-            [rec["full_name"] or "", rec["email"]]
+            [_csv_safe(rec["full_name"] or ""), _csv_safe(rec["email"] or "")]
             + [_fmt(earned_by_artifact.get(aid)) for aid, _ in artifact_cols]
             + [str(total_earned), str(total_possible)]
         )

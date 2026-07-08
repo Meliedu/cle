@@ -115,6 +115,116 @@ async def test_export_appends_exactly_one_audit_row(
     assert row.filters is not None
 
 
+@pytest_asyncio.fixture
+async def injection_course(db_session: AsyncSession, logged_in_user: User) -> dict:
+    """A course whose student name, email, and quiz title all start with a
+    spreadsheet formula-trigger character (CSV formula injection, CWE-1236)."""
+    course = Course(
+        name="Inject", language="english",
+        instructor_id=logged_in_user.id, enroll_code="INJECT01",
+    )
+    db_session.add(course)
+    await db_session.flush()
+    db_session.add(
+        Enrollment(course_id=course.id, user_id=logged_in_user.id, role="instructor")
+    )
+    # Attacker-controlled name starting with '=' (a formula).
+    evil_student = User(
+        better_auth_id="inj_student_evil", email="=evil@connect.ust.hk",
+        full_name="=cmd|calc", role="student",
+    )
+    db_session.add(evil_student)
+    # A benign student for a control row.
+    good_student = User(
+        better_auth_id="inj_student_good", email="ada@connect.ust.hk",
+        full_name="Ada Lovelace", role="student",
+    )
+    db_session.add(good_student)
+    await db_session.flush()
+    db_session.add(
+        Enrollment(course_id=course.id, user_id=evil_student.id, role="student", status="active")
+    )
+    db_session.add(
+        Enrollment(course_id=course.id, user_id=good_student.id, role="student", status="active")
+    )
+    cat = ScoreCategory(course_id=course.id, name="Quizzes", sort=0)
+    db_session.add(cat)
+    await db_session.flush()
+    # Quiz title starts with '=' — flows into the artifact header column.
+    quiz = Quiz(
+        course_id=course.id, created_by=logged_in_user.id, title="=EVIL()",
+        assessment_purpose="graded", score_bearing=True,
+        score_category_id=cat.id, points=Decimal("100"),
+    )
+    db_session.add(quiz)
+    await db_session.flush()
+    db_session.add(QuizAttempt(
+        quiz_id=quiz.id, user_id=good_student.id, answers={"0": "a"},
+        score=Decimal("75.00"), total_questions=4, correct_count=3,
+    ))
+    await db_session.commit()
+    await db_session.refresh(course)
+    return {"course": course, "evil_student": evil_student, "good_student": good_student}
+
+
+@pytest.mark.asyncio
+async def test_export_neutralizes_formula_injection(
+    async_client: AsyncClient, injection_course: dict
+):
+    course = injection_course["course"]
+    r = await async_client.get(f"/api/courses/{course.id}/grade-export.csv")
+    assert r.status_code == 200
+
+    reader = list(csv.reader(io.StringIO(r.text)))
+    header = reader[0]
+    data_rows = reader[1:]
+
+    dangerous = ("=", "+", "-", "@", "\t", "\r")
+
+    # No header cell STARTS with a dangerous char (the quiz title "=EVIL()"
+    # column is neutralized; benign labels like "student_name" are unchanged).
+    assert "student_name" in header and "email" in header
+    for cell in header:
+        assert not (cell and cell[0] in dangerous), f"unsafe header cell: {cell!r}"
+    # The evil quiz-title column is present but neutralized with a leading quote.
+    assert any("=EVIL()" in cell and cell.startswith("'") for cell in header)
+
+    # No data cell STARTS with a dangerous char.
+    for row in data_rows:
+        for cell in row:
+            assert not (cell and cell[0] in dangerous), f"unsafe cell: {cell!r}"
+
+    # Both students appear; two active students → two rows.
+    assert len(data_rows) == 2
+    joined = "\n".join(",".join(row) for row in data_rows)
+    # Evil name/email neutralized (prefixed) but content preserved.
+    assert "'=cmd|calc" in joined
+    assert "'=evil@connect.ust.hk" in joined
+    # Benign student row is unchanged (no spurious prefix).
+    ada_row = next(row for row in data_rows if "Ada Lovelace" in row)
+    assert "Ada Lovelace" in ada_row  # exact, no leading quote
+    assert "ada@connect.ust.hk" in ada_row
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("=cmd|calc", "'=cmd|calc"),
+        ("+1+1", "'+1+1"),
+        ("-2", "'-2"),
+        ("@SUM(A1)", "'@SUM(A1)"),
+        ("\tTab", "'\tTab"),
+        ("\rReturn", "'\rReturn"),
+        ("Ada Lovelace", "Ada Lovelace"),
+        ("", ""),
+    ],
+)
+def test_csv_safe_neutralizes_prefix(name: str, expected: str):
+    from app.api.scores import _csv_safe
+
+    assert _csv_safe(name) == expected
+
+
 @pytest.mark.asyncio
 async def test_export_non_owner_404(
     async_client: AsyncClient, db_session: AsyncSession
