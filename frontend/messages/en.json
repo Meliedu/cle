@@ -587,12 +587,23 @@
       },
       "memoryImport": {
         "title": "Previous course memory",
-        "comingSoonBadge": "Coming in P7",
+        "subtitle": "Reuse carry-forward notes from an earlier offering of this course. Optional — it never blocks publishing.",
         "skip": "Skip for now",
-        "stub": {
-          "title": "Reuse a prior term's evidence — coming later",
-          "reason": "Importing improvement notes, reusable activities, and weak-concept patterns from a previous offering arrives in a later release. This step is optional and never blocks publishing."
-        }
+        "loadErrorTitle": "We couldn't load prior-term memory",
+        "loadErrorReason": "You can skip this step and import it later from the course memory tab.",
+        "empty": {
+          "title": "No prior-term memory to import",
+          "reason": "When you carry items forward from a previous offering of this course, they'll appear here to import. This step is optional and never blocks publishing."
+        },
+        "recommendedBody": "Imported summaries ground this term's checkpoint generation. No student identities cross terms — only your reviewed notes.",
+        "selectedCount": "{count, plural, =0 {None selected} one {# selected} other {# selected}}",
+        "selectAll": "Select all",
+        "clear": "Clear",
+        "import": "Import selected",
+        "importing": "Importing…",
+        "imported": "{count, plural, one {# item imported} other {# items imported}}",
+        "undecidedError": "Some items are no longer marked to carry forward. Refresh and choose again.",
+        "error": "We couldn't import those items. Please try again."
       },
       "wizard": {
         "subtitle": "Complete each step, then publish to open your course.",

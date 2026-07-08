@@ -13,6 +13,15 @@ vi.mock("@/hooks/use-courses", () => ({ useCourse: vi.fn() }));
 vi.mock("@/hooks/use-meetings", () => ({ useMeetings: vi.fn() }));
 vi.mock("@/hooks/use-documents", () => ({ useDocuments: vi.fn() }));
 vi.mock("@/hooks/use-enrollment", () => ({ useRoster: vi.fn() }));
+// The overview now mounts the T036 MemorySummary; stub its read so this test
+// stays isolated from the memory query (no QueryClientProvider here).
+vi.mock("@/hooks/use-memory", () => ({
+  useMemorySummary: vi.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  })),
+}));
 
 const mockUseCourse = vi.mocked(useCourse);
 const mockUseMeetings = vi.mocked(useMeetings);
