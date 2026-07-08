@@ -1928,6 +1928,71 @@
         "reflection": "Reflection",
         "other": "Follow-up"
       }
+    },
+    "memory": {
+      "title": "Course memory",
+      "subtitle": "Reviewed learning notes retained to improve the next offering. Every decision you make here is written to the course audit log.",
+      "loadErrorTitle": "We couldn't load course memory",
+      "loadErrorReason": "Please check your connection and try again.",
+      "empty": {
+        "title": "No course memory yet",
+        "reason": "Reviewed notes appear here as checkpoints are graded and reports are approved. You'll decide what to carry into the next term once they arrive."
+      },
+      "list": {
+        "count": "{count, plural, one {# item} other {# items}}"
+      },
+      "kind": {
+        "outcome": "Outcomes",
+        "action": "Teaching actions",
+        "relationship": "Relationships",
+        "general": "General"
+      },
+      "decision": {
+        "keep": "Keep",
+        "revise": "Revise",
+        "reject": "Reject",
+        "carry_forward": "Carry forward",
+        "undecided": "Not decided"
+      },
+      "detail": {
+        "selectTitle": "Select a memory item",
+        "selectPrompt": "Choose an item to review its evidence and decide whether to carry it into the next term.",
+        "relationship": "Relationship observed",
+        "action": "Teaching action",
+        "outcome": "Outcome",
+        "instructorComment": "Instructor comment",
+        "noSummary": "No summary recorded.",
+        "history": "History",
+        "historyEmpty": "No history recorded for this item yet.",
+        "created": "Added {time}",
+        "noteLinked": "Linked to a reviewed learning note",
+        "back": "Back to list"
+      },
+      "decide": {
+        "heading": "Decide",
+        "prompt": "Choose what happens to this item next term. Your decision is recorded and can be changed later.",
+        "audited": "This decision is written to the course audit log with your name and the time.",
+        "confirmTitle": "Confirm decision",
+        "confirmBody": "Mark this memory item as \"{decision}\"?",
+        "confirm": "Confirm",
+        "cancel": "Cancel",
+        "saving": "Saving…",
+        "error": "We couldn't save that decision. Please try again."
+      },
+      "suggestions": {
+        "title": "Next-term suggestions",
+        "subtitle": "Carry-forward notes from earlier offerings of this course. Import them into a new term during setup.",
+        "empty": "No prior-term carry-forward notes for this course yet.",
+        "loadError": "We couldn't load next-term suggestions."
+      },
+      "summary": {
+        "title": "Course memory",
+        "total": "{count, plural, one {# reviewed item} other {# reviewed items}}",
+        "viewAll": "Open memory",
+        "rosterTitle": "Carrying forward to next term",
+        "rosterEmpty": "Nothing marked to carry forward yet.",
+        "rosterMore": "+{count} more"
+      }
     }
   },
   "student": {
