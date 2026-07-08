@@ -1928,6 +1928,81 @@
         "reflection": "Reflection",
         "other": "Follow-up"
       }
+    },
+    "reports": {
+      "archive": {
+        "title": "Reports",
+        "subtitle": "Course learning evidence, reviewed by you before anything reaches a student.",
+        "filterLabel": "Filter reports by period",
+        "period": {
+          "all": "All",
+          "weekly": "Weekly",
+          "end_term": "End of term"
+        },
+        "audience": {
+          "student": "Student",
+          "teacher": "Teacher copy"
+        },
+        "groupCount": "{count, plural, one {# report} other {# reports}}",
+        "evidenceCount": "{count, plural, =0 {No evidence yet} one {# evidence item} other {# evidence items}}",
+        "open": "Open report",
+        "loadErrorTitle": "We couldn't load your reports",
+        "loadErrorReason": "Please check your connection and try again.",
+        "emptyTitle": "No reports yet",
+        "emptyReason": "Weekly reports are drafted from your reviewed learning notes. Once there's reviewed evidence, drafts appear here for you to approve and send."
+      },
+      "status": {
+        "draft": "Draft",
+        "reviewed": "Reviewed",
+        "sent": "Sent",
+        "archived": "Archived"
+      },
+      "detail": {
+        "back": "Back to reports",
+        "edit": "Edit draft",
+        "editDisabledReason": "Only a draft report can be edited.",
+        "periodKind": {
+          "weekly": "Weekly report · Teacher copy",
+          "end_term": "End-of-term report · Teacher copy"
+        },
+        "completedCount": "{count, plural, =0 {No work completed this period} one {# completed activity} other {# completed activities}}",
+        "evidenceCount": "{count, plural, =0 {No evidence attached} one {# evidence reference} other {# evidence references}}",
+        "sections": {
+          "summary": "Summary",
+          "completedWork": "Completed work",
+          "observations": "Observations",
+          "weakPoints": "What needs attention",
+          "nextActions": "Suggested next actions",
+          "claimLimits": "About this report",
+          "evidence": "Evidence included"
+        },
+        "empty": {
+          "summary": "No summary yet.",
+          "observations": "No observations recorded for this period.",
+          "weakPoints": "No weak points flagged — every tracked concept is on track.",
+          "nextActions": "No next actions suggested yet."
+        },
+        "noBodyTitle": "This report is still being drafted",
+        "noBodyReason": "Its sections appear here once the draft job finishes composing them from reviewed evidence.",
+        "loadErrorTitle": "We couldn't load this report",
+        "loadErrorReason": "Please check your connection and try again."
+      },
+      "edit": {
+        "title": "Edit draft report",
+        "subtitle": "Refine the narrative sections. Evidence-derived figures stay locked to what your reviewed notes support.",
+        "summaryLabel": "Summary",
+        "observationsLabel": "Observations",
+        "observationsHint": "One observation per line.",
+        "nextActionsLabel": "Suggested next actions",
+        "nextActionsHint": "One action per line.",
+        "completedCountLabel": "Completed activities",
+        "save": "Save draft",
+        "saving": "Saving…",
+        "cancel": "Cancel",
+        "notEditableTitle": "This report can no longer be edited",
+        "notEditableReason": "Only a draft can be edited. This report has already been approved, sent, or archived.",
+        "genericError": "We couldn't save your changes. Please try again."
+      }
     }
   },
   "student": {

@@ -1,4 +1,5 @@
 import { CourseWorkspaceShell } from "@/components/course/course-workspace-shell";
+import { ReportsWorkspace } from "@/components/reports/reports-workspace";
 
 interface ReportsPageProps {
   /** Next.js 16: dynamic route params are async and must be awaited. */
@@ -17,7 +18,7 @@ export default async function ReportsPage({ params }: ReportsPageProps) {
   const { courseId } = await params;
   return (
     <CourseWorkspaceShell courseId={courseId} activeTab="reports">
-      <div />
+      <ReportsWorkspace courseId={courseId} />
     </CourseWorkspaceShell>
   );
 }
