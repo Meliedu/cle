@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StateBanner } from "@/components/patterns";
+import { MemorySummary } from "@/components/memory";
 import { useCourse } from "@/hooks/use-courses";
 import { useMeetings } from "@/hooks/use-meetings";
 import { useDocuments } from "@/hooks/use-documents";
@@ -105,6 +106,9 @@ export function CourseOverview({ courseId }: CourseOverviewProps) {
         />
         <QuickLinksCard scheduleHref={scheduleHref} setupHref={setupHref} />
       </div>
+
+      {/* T036 — course-memory summary (self-hides for a course with no reviewed memory). */}
+      <MemorySummary courseId={courseId} />
     </div>
   );
 }

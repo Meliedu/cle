@@ -212,11 +212,11 @@ export function SetupWizard({ courseId }: SetupWizardProps) {
             <StepClassCode courseId={courseId} onComplete={handleNext} />
             {/*
               T023 previous-term memory import is not a `SETUP_STEP_KEYS` entry —
-              it never gates publish. It surfaces here as a flag-gated, skippable
-              teaser at the end of setup and renders nothing unless
-              `NEXT_PUBLIC_MEMORY_IMPORT=enabled` (real import ships in P7).
+              it never gates publish. It surfaces here as a skippable prior-term
+              carry-forward picker; it self-hides to an empty state when this
+              course has no earlier offering to import from.
             */}
-            <StepMemoryImport />
+            <StepMemoryImport courseId={courseId} />
           </div>
         ) : currentId === REVIEW_ID ? (
           <StepReview courseId={courseId} onNavigate={goToStep} />

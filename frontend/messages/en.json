@@ -587,12 +587,23 @@
       },
       "memoryImport": {
         "title": "Previous course memory",
-        "comingSoonBadge": "Coming in P7",
+        "subtitle": "Reuse carry-forward notes from an earlier offering of this course. Optional — it never blocks publishing.",
         "skip": "Skip for now",
-        "stub": {
-          "title": "Reuse a prior term's evidence — coming later",
-          "reason": "Importing improvement notes, reusable activities, and weak-concept patterns from a previous offering arrives in a later release. This step is optional and never blocks publishing."
-        }
+        "loadErrorTitle": "We couldn't load prior-term memory",
+        "loadErrorReason": "You can skip this step and import it later from the course memory tab.",
+        "empty": {
+          "title": "No prior-term memory to import",
+          "reason": "When you carry items forward from a previous offering of this course, they'll appear here to import. This step is optional and never blocks publishing."
+        },
+        "recommendedBody": "Imported summaries ground this term's checkpoint generation. No student identities cross terms — only your reviewed notes.",
+        "selectedCount": "{count, plural, =0 {None selected} one {# selected} other {# selected}}",
+        "selectAll": "Select all",
+        "clear": "Clear",
+        "import": "Import selected",
+        "importing": "Importing…",
+        "imported": "{count, plural, one {# item imported} other {# items imported}}",
+        "undecidedError": "Some items are no longer marked to carry forward. Refresh and choose again.",
+        "error": "We couldn't import those items. Please try again."
       },
       "wizard": {
         "subtitle": "Complete each step, then publish to open your course.",
@@ -2055,6 +2066,71 @@
         "close": "Close",
         "errorTitle": "We couldn't prepare the export",
         "errorReason": "Please close this dialog and try again."
+      }
+    },
+    "memory": {
+      "title": "Course memory",
+      "subtitle": "Reviewed learning notes retained to improve the next offering. Every decision you make here is written to the course audit log.",
+      "loadErrorTitle": "We couldn't load course memory",
+      "loadErrorReason": "Please check your connection and try again.",
+      "empty": {
+        "title": "No course memory yet",
+        "reason": "Reviewed notes appear here as checkpoints are graded and reports are approved. You'll decide what to carry into the next term once they arrive."
+      },
+      "list": {
+        "count": "{count, plural, one {# item} other {# items}}"
+      },
+      "kind": {
+        "outcome": "Outcomes",
+        "action": "Teaching actions",
+        "relationship": "Relationships",
+        "general": "General"
+      },
+      "decision": {
+        "keep": "Keep",
+        "revise": "Revise",
+        "reject": "Reject",
+        "carry_forward": "Carry forward",
+        "undecided": "Not decided"
+      },
+      "detail": {
+        "selectTitle": "Select a memory item",
+        "selectPrompt": "Choose an item to review its evidence and decide whether to carry it into the next term.",
+        "relationship": "Relationship observed",
+        "action": "Teaching action",
+        "outcome": "Outcome",
+        "instructorComment": "Instructor comment",
+        "noSummary": "No summary recorded.",
+        "history": "History",
+        "historyEmpty": "No history recorded for this item yet.",
+        "created": "Added {time}",
+        "noteLinked": "Linked to a reviewed learning note",
+        "back": "Back to list"
+      },
+      "decide": {
+        "heading": "Decide",
+        "prompt": "Choose what happens to this item next term. Your decision is recorded and can be changed later.",
+        "audited": "This decision is written to the course audit log with your name and the time.",
+        "confirmTitle": "Confirm decision",
+        "confirmBody": "Mark this memory item as \"{decision}\"?",
+        "confirm": "Confirm",
+        "cancel": "Cancel",
+        "saving": "Saving…",
+        "error": "We couldn't save that decision. Please try again."
+      },
+      "suggestions": {
+        "title": "Next-term suggestions",
+        "subtitle": "Carry-forward notes from earlier offerings of this course. Import them into a new term during setup.",
+        "empty": "No prior-term carry-forward notes for this course yet.",
+        "loadError": "We couldn't load next-term suggestions."
+      },
+      "summary": {
+        "title": "Course memory",
+        "total": "{count, plural, one {# reviewed item} other {# reviewed items}}",
+        "viewAll": "Open memory",
+        "rosterTitle": "Carrying forward to next term",
+        "rosterEmpty": "Nothing marked to carry forward yet.",
+        "rosterMore": "+{count} more"
       }
     }
   },
