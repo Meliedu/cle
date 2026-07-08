@@ -301,6 +301,57 @@ async def test_submit_missing_work_item_is_noop(
     assert prog == []
 
 
+@pytest.mark.asyncio
+async def test_post_close_resubmit_does_not_downgrade_completed_progress(
+    db_session: AsyncSession, owned_course: Course, enrolled_student: User
+):
+    # MONOTONIC PROGRESS: a single-shot activity submitted ON TIME → the progress
+    # row is `completed`. A later resubmit AFTER close_at must NOT downgrade the
+    # row to `late` — "first completion wins, never downgrades".
+    act = await _seed_activity(
+        db_session, owned_course, format="vote", config={"options": ["A", "B"]},
+        close_at=_utcnow() + timedelta(hours=2),
+    )
+    wi = await _make_work_item(db_session, owned_course, act)
+    act_id = act.id
+
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.post(
+            f"/api/activities/{act_id}/responses",
+            json={"payload": {"choice": "A"}},
+        )
+        assert r.status_code in (200, 201), r.text
+    app.dependency_overrides.clear()
+
+    rows = await _progress_rows(db_session, wi.id)
+    assert rows[0].status == "completed"
+
+    # Move close_at into the past so the resubmit lands late.
+    a = await db_session.get(Activity, act_id)
+    a.close_at = _utcnow() - timedelta(minutes=5)
+    await db_session.commit()
+
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.post(
+            f"/api/activities/{act_id}/responses",
+            json={"payload": {"choice": "B"}},
+        )
+        assert r.status_code in (200, 201), r.text
+    app.dependency_overrides.clear()
+
+    rows = await _progress_rows(db_session, wi.id)
+    assert len(rows) == 1
+    # STAYS completed — the post-close resubmit did not downgrade it.
+    assert rows[0].status == "completed"
+    resp = (
+        await db_session.execute(
+            select(ActivityResponse).where(ActivityResponse.activity_id == act_id)
+        )
+    ).scalar_one()
+    assert resp.status == "late"
+    assert resp.payload == {"choice": "B"}
+
+
 # ----- evidence seam: participation-only -----
 
 @pytest.mark.asyncio

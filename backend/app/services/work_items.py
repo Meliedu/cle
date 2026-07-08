@@ -117,6 +117,51 @@ async def upsert_progress(
     return row
 
 
+#: Progress statuses a post-window (re)submission may DERIVE that would REGRESS a
+#: completed row — a late/partial edit of one already-answered card. Anything
+#: else (``completed``/``follow_up_assigned``/…) is a forward transition and is
+#: written as-is.
+_REGRESSION_FROM_COMPLETED: frozenset[str] = frozenset({"late", "submitted"})
+
+
+async def upsert_progress_monotonic(
+    db: AsyncSession,
+    *,
+    work_item_id: uuid.UUID,
+    user_id: uuid.UUID,
+    status: str,
+) -> WorkItemProgress:
+    """Upsert progress WITHOUT downgrading a ``completed`` row to ``late``/``submitted``.
+
+    ``upsert_progress`` blindly overwrites ``status``; a student who finished a
+    checkpoint / activity ON TIME (``completed``) but later EDITS one card AFTER
+    ``close_at`` (still allowed while it is ``published``/``live``) derives
+    ``late`` — which would clobber ``completed``. This wrapper reads the existing
+    row first and, when it is already ``completed`` and the newly-derived status
+    would be a regression (``late``/``submitted``), KEEPS ``completed`` ("first
+    completion wins, never downgrades" — mirrors the attendance precedent and
+    ``mark_missed_work_items``'s terminal-status protection). Every other
+    transition (including the ``submitted``→``completed`` forward edge) defers to
+    ``upsert_progress`` unchanged.
+
+    Pure helper: the caller owns the commit.
+    """
+    if status in _REGRESSION_FROM_COMPLETED:
+        existing = (
+            await db.execute(
+                select(WorkItemProgress.status).where(
+                    WorkItemProgress.work_item_id == work_item_id,
+                    WorkItemProgress.user_id == user_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing == "completed":
+            status = "completed"
+    return await upsert_progress(
+        db, work_item_id=work_item_id, user_id=user_id, status=status
+    )
+
+
 async def remove_work_item(db: AsyncSession, work_item: WorkItem) -> None:
     """Soft-delete a checklist item (stamp ``deleted_at``).
 

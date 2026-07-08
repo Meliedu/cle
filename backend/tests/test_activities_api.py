@@ -25,6 +25,7 @@ from app.database import get_db
 from app.main import app
 from app.models import Course, Enrollment, User
 from app.models.activity import Activity
+from app.models.curriculum import CourseMeeting
 from app.models.score import ScoreCategory
 from app.models.work_item import WorkItem
 
@@ -81,6 +82,35 @@ async def _seed_activity(db_session, course, **over):
     await db_session.commit()
     await db_session.refresh(act)
     return act
+
+
+async def _foreign_course(db_session, code: str) -> Course:
+    """A course owned by a DIFFERENT instructor (for cross-course refusal tests)."""
+    other = User(
+        better_auth_id=f"actv_fk_{code}", email=f"actvfk{code}@ust.hk",
+        full_name="FK Instr", role="instructor",
+    )
+    db_session.add(other)
+    await db_session.flush()
+    course = Course(
+        name="FKForeign", language="english",
+        instructor_id=other.id, enroll_code=code,
+    )
+    db_session.add(course)
+    await db_session.commit()
+    await db_session.refresh(course)
+    return course
+
+
+async def _seed_meeting(db_session, course, index: int = 1) -> CourseMeeting:
+    meeting = CourseMeeting(
+        course_id=course.id, meeting_index=index,
+        scheduled_at=datetime.now(timezone.utc),
+    )
+    db_session.add(meeting)
+    await db_session.commit()
+    await db_session.refresh(meeting)
+    return meeting
 
 
 # ----- create -----
@@ -204,6 +234,95 @@ async def test_create_non_owner_404(
         f"/api/courses/{course.id}/activities", json=_swipe_body()
     )
     assert r.status_code == 404
+
+
+# ----- create/update: cross-course foreign ref validation -----
+
+@pytest.mark.asyncio
+async def test_create_rejects_foreign_meeting(
+    async_client: AsyncClient, db_session: AsyncSession, owned_course: Course
+):
+    foreign = await _foreign_course(db_session, "ACTVFKM1")
+    meeting = await _seed_meeting(db_session, foreign)
+    r = await async_client.post(
+        f"/api/courses/{owned_course.id}/activities",
+        json=_swipe_body(meeting_id=str(meeting.id)),
+    )
+    assert r.status_code == 404, r.text
+    assert r.json()["detail"]["code"] == "MEETING_NOT_FOUND"
+    # No activity row written (refused before insert).
+    rows = (
+        await db_session.execute(
+            select(Activity).where(Activity.course_id == owned_course.id)
+        )
+    ).scalars().all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_foreign_score_category(
+    async_client: AsyncClient, db_session: AsyncSession, owned_course: Course
+):
+    foreign = await _foreign_course(db_session, "ACTVFKC1")
+    cat = ScoreCategory(course_id=foreign.id, name="Foreign Cat", sort=0)
+    db_session.add(cat)
+    await db_session.commit()
+    await db_session.refresh(cat)
+    r = await async_client.post(
+        f"/api/courses/{owned_course.id}/activities",
+        json=_swipe_body(score_category_id=str(cat.id)),
+    )
+    assert r.status_code == 404, r.text
+    assert r.json()["detail"]["code"] == "SCORE_CATEGORY_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_create_accepts_same_course_refs(
+    async_client: AsyncClient, db_session: AsyncSession,
+    owned_course: Course, score_category: ScoreCategory,
+):
+    meeting = await _seed_meeting(db_session, owned_course)
+    r = await async_client.post(
+        f"/api/courses/{owned_course.id}/activities",
+        json=_swipe_body(
+            meeting_id=str(meeting.id),
+            score_category_id=str(score_category.id),
+        ),
+    )
+    assert r.status_code == 201, r.text
+    data = r.json()["data"]
+    assert data["meeting_id"] == str(meeting.id)
+    assert data["score_category_id"] == str(score_category.id)
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_foreign_meeting(
+    async_client: AsyncClient, db_session: AsyncSession, owned_course: Course
+):
+    foreign = await _foreign_course(db_session, "ACTVFKM2")
+    meeting = await _seed_meeting(db_session, foreign)
+    act = await _seed_activity(db_session, owned_course)
+    r = await async_client.patch(
+        f"/api/activities/{act.id}", json={"meeting_id": str(meeting.id)}
+    )
+    assert r.status_code == 404, r.text
+    assert r.json()["detail"]["code"] == "MEETING_NOT_FOUND"
+    await db_session.refresh(act)
+    assert act.meeting_id is None
+
+
+@pytest.mark.asyncio
+async def test_update_accepts_same_course_meeting(
+    async_client: AsyncClient, db_session: AsyncSession, owned_course: Course
+):
+    meeting = await _seed_meeting(db_session, owned_course)
+    act = await _seed_activity(db_session, owned_course)
+    r = await async_client.patch(
+        f"/api/activities/{act.id}", json={"meeting_id": str(meeting.id)}
+    )
+    assert r.status_code == 200, r.text
+    await db_session.refresh(act)
+    assert act.meeting_id == meeting.id
 
 
 # ----- list / get -----

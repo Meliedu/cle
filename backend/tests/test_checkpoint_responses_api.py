@@ -674,6 +674,67 @@ async def test_submit_progress_user_id_is_authenticated_caller(
 
 
 @pytest.mark.asyncio
+async def test_post_close_edit_does_not_downgrade_completed_progress(
+    db_session: AsyncSession, owned_course: Course, enrolled_student: User
+):
+    # MONOTONIC PROGRESS: a student answers every live card ON TIME → the
+    # progress row is `completed`. A later EDIT of one card AFTER close_at (still
+    # allowed while the checkpoint is published) must NOT downgrade the row to
+    # `late` — "first completion wins, never downgrades".
+    made = await _make_checkpoint(
+        db_session, owned_course, status="published",
+        close_at=_utcnow() + timedelta(hours=2),
+    )
+    wi = await _make_work_item(db_session, owned_course, made["cp"])
+    cp_id = made["cp"].id
+    review_id = made["review"].id
+    review2_id = made["review2"].id
+    final_id = made["final"].id
+
+    async with _student_client(db_session, enrolled_student) as ac:
+        for body in (
+            {"card_id": str(review_id), "confidence": 1},
+            {"card_id": str(review2_id), "confidence": 2},
+            {"card_id": str(final_id), "text_response": "done"},
+        ):
+            r = await ac.post(f"/api/checkpoints/{cp_id}/responses", json=body)
+            assert r.status_code in (200, 201), r.text
+    app.dependency_overrides.clear()
+
+    rows = await _progress_rows(db_session, wi.id)
+    assert rows[0].status == "completed"
+
+    # Move close_at into the past so the following edit lands late.
+    cp = await db_session.get(Checkpoint, cp_id)
+    cp.close_at = _utcnow() - timedelta(minutes=5)
+    await db_session.commit()
+
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.post(
+            f"/api/checkpoints/{cp_id}/responses",
+            json={"card_id": str(review_id), "confidence": -1},
+        )
+        assert r.status_code in (200, 201), r.text
+    app.dependency_overrides.clear()
+
+    rows = await _progress_rows(db_session, wi.id)
+    assert len(rows) == 1
+    # STAYS completed — the post-close edit did not downgrade it.
+    assert rows[0].status == "completed"
+    # The response row itself still records the late edit (row-level truth kept).
+    resp = (
+        await db_session.execute(
+            select(CheckpointResponse).where(
+                CheckpointResponse.card_id == review_id,
+                CheckpointResponse.user_id == enrolled_student.id,
+            )
+        )
+    ).scalar_one()
+    assert resp.status == "late"
+    assert resp.confidence == -1
+
+
+@pytest.mark.asyncio
 async def test_submit_late_when_past_close_at(
     db_session: AsyncSession, owned_course: Course, enrolled_student: User
 ):

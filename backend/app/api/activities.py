@@ -44,6 +44,8 @@ from app.api.deps import (
 from app.database import async_session_factory
 from app.models.activity import Activity, ActivityResponse
 from app.models.course import Course
+from app.models.curriculum import CourseMeeting
+from app.models.score import ScoreCategory
 from app.models.user import User
 from app.schemas.activity import (
     ActivityCreate,
@@ -139,6 +141,60 @@ def validate_activity_config(
         raise _config_invalid(fmt, key)
 
 
+async def _validate_activity_refs(
+    db: AsyncSession,
+    *,
+    course_id: uuid.UUID,
+    meeting_id: uuid.UUID | None,
+    score_category_id: uuid.UUID | None,
+) -> None:
+    """Refuse a ``meeting_id`` / ``score_category_id`` that isn't in THIS course.
+
+    A teacher owns the course (``get_owned_course`` / ``_owned_activity``), but a
+    supplied foreign ``meeting_id`` / ``score_category_id`` from ANOTHER course
+    would be persisted unchecked → cross-course misattribution in
+    ``build_score_records``. Mirrors ``documents.py::assign_document``'s
+    ``MEETING_NOT_FOUND`` refusal (404 either way, so cross-course existence never
+    leaks). A ``None`` value (unset / explicit unassign) is always allowed.
+    """
+    if meeting_id is not None:
+        meeting = (
+            await db.execute(
+                select(CourseMeeting.id).where(
+                    CourseMeeting.id == meeting_id,
+                    CourseMeeting.course_id == course_id,
+                    CourseMeeting.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if meeting is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": "MEETING_NOT_FOUND",
+                    "message": "Meeting not found in this course",
+                },
+            )
+    if score_category_id is not None:
+        category = (
+            await db.execute(
+                select(ScoreCategory.id).where(
+                    ScoreCategory.id == score_category_id,
+                    ScoreCategory.course_id == course_id,
+                    ScoreCategory.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if category is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": "SCORE_CATEGORY_NOT_FOUND",
+                    "message": "Score category not found in this course",
+                },
+            )
+
+
 async def _owned_activity(
     activity_id: uuid.UUID, user: User, db: AsyncSession
 ) -> Activity:
@@ -191,6 +247,15 @@ async def create_activity(
     # Shape-validate the config for this format when one is supplied (a draft may
     # be created config-less and filled in before publish).
     validate_activity_config(body.format, body.config, required=False)
+
+    # Refuse a foreign meeting / score category before persisting anything, so a
+    # cross-course id can never be attributed to this course's grade/score records.
+    await _validate_activity_refs(
+        db,
+        course_id=course.id,
+        meeting_id=body.meeting_id,
+        score_category_id=body.score_category_id,
+    )
 
     act = Activity(
         course_id=course.id,
@@ -275,6 +340,16 @@ async def update_activity(
         validate_activity_config(
             effective_format, fields["config"], required=False
         )
+
+    # Refuse a foreign meeting / score category before persisting the patch (only
+    # the fields actually supplied are re-validated; an explicit ``None`` unassign
+    # is allowed).
+    await _validate_activity_refs(
+        db,
+        course_id=act.course_id,
+        meeting_id=fields.get("meeting_id"),
+        score_category_id=fields.get("score_category_id"),
+    )
 
     for field, value in fields.items():
         setattr(act, field, value)

@@ -337,3 +337,63 @@ async def test_no_enrollment_owner_is_403(
     _act_as(test_student)
     r = await client.get(f"/api/users/me/follow-ups/{fua.id}", headers=_AUTH)
     assert r.status_code == 403, r.text
+
+
+# ----- POST /follow-ups/{id}/viewed — verify_enrollment defense-in-depth -----
+
+
+@pytest.mark.asyncio
+async def test_viewed_active_owner_succeeds(
+    client, db_session, test_instructor, test_student
+):
+    """An active-enrolled owner can mark their own follow-up viewed (200)."""
+    course = await _make_course(db_session, test_instructor, "FDV001")
+    await _enroll(db_session, course, test_student, status="active")
+    note = await _make_note(db_session, course, user_id=test_student.id)
+    fua = await _make_follow_up(db_session, course, note, user_id=test_student.id)
+
+    _act_as(test_student)
+    r = await client.post(f"/api/follow-ups/{fua.id}/viewed", headers=_AUTH)
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["assignment_status"] == "viewed"
+
+
+@pytest.mark.parametrize("bad_status", ["pending", "rejected"])
+@pytest.mark.asyncio
+async def test_viewed_non_active_owner_is_403(
+    client, db_session, test_instructor, test_student, bad_status
+):
+    """Fix 3: a dropped/pending/rejected owner is refused (403) even for their
+    OWN row, and the follow-up is NOT flipped to viewed."""
+    course = await _make_course(db_session, test_instructor, f"FDV{bad_status[:3]}")
+    await _enroll(db_session, course, test_student, status=bad_status)
+    note = await _make_note(db_session, course, user_id=test_student.id)
+    fua = await _make_follow_up(db_session, course, note, user_id=test_student.id)
+
+    _act_as(test_student)
+    r = await client.post(f"/api/follow-ups/{fua.id}/viewed", headers=_AUTH)
+    assert r.status_code == 403, r.text
+    await db_session.refresh(fua)
+    assert fua.assignment_status == "assigned"
+
+
+@pytest.mark.asyncio
+async def test_viewed_other_students_row_is_404(
+    client, db_session, test_instructor, test_student
+):
+    """Owner-scoped: another student's row is masked as 404 (before enrollment)."""
+    other = User(
+        better_auth_id="dev_student_003", email="other3@connect.ust.hk",
+        full_name="Other 3", role="student",
+    )
+    db_session.add(other)
+    await db_session.commit()
+    await db_session.refresh(other)
+
+    course = await _make_course(db_session, test_instructor, "FDV004")
+    note = await _make_note(db_session, course, user_id=other.id)
+    fua = await _make_follow_up(db_session, course, note, user_id=other.id)
+
+    _act_as(test_student)
+    r = await client.post(f"/api/follow-ups/{fua.id}/viewed", headers=_AUTH)
+    assert r.status_code == 404, r.text

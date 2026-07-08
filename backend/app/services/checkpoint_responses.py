@@ -32,7 +32,7 @@ from app.models.checkpoint import Checkpoint, CheckpointCard, CheckpointResponse
 from app.models.task import Task
 from app.models.work_item import WorkItem
 from app.services.learning_events import record_attempt_event
-from app.services.work_items import upsert_progress
+from app.services.work_items import upsert_progress_monotonic
 
 logger = logging.getLogger(__name__)
 
@@ -260,8 +260,10 @@ async def submit_checkpoint_response(
             live_card_count=live_card_count,
         )
         # ``user_id`` is the authenticated caller (endpoint-supplied) — a student
-        # can only ever write their own progress row.
-        await upsert_progress(
+        # can only ever write their own progress row. ``_monotonic`` so a
+        # post-close EDIT of one already-answered card (derives ``late``) never
+        # downgrades an already-``completed`` checklist row.
+        await upsert_progress_monotonic(
             db,
             work_item_id=work_item.id,
             user_id=user_id,

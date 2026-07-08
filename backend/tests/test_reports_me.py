@@ -250,6 +250,28 @@ async def test_detail_non_sent_own_report_404(
 
 
 @pytest.mark.asyncio
+async def test_detail_dropped_enrollment_owner_403(
+    client, db_session, test_instructor, test_student
+):
+    """Fix 3: a non-active (rejected/dropped) owner is 403 even for their OWN
+    sent report — defense-in-depth via verify_enrollment (mirrors get_signal)."""
+    course = await _make_course(db_session, test_instructor)
+    await _enroll(db_session, course, test_student, status="rejected")
+    sent = await _make_report(
+        db_session, course, user_id=test_student.id, status="sent"
+    )
+
+    app.dependency_overrides[get_current_user] = lambda: test_student
+    try:
+        r = await client.get(
+            f"/api/users/me/reports/{sent.id}", headers=_HEADERS
+        )
+        assert r.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_detail_missing_report_404(
     client, db_session, test_student
 ):

@@ -453,4 +453,8 @@ async def get_my_report(
         raise HTTPException(
             status_code=404, detail=_STUDENT_REPORT_NOT_FOUND
         )
+    # Defense-in-depth (matches insights.get_signal / review.get_follow_up_detail):
+    # a non-active (dropped/rejected/pending) owner loses access to their OWN row.
+    # 403 only ever fires for the caller's own report, so it leaks nothing.
+    await verify_enrollment(db, report.course_id, user.id)
     return APIResponse(success=True, data=ReportResponse.model_validate(report))

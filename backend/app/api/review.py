@@ -519,6 +519,11 @@ async def mark_follow_up_viewed(
     if row is None or row.user_id != student.id:
         raise HTTPException(status_code=404, detail="Follow-up not found")
 
+    # Defense-in-depth (matches get_follow_up_detail / get_signal): a non-active
+    # (dropped/rejected/pending) owner loses access to their OWN follow-up. 403
+    # only ever fires for the caller's own row, so it leaks nothing.
+    await verify_enrollment(db, row.course_id, student.id)
+
     if row.assignment_status == "assigned":
         row.assignment_status = "viewed"
         await db.commit()
