@@ -100,102 +100,102 @@ Each task: failing test first → minimal impl → refactor → code review (`/c
 
 ### Backend
 
-- [ ] **B1 — `reports` model + migration + owner-isolation RLS (student rows).**  *(riskiest — combined-review: report-content read model)*
+- [x] **B1 — `reports` model + migration + owner-isolation RLS (student rows).**  *(riskiest — combined-review: report-content read model)*
   - Test first (`tests/test_report_model.py`): columns per Decision 2 (`course_id FK`, `audience` CHECK `student|teacher`, `user_id` nullable FK, `period` CHECK `weekly|end_term`, `period_start/end` tz, `body JSONB`, `evidence_refs` `UUID[]` (`ARRAY(UUID)`), `status` CHECK `draft|reviewed|sent|archived` default `draft`, `reviewed_by/at`, `sent_at`, `export_history JSONB` default `[]`); UUID PK + `TimestampMixin`; a `Base.metadata.create_all` bootstrap reproduces every CHECK.
   - Impl: `Report` in NEW `app/models/report.py`; register in `app/models/__init__.py`. Migration chains from the confirmed head (step 3); COPY `d94257fc717c` for `ENABLE ROW LEVEL SECURITY` + `reports_owner_isolation` policy on `user_id` + `ix_reports_user_id`. Index `(course_id, audience, period)` for archive queries.
   - Commit `feat(reports): reports model + owner-isolation RLS migration`.
 
-- [ ] **B2 — `audit_events` append-only table + model + write helper.**
+- [x] **B2 — `audit_events` append-only table + model + write helper.**
   - Test first (`tests/test_audit_events.py`): `AuditEvent` columns (`course_id FK`, `actor_id FK users` no-ondelete, `event_type String(60)`, `target_kind String(40)`, `target_id UUID`, `metadata JSONB`, `created_at`) — NO `updated_at`, NO `deleted_at`; `record_audit_event(db, *, course_id, actor_id, event_type, target_kind, target_id, metadata)` appends a row and the caller commits (mirror `services/work_items.py` "caller owns commit"); a second call writes a second row (append-only, never upserts).
   - Impl: `AuditEvent` in NEW `app/models/audit_event.py` (mirror `grade_exports` `b8e5d1a4c297` shape); `record_audit_event` in NEW `app/services/audit.py`. Migration chains from B1.
   - Commit `feat(audit): append-only audit_events table + record helper`.
 
-- [ ] **B3 — `draft_report` job (reviewed-notes-only, evidence-refs-required).**  *(riskiest — combined-review: unreviewed-content-leak prevention)*
+- [x] **B3 — `draft_report` job (reviewed-notes-only, evidence-refs-required).**  *(riskiest — combined-review: unreviewed-content-leak prevention)*
   - Test first (`tests/test_draft_report.py`): `run_draft_report(session, payload={course_id, audience, period, user_id?, period_start, period_end})` creates a `reports` row `status='draft'` whose `evidence_refs` are EXACTLY the ids of `LearningNote`s with `review_status IN ('reviewed','edited')` AND `report_eligibility=true` in-window; a `draft`/`queued`/`archived` note is NEVER referenced and its text NEVER appears in `body` (assert on a seeded unreviewed note); **if zero eligible reviewed notes exist, NO report row is created** (returns `{drafted: 0}`, Decision 1); the `body.claim_limits` equals `pilot.claim_limits['report']` verbatim; the LLM composition step is non-raising with a deterministic fallback (mirror `_llm_draft_note`); re-running for the same `(course, period, user)` window does not duplicate (idempotency guard on an existing draft/sent report for the window).
   - Impl: `run_draft_report` in `app/services/adaptive_jobs.py` (mirror `run_draft_learning_notes` structure + a strict Pydantic `_ReportBodyV1` cap on any LLM section); dispatch branch `draft_report` in `worker.py::process_task` (alongside `draft_learning_notes`). Body sections built from reviewed notes + `work_item_progress` completed counts + `concept_mastery` weak concepts. No commit inside helpers beyond the job's own.
   - Commit `feat(reports): draft_report job drafts from reviewed notes only`.
 
-- [ ] **B4 — `draft_report` weekly cron + end-term fan-out.**
+- [x] **B4 — `draft_report` weekly cron + end-term fan-out.**
   - Test first (`tests/test_draft_report_cron.py`): `_body_draft_reports` enqueues one `draft_report` task per non-deleted course per active student for the current weekly window (mirror `_body_alerts_enqueue` fan-out), gated by `pilot.report_cadence.weekly`; deduped so a burst doesn't pile up (one pending task per `(course,user,period)`); an end-term trigger path drafts `period='end_term'` when the course is flagged end-of-term (an explicit `POST` or a course end-date check — assert the period selection, not real time). Registered so `_run_cron_ticks` calls it on a weekly cadence via the `CronRun` watermark (advisory-lock serialized).
   - Impl: `_body_draft_reports` in `worker.py` + `_claim_and_run_cron("draft_reports", timedelta(days=7), _body_draft_reports)` in `_run_cron_ticks`; read `report_cadence` from the pilot profile. End-term trigger: an owner endpoint `POST /courses/{id}/reports/draft?period=end_term` (enqueues) — enqueue-only, drafting stays off the request path.
   - Commit `feat(reports): weekly draft_report cron + end-term trigger`.
 
-- [ ] **B5 — `reports.py` router: teacher archive + detail + edit + approve.**
+- [x] **B5 — `reports.py` router: teacher archive + detail + edit + approve.**
   - Test first (`tests/test_reports_api.py`): `GET /courses/{id}/reports` (teacher, `get_owned_course`; 404 non-owner) returns the archive filtered by `audience`/`period`/`status`; `GET /reports/{id}` (owner-guarded via the report's course) returns detail incl. `evidence_refs`; `PATCH /reports/{id}` edits `body` sections while `status='draft'` (refuses editing a `sent` report → 409); `POST /reports/{id}/approve` moves `draft→reviewed`, sets `reviewed_by`/`reviewed_at`, and appends an `audit_events` row (`event_type='report.approve'`). Illegal transition (approve a `sent` report) → 409 typed.
   - Impl: NEW `app/api/reports.py` (`router`), schemas in NEW `app/schemas/report.py`; a `_get_owned_report` helper mirroring `checkpoints.py::get_checkpoint_results` ownership (resolve report → its course → `get_owned_course` semantics, 404 on mismatch). Register `reports_router` in `api/__init__.py`.
   - Commit `feat(reports): teacher report archive + detail + edit + approve`.
 
-- [ ] **B6 — report send + export + evidence appendix + export-share settings (send gate + audit).**  *(riskiest — combined-review: send-gate + audit)*
+- [x] **B6 — report send + export + evidence appendix + export-share settings (send gate + audit).**  *(riskiest — combined-review: send-gate + audit)*
   - Test first (`tests/test_reports_send.py`): `POST /reports/{id}/send` refuses with 409 `REPORT_NOT_REVIEWED` unless `status='reviewed'` AND `evidence_refs` non-empty (Decision 3); on success moves `reviewed→sent`, sets `sent_at`, appends `audit_events` (`report.send`); `POST /reports/{id}/export` same gate, appends to the report's `export_history` JSONB + an `audit_events` (`report.export`) row, returns the export payload (evidence appendix = the resolved `evidence_refs` notes, reviewed fields only — an unreviewed note id in `evidence_refs` is filtered out defensively); export-share settings (`PATCH /reports/{id}` share flags OR a dedicated sub-route) persisted; a non-owner → 404 on all.
   - Impl: extend `app/api/reports.py`; typed error via the project's error-code envelope (mirror `SETUP_NOT_OPEN`/`REVIEW_REQUIRED` shape); `record_audit_event` (B2) on every send/export. Evidence appendix resolves `evidence_refs` → `LearningNote` filtered to `review_status IN ('reviewed','edited')`.
   - Commit `feat(reports): send/export + evidence appendix + send gate + audit`.
 
-- [ ] **B7 — student reports read + delivery state + RLS isolation test.**
+- [x] **B7 — student reports read + delivery state + RLS isolation test.**
   - Test first (`tests/test_reports_me.py`): `GET /users/me/courses/{id}/reports` (student, `verify_enrollment` active-only → 403 otherwise) returns ONLY the caller's `audience='student' AND status='sent'` reports (a `draft`/`reviewed` report is invisible — delivery state S069 shows "not yet sent" only for the archive shell, never draft content); `GET /users/me/reports/{id}` returns the caller's own sent report (404 for another student's). Plus `tests/test_reports_rls.py`: COPY `test_work_item_progress_rls.py` under `SET ROLE meli_app` — user A's report row is invisible/immutable to user B (SELECT hides, INSERT of A's `user_id` rejected by WITH CHECK); blank GUC fails closed; skip-guard when `meli_app` absent.
   - Impl: `reports_me_router` in `app/api/reports.py`; register in `api/__init__.py`. Student read never exposes `status!='sent'` rows.
   - Commit `feat(reports): student report archive + delivery state + RLS test`.
 
-- [ ] **B8 — `memory.py` router: list + detail + decide (keep|revise|reject|carry_forward) + audit.**
+- [x] **B8 — `memory.py` router: list + detail + decide (keep|revise|reject|carry_forward) + audit.**
   - Test first (`tests/test_memory_api.py`): migration adds `course_record_items.decision` (CHECK `keep|revise|reject|carry_forward`, nullable), `decided_by`, `decided_at` (assert via `create_all`); `GET /courses/{id}/memory` (teacher, `get_owned_course`) lists the course's `course_record_items` (kind derived from which summary JSONBs are populated) ordered `created_at DESC`; `GET /memory/{id}` (owner-guarded via course) returns detail; `POST /memory/{id}/decide {decision}` sets `decision`/`decided_by`/`decided_at`, syncs `carry_forward` bool (true iff `carry_forward`), appends `audit_events` (`memory.decide`), and appends a `review_action` ONLY when `learning_note_id` is present (Decision 5); an invalid decision → 422; non-owner → 404.
   - Impl: NEW `app/api/memory.py` (`router`) + schemas in NEW `app/schemas/memory.py`; migration (chain from B2's) adds the three columns. Register `memory_router` in `api/__init__.py`.
   - Commit `feat(memory): course-record list + detail + decide + audit`.
 
-- [ ] **B9 — next-term suggestions + import-memory (T023 unstub) + memory summary (T036).**
+- [x] **B9 — next-term suggestions + import-memory (T023 unstub) + memory summary (T036).**
   - Test first (`tests/test_memory_import.py`): `GET /courses/{id}/memory/next-term-suggestions` returns only `decision='carry_forward'` items from the SAME course-code lineage (matched on `courses.code` + same `instructor_id`, NOT student identity — Decision 6); `POST /courses/{id}/setup/import-memory {item_ids}` refuses an undecided/`reject` item with `MEMORY_UNDECIDED` (409) and, on accepted `carry_forward` items, threads their summaries into checkpoint-generation grounding (assert `_build_context` output includes the imported block for that course); `GET /courses/{id}/memory/summary` (T036) returns the counts-by-decision + carry-forward roster for the teacher overview; no student `user_id` crosses terms (assert the imported context contains only instructor summaries).
   - Impl: extend `app/api/memory.py` (suggestions + summary) + `app/api/setup.py` (`import-memory`, NOT a `SETUP_STEP_KEYS` gate — mirror the P1 stub decision); thread a `carry_forward_memory` grounding block into `checkpoint_generation.py::_build_context` (best-effort, after `load_syllabus_grounding`).
   - Commit `feat(memory): next-term suggestions + setup import + memory summary`.
 
-- [ ] **B10 — pooled-connection RLS GUC hardening (symmetric checkin reset + regression test).**
+- [x] **B10 — pooled-connection RLS GUC hardening (symmetric checkin reset + regression test).**
   - Test first (`tests/test_rls_guc_pool.py`): a raw pooled connection acquired WITHOUT going through `get_current_user` observes a blank `app.current_user_id`; an RLS-table (`work_item_progress`/`readiness_responses`/`reports`) SELECT under `meli_app` with the blank GUC returns 0 rows / fails closed (never leaks a prior request's rows); after a request sets the GUC and returns the connection to the pool, the NEXT checkout sees blank again (assert the checkin+checkout reset). Skip-guard when `meli_app` absent.
   - Impl: add a `@event.listens_for(engine.sync_engine, "checkin")` reset listener in `app/database.py` symmetric to the existing `_reset_rls_context` checkout listener (Decision 7); do NOT change `deps.py`'s `set_config(..., false)` (multi-commit flow depends on session-scope). Comment cites the tracked finding.
   - Commit `fix(security): reset RLS GUC on pool checkin (defense-in-depth)`.
 
-- [ ] **B11 — scan-time checkpoint re-check + close-launches-on-transition + P4/P5 LOW roundup.**
+- [x] **B11 — scan-time checkpoint re-check + close-launches-on-transition + P4/P5 LOW roundup.**
   - Test first (`tests/test_attendance_scan_recheck.py` + `tests/test_checkpoint_launch_close.py` additions): a scan against an `active` launch whose checkpoint was moved back to `draft`/`archived` is REFUSED with a typed code (participation not recorded) — Decision 8a; transitioning a checkpoint away from `published`/`live` closes its lingering `active` launches — Decision 8b (idempotent); PLUS P4 LOW regressions: a `visible_from` in the future hides the work_item from `checklist.py::_build_checklist` AND `calendar_feed` (Decision 9.1); the `completed`-on-soft-deleted-card edge counts live cards consistently (Decision 9.2); `documents.py::_is_course_instructor` behaviour pinned by a test + explanatory comment (Decision 9.3).
   - Impl: re-check in `checkpoint_attendance.py` scan path (allow `published`/`live`, refuse otherwise); close active launches in the `checkpoints.py` transition handlers (reuse the rotate/close helper); add `visible_from <= now()` filters in `checklist.py`/`meetings.py`; fix `_derive_progress_status` live-card count. Reconcile the P5 LOWs logged in the roadmap "Security findings" section when P5 has landed.
   - Commit `fix(security): scan-time checkpoint re-check + close stale launches + P4/P5 LOWs`.
 
 ### Frontend (pull Figma per screen via `get_metadata` on the group first)
 
-- [ ] **F1 — hooks (`use-reports`, `use-memory`) + enable reports/memory tabs + routes.**
+- [x] **F1 — hooks (`use-reports`, `use-memory`) + enable reports/memory tabs + routes.**
   - New `hooks/use-reports.ts` (`useReports(courseId)`, `useReport(id)`, `useUpdateReport`/`useApproveReport`/`useSendReport`/`useExportReport` via `authedWrite`; student `useMyReports(courseId)`/`useMyReport(id)`) + `hooks/use-memory.ts` (`useMemory(courseId)`, `useMemoryItem(id)`, `useDecideMemory`, `useNextTermSuggestions(courseId)`, `useImportMemory`, `useMemorySummary(courseId)`) — mirror `use-insights.ts`/`use-checkpoints.ts` shapes + query-key factories. Flip `memory` (+ reports surfacing under insights) tab `enabled:true` in `course-workspace-shell.tsx`; add route segments. Vitest for one query + one mutation (mocked, per the offline convention).
   - Commit `feat(hooks): reports + memory hooks + enable tabs`.
 
-- [ ] **F2 — teacher report archive + detail + edit (T080–T082).**
+- [x] **F2 — teacher report archive + detail + edit (T080–T082).**
   - `teacher/courses/[courseId]/reports/` route (Next.js 16: `await params`). Report archive (T080) over `useReports` grouped by `period`/`status` with one `ReviewStateChip` treatment per report `status`; report detail (T081) rendering typed `body` sections + evidence-ref list; report edit (T082) editing draft `body` sections (disabled once `sent`). i18n `teacher.reports.*`. Tokens only. Pull group `1372:168` (T080–T082).
   - Commit `feat(teacher): report archive + detail + edit`.
 
-- [ ] **F3 — teacher report approve/send/export + evidence appendix + export-share settings (T083–T085).**
+- [x] **F3 — teacher report approve/send/export + evidence appendix + export-share settings (T083–T085).**
   - Approve/send flow (T083) using `useApproveReport`/`useSendReport` behind a `PublishGateDialog`-style confirm; surface the `REPORT_NOT_REVIEWED` 409 as a designed `StateBanner` (Decision 3). Evidence appendix (T084) rendering the resolved reviewed-note refs. Export-share settings (T085) over `useExportReport` + share flags. i18n `teacher.reports.*`. Pull `1372:168` (T083–T085).
   - Commit `feat(teacher): report approve/send/export + appendix + share settings`.
 
-- [ ] **F4 — student report archive + weekly + end-term + delivery state (S066–S069).**
+- [x] **F4 — student report archive + weekly + end-term + delivery state (S066–S069).**
   - `student/courses/[courseId]/reports/` route (`await params`) over `useMyReports` — archive (S066), weekly report (S067), end-term report (S068), each rendering typed `body` sections + the `claim_limits.report` disclaimer verbatim (from `use-pilot-config`); delivery state (S069) as a designed `StateBanner`/`StatusTimeline` (sent / not-yet-sent — NEVER draft content). i18n `student.reports.*`. Pull group `1372:330` (S066–S069).
   - Commit `feat(student): report archive + weekly + end-term + delivery state`.
 
-- [ ] **F5 — teacher course memory: list + detail + decide + next-term suggestions (T086–T087).**
+- [x] **F5 — teacher course memory: list + detail + decide + next-term suggestions (T086–T087).**
   - `teacher/courses/[courseId]/memory/` route (`await params`) over `useMemory` — memory list (grouped by kind) → memory detail (T086) showing relationship/action/outcome summaries + the decide controls (`useDecideMemory`: keep|revise|reject|carry_forward) each with a designed confirm + audit note; next-term suggestions (T087) over `useNextTermSuggestions`. i18n `teacher.memory.*`. Pull `1372:168` (T086/T087).
   - Commit `feat(teacher): course memory list + detail + decide + suggestions`.
 
-- [ ] **F6 — memory summary (T036) + unstub memory import (T023) + P7 FE close-out.**
+- [x] **F6 — memory summary (T036) + unstub memory import (T023) + P7 FE close-out.**
   - Memory summary (T036) on the teacher course overview (`1372:66`) over `useMemorySummary`. Unstub `frontend/src/components/setup/step-memory-import.tsx` (T023): replace the `NEXT_PUBLIC_MEMORY_IMPORT` informational stub with the real prior-term carry-forward picker over `useNextTermSuggestions` + `useImportMemory`, surfacing the `MEMORY_UNDECIDED` 409 as a `StateBanner`. Playwright happy-path (approve report → student sees delivery state; decide memory carry_forward → appears in new-course import) where infra allows; else vitest against mocked hooks (offline convention). **P7 close-out is a SEPARATE controller step** — ship code only. i18n `teacher.setup.memoryImport.*`/`teacher.memory.*`. Pull `1372:34` (T023) + `1372:66` (T036).
   - Commit `feat(setup): memory summary + unstub prior-term memory import + P7 verification`.
 
 ### Hardening (each its own committable task)
 
-- [ ] **H1 — CI SAST (CodeQL/Semgrep) + dependency audit (pip-audit / npm audit).**
+- [x] **H1 — CI SAST (CodeQL/Semgrep) + dependency audit (pip-audit / npm audit).**
   - Add `.github/workflows/` (dir does NOT exist): `security-sast.yml` (CodeQL for Python + JavaScript/TypeScript, OR Semgrep with a ruleset) on PRs to `main`/`feat/*`; `dependency-audit.yml` running `pip-audit` (backend `requirements.txt`) + `npm audit --audit-level=high` (frontend). Closes MSS register items 2 & 8 (spec §8). Verify a clean run locally where possible (`pip-audit`, `npm audit`) and document known-accepted advisories.
   - Commit `ci(security): CodeQL/Semgrep SAST + pip-audit/npm audit workflows`.
 
-- [ ] **H2 — i18n key audit (no hardcoded UI strings).**
+- [x] **H2 — i18n key audit (no hardcoded UI strings).**
   - A test/script (e.g. `frontend/scripts/i18n-audit.*` + a vitest guard) asserting every new P4–P7 UI string is a next-intl key in `frontend/messages/en.json` (namespaces `teacher.*`/`student.*`/`patterns.*`/`nav.*`), no orphaned/missing keys, no literal user-facing strings in the new route trees. Fix any violations found in the reports/memory screens.
   - Commit `test(i18n): key-audit guard for no hardcoded strings`.
 
-- [ ] **H3 — seed-data production-exclusion check.**
+- [x] **H3 — seed-data production-exclusion check.**
   - A test asserting seed/demo entrypoints (`backend/seed.py`, `backend/seed_demo.py`, `frontend/scripts/` demo seeds) are NOT reachable in a production build/runtime (spec §8 release hygiene: no seed/demo/test accounts in prod). Verify `seed_demo.py` is import-guarded / env-gated and excluded from the deployed image; add the guard if missing.
   - Commit `test(security): assert seed/demo data excluded from production`.
 
-- [ ] **H4 — audit_events coverage check + full-suite E2E pass + design-review polish note.**
+- [x] **H4 — audit_events coverage check + full-suite E2E pass + design-review polish note.**
   - Test asserting every audited action (spec §8: publish/review/export/override/carry-forward/send + grade export + report send + memory decide) writes an `audit_events` (or `grade_exports`) row — a coverage map test that fails if a new mutating audited endpoint lands without an audit write. Then run the full backend suite + frontend `vitest`/`build` + the Playwright critical-flow specs (setup→publish→join; QR→checkpoint→results; quiz disclosure→attempt→export; follow-up→revisit→effectiveness; report review→send→student delivery) where infra allows; record results in the handoff. Run a `design-review` polish pass over all new P7 screens (record findings, fix criticals).
   - Commit `test(audit): audit_events coverage check + P7 full-suite verification`.
 
@@ -203,18 +203,18 @@ Each task: failing test first → minimal impl → refactor → code review (`/c
 
 ## Self-review checklist (spec §4.9–4.10 + hardening gate, before P7 close-out)
 
-- [ ] `reports` is a NEW table with owner-isolation RLS on the student-audience rows; teacher access mirrors the existing `get_checkpoint_results` precedent (no new RLS-read pattern) (B1/B7, Decision 2).
-- [ ] `draft_report` drafts ONLY from `review_status IN ('reviewed','edited')` + `report_eligibility=true` notes; NO report row without non-empty `evidence_refs`; unreviewed note text NEVER appears in `body` (B3, Decision 1 — Core §0.2).
-- [ ] Weekly cron + end-term fan-out registered in `_run_cron_ticks` via `CronRun` watermark; drafting stays off the request path (B4).
-- [ ] Send/export gated by server-side `REPORT_NOT_REVIEWED` (409) with evidence-refs + `reviewed` status; every approve/send/export writes an append-only `audit_events` row (B5/B6, Decisions 3–4).
-- [ ] `audit_events` is append-only (no update/delete path); H4 coverage check enumerates every audited action (B2/H4, Decision 4).
-- [ ] Course-memory `decision` enum `keep|revise|reject|carry_forward` added as a real column (was absent); decide writes `audit_events` (+ `review_action` when note-linked); `reject` is an audited tombstone, not a hard delete (B8, Decision 5).
-- [ ] Carry-forward feeds next-term setup via `checkpoint_generation._build_context`; `MEMORY_UNDECIDED` gate refuses undecided imports; NO student `user_id` crosses terms (course-bound memory, spec §5.6) (B9, Decision 6 — unstubs T023).
-- [ ] Memory summary (T036) shipped; the P1 `step-memory-import.tsx` stub is unstubbed (T023) (F6).
-- [ ] Pooled-GUC finding fixed with a symmetric checkin reset on top of the existing checkout reset (NOT transaction-scoped — multi-commit flow) + a regression test proving fail-closed (B10, Decision 7).
-- [ ] Scan-time checkpoint status re-check + close-stale-launches-on-transition shipped; P4 LOWs (`visible_from` gate, `completed`-soft-delete edge, `_is_course_instructor` consistency) and P5 LOWs addressed/tracked (B11, Decisions 8–9).
-- [ ] CI SAST + dependency audit workflows added (`.github/workflows/`, closes MSS items 2 & 8); i18n key audit; seed-data prod-exclusion check (H1–H3, spec §8).
-- [ ] Teacher T080–T087 + student S066–S069 shipped with designed empty/delivery/waiting states (never blank divs); T076–T079 + S060–S065/S070–S071 NOT rebuilt (P6).
-- [ ] Next.js 16: every new `page` awaits `params` (Promise); `proxy.ts` not `middleware.ts`; read `frontend/AGENTS.md` before FE work.
-- [ ] No hardcoded strings (next-intl `teacher.*`/`student.*`/`patterns.*`), no hardcoded colors (tokens.css); pilot `claim_limits['report']` rendered verbatim; conventional commits; code review per task cluster.
-- [ ] Full-suite E2E pass recorded + `design-review` polish pass over all new screens (H4). Latent teacher-reads-student-owned-RLS-rows question flagged for the final `/security-review`.
+- [x] `reports` is a NEW table with owner-isolation RLS on the student-audience rows; teacher access mirrors the existing `get_checkpoint_results` precedent (no new RLS-read pattern) (B1/B7, Decision 2).
+- [x] `draft_report` drafts ONLY from `review_status IN ('reviewed','edited')` + `report_eligibility=true` notes; NO report row without non-empty `evidence_refs`; unreviewed note text NEVER appears in `body` (B3, Decision 1 — Core §0.2).
+- [x] Weekly cron + end-term fan-out registered in `_run_cron_ticks` via `CronRun` watermark; drafting stays off the request path (B4).
+- [x] Send/export gated by server-side `REPORT_NOT_REVIEWED` (409) with evidence-refs + `reviewed` status; every approve/send/export writes an append-only `audit_events` row (B5/B6, Decisions 3–4).
+- [x] `audit_events` is append-only (no update/delete path); H4 coverage check enumerates every audited action (B2/H4, Decision 4).
+- [x] Course-memory `decision` enum `keep|revise|reject|carry_forward` added as a real column (was absent); decide writes `audit_events` (+ `review_action` when note-linked); `reject` is an audited tombstone, not a hard delete (B8, Decision 5).
+- [x] Carry-forward feeds next-term setup via `checkpoint_generation._build_context`; `MEMORY_UNDECIDED` gate refuses undecided imports; NO student `user_id` crosses terms (course-bound memory, spec §5.6) (B9, Decision 6 — unstubs T023).
+- [x] Memory summary (T036) shipped; the P1 `step-memory-import.tsx` stub is unstubbed (T023) (F6).
+- [x] Pooled-GUC finding fixed with a symmetric checkin reset on top of the existing checkout reset (NOT transaction-scoped — multi-commit flow) + a regression test proving fail-closed (B10, Decision 7).
+- [x] Scan-time checkpoint status re-check + close-stale-launches-on-transition shipped; P4 LOWs (`visible_from` gate, `completed`-soft-delete edge, `_is_course_instructor` consistency) and P5 LOWs addressed/tracked (B11, Decisions 8–9).
+- [x] CI SAST + dependency audit workflows added (`.github/workflows/`, closes MSS items 2 & 8); i18n key audit; seed-data prod-exclusion check (H1–H3, spec §8).
+- [x] Teacher T080–T087 + student S066–S069 shipped with designed empty/delivery/waiting states (never blank divs); T076–T079 + S060–S065/S070–S071 NOT rebuilt (P6).
+- [x] Next.js 16: every new `page` awaits `params` (Promise); `proxy.ts` not `middleware.ts`; read `frontend/AGENTS.md` before FE work.
+- [x] No hardcoded strings (next-intl `teacher.*`/`student.*`/`patterns.*`), no hardcoded colors (tokens.css); pilot `claim_limits['report']` rendered verbatim; conventional commits; code review per task cluster.
+- [x] Full-suite E2E pass recorded + `design-review` polish pass over all new screens (H4). Latent teacher-reads-student-owned-RLS-rows question flagged for the final `/security-review`.
