@@ -175,6 +175,21 @@ const hkustOidcProviders = [
   },
 ].filter((p) => p.clientId && p.clientSecret && p.discoveryUrl);
 
+// Credential-path endpoints rejected on SSO-only hosts (see the before-hook).
+// Entries are better-auth's REGISTERED route templates for v1.6.23 — e.g. the
+// password-reset request endpoint is /request-password-reset, NOT
+// /forget-password (that path only exists in the email-otp plugin, which we
+// don't use). auth-gate.test.ts asserts every entry exists in the endpoint
+// registry so a renamed or misremembered path fails CI instead of silently
+// un-gating production.
+export const EMAIL_AUTH_PATHS: ReadonlySet<string> = new Set([
+  "/sign-in/email",
+  "/sign-up/email",
+  "/request-password-reset",
+  "/reset-password",
+  "/reset-password/:token",
+]);
+
 export const auth = betterAuth({
   database: pool,
   secret: process.env.BETTER_AUTH_SECRET,
@@ -301,13 +316,10 @@ export const auth = betterAuth({
       // the form is not enough, since a direct API call would otherwise still
       // create/authenticate a credential account. Host is read per-request
       // because prod and dev are the same deployment.
-      const EMAIL_AUTH_PATHS = new Set([
-        "/sign-in/email",
-        "/sign-up/email",
-        "/forget-password",
-        "/reset-password",
-      ]);
       if (EMAIL_AUTH_PATHS.has(ctx.path)) {
+        // x-forwarded-host is trusted because Vercel overwrites it at the
+        // edge. Revisit if another proxy ever fronts this deployment — a
+        // pass-through proxy would let clients spoof it.
         const host =
           ctx.headers?.get("x-forwarded-host") ??
           ctx.headers?.get("host") ??

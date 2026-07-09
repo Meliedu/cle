@@ -20,11 +20,16 @@ const EMAIL_PASSWORD_HOSTS: ReadonlySet<string> = new Set([
   "cle-meli-dev.hkust.edu.hk",
   "localhost",
   "127.0.0.1",
+  "::1",
 ]);
 
 /** True when `host` (with or without a port) may use email/password auth. */
 export function isEmailPasswordHost(host: string | null | undefined): boolean {
   if (!host) return false;
-  const hostname = host.split(":")[0].trim().toLowerCase();
+  const raw = host.trim().toLowerCase();
+  // Bracketed IPv6 ("[::1]:3000") — the colon-split below would mangle it.
+  const hostname = raw.startsWith("[")
+    ? raw.slice(1, raw.indexOf("]"))
+    : raw.split(":")[0];
   return EMAIL_PASSWORD_HOSTS.has(hostname);
 }

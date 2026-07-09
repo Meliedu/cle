@@ -27,4 +27,15 @@ describe("isEmailPasswordHost", () => {
     expect(isEmailPasswordHost(null)).toBe(false);
     expect(isEmailPasswordHost(undefined)).toBe(false);
   });
+
+  it("rejects suffix tricks — allowlisted host as a subdomain of another", () => {
+    expect(isEmailPasswordHost("cle-meli-dev.hkust.edu.hk.evil.com")).toBe(false);
+    expect(isEmailPasswordHost("localhost.evil.com")).toBe(false);
+  });
+
+  it("handles bracketed IPv6 loopback", () => {
+    expect(isEmailPasswordHost("[::1]")).toBe(true);
+    expect(isEmailPasswordHost("[::1]:3000")).toBe(true);
+    expect(isEmailPasswordHost("[2001:db8::1]:3000")).toBe(false);
+  });
 });

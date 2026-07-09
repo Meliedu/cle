@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
@@ -13,6 +13,7 @@ import {
 import { PrimaryButton } from "@/components/auth/auth-buttons";
 import { TextField } from "@/components/auth/text-field";
 import { authClient } from "@/lib/auth-client";
+import { isEmailPasswordHost } from "@/lib/auth-flags";
 
 const MIN_PASSWORD = 8;
 
@@ -35,6 +36,16 @@ export default function ResetPasswordPage() {
 
   const passwordRef = useRef<HTMLInputElement | null>(null);
   const confirmRef = useRef<HTMLInputElement | null>(null);
+
+  // Host-gated like sign-in/sign-up: password reset only exists on the
+  // email/password path, so SSO-only hosts (production) bounce to /sign-in.
+  // `null` = not yet resolved (hostname is only available after mount).
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  useEffect(() => {
+    const ok = isEmailPasswordHost(window.location.hostname);
+    setAllowed(ok);
+    if (!ok) router.replace("/sign-in");
+  }, [router]);
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -71,6 +82,10 @@ export default function ResetPasswordPage() {
   };
 
   const linkInvalid = !token || tokenError === "INVALID_TOKEN";
+
+  // Nothing renders until the host check resolves (and never on SSO-only
+  // hosts, which are already being redirected).
+  if (!allowed) return null;
 
   return (
     <AuthShell tagline="New password">

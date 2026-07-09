@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { AuthCard } from "@/components/auth/auth-card";
 import { AuthLinkRow } from "@/components/auth/auth-link-row";
@@ -8,6 +9,7 @@ import { AuthShell } from "@/components/auth/auth-shell";
 import { PrimaryButton } from "@/components/auth/auth-buttons";
 import { TextField } from "@/components/auth/text-field";
 import { authClient } from "@/lib/auth-client";
+import { isEmailPasswordHost } from "@/lib/auth-flags";
 
 interface FieldErrors {
   email?: string;
@@ -15,11 +17,22 @@ interface FieldErrors {
 }
 
 export default function ForgotPasswordPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const emailRef = useRef<HTMLInputElement | null>(null);
+
+  // Host-gated like sign-in/sign-up: password reset only exists on the
+  // email/password path, so SSO-only hosts (production) bounce to /sign-in.
+  // `null` = not yet resolved (hostname is only available after mount).
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  useEffect(() => {
+    const ok = isEmailPasswordHost(window.location.hostname);
+    setAllowed(ok);
+    if (!ok) router.replace("/sign-in");
+  }, [router]);
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -47,6 +60,10 @@ export default function ForgotPasswordPage() {
     }
     setSent(true);
   };
+
+  // Nothing renders until the host check resolves (and never on SSO-only
+  // hosts, which are already being redirected).
+  if (!allowed) return null;
 
   return (
     <AuthShell tagline="Recover your account">
