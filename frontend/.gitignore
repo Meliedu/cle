@@ -50,3 +50,4 @@ next-env.d.ts
 
 # local figma capture scripts (not shipped)
 /scripts/figma/
+.screens/

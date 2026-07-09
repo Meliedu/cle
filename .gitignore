@@ -62,3 +62,15 @@ docs/
 docs/superpowers/
 docs/adaptive_engine/
 docs/work-history.md
+
+# Local dev artifacts — screenshots, reference images, probe/QA output, dev logs.
+# Never shipped; regenerated on demand by the visual-QA harness.
+*.log
+figma_overview.png
+*.local.png
+/shots/
+frontend/shots/
+test-results/
+playwright-report/
+# Throwaway one-off probe scripts (persistent QA tools like shots.mjs are kept)
+frontend/scripts/_probe.mjs
