@@ -8,6 +8,7 @@ import { ArrowRight, CheckCircle2, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCourses, type CourseResponse } from "@/hooks/use-courses";
+import { useRole } from "@/hooks/use-role";
 import { useNextAction, type ChecklistItem } from "@/hooks/use-work-items";
 import { useDashboardPreviewEvents } from "@/components/dashboard/dashboard-preview-events";
 import { WelcomeHero } from "@/components/dashboard/welcome-hero";
@@ -24,6 +25,7 @@ import { RecentCourses } from "@/components/dashboard/recent-courses";
  */
 export function DashboardHome() {
   const { data: courses, isLoading } = useCourses();
+  const { isStudent } = useRole();
   const events = useDashboardPreviewEvents();
   const [selected, setSelected] = useState<Date | undefined>(new Date());
 
@@ -50,9 +52,12 @@ export function DashboardHome() {
       <WelcomeHero />
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Left column (2/3) — next action + to-do + recent courses */}
+        {/* Left column (2/3) — next action + to-do + recent courses. The
+            next-action slot is fed by the student work-item spine (Decision 7),
+            which is enrollment-gated; it only applies to the student lane, so
+            the teacher cockpit skips it (avoids an expected 403 on the spine). */}
         <div className="flex flex-col gap-6 lg:col-span-2">
-          <NextActionCard courseId={activeCourseId} />
+          {isStudent ? <NextActionCard courseId={activeCourseId} /> : null}
           <TodoList />
           <RecentCourses courses={courseList} />
         </div>

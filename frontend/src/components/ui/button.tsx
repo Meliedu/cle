@@ -1,5 +1,11 @@
 "use client"
 
+import {
+  cloneElement,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+} from "react"
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
 
@@ -10,7 +16,8 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        default:
+          "bg-primary text-primary-foreground [a]:hover:bg-primary/80 disabled:bg-[var(--color-surface-hover)] disabled:text-[var(--color-text-muted)]",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
@@ -46,14 +53,40 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  render,
+  children,
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+  const classes = cn(buttonVariants({ variant, size, className }))
+
+  // When `render` is a navigation element (e.g. Next's <Link>, or a plain <a>),
+  // render it directly as a real link — keeping role="link" and native href
+  // navigation — with button styling applied. Routing it through Base UI's
+  // Button instead would coerce it into button semantics (role="button") and
+  // log a dev warning about a non-native-button render target.
+  if (isValidElement(render) && render.type !== "button") {
+    const el = render as ReactElement<Record<string, unknown>>
+    const elProps = el.props as { className?: string; children?: ReactNode }
+    return cloneElement(
+      el,
+      {
+        "data-slot": "button",
+        className: cn(classes, elProps.className),
+        ...props,
+      },
+      children ?? elProps.children
+    )
+  }
+
   return (
     <ButtonPrimitive
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={classes}
+      render={render}
       {...props}
-    />
+    >
+      {children}
+    </ButtonPrimitive>
   )
 }
 

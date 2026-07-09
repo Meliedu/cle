@@ -5,12 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import messages from "../../../messages/en.json";
 import { DashboardHome } from "./dashboard-home";
 import { useCourses } from "@/hooks/use-courses";
+import { useRole } from "@/hooks/use-role";
 import { useNextAction, type ChecklistItem } from "@/hooks/use-work-items";
 
 // Isolate the next-action behaviour: stub the network-backed hooks and the
 // sibling panels so only DashboardHome's next-action slot is under test.
 vi.mock("@/hooks/use-courses", () => ({ useCourses: vi.fn() }));
 vi.mock("@/hooks/use-work-items", () => ({ useNextAction: vi.fn() }));
+// The next-action slot is student-only (fed by the enrollment-gated work-item
+// spine); useRole decides the lane. Default the suite to the student lane and
+// override per-test for the teacher case.
+vi.mock("@/hooks/use-role", () => ({ useRole: vi.fn() }));
 vi.mock("@/components/dashboard/dashboard-preview-events", () => ({
   useDashboardPreviewEvents: () => [],
 }));
@@ -32,6 +37,17 @@ vi.mock("@/components/dashboard/recent-courses", () => ({
 
 const mockUseCourses = vi.mocked(useCourses);
 const mockUseNextAction = vi.mocked(useNextAction);
+const mockUseRole = vi.mocked(useRole);
+
+function stubRole(isStudent: boolean): void {
+  mockUseRole.mockReturnValue({
+    role: isStudent ? "student" : "instructor",
+    isStudent,
+    isInstructor: !isStudent,
+    isLoaded: true,
+    isError: false,
+  });
+}
 
 function stubCourses(courses: Array<{ id: string; updated_at: string }>) {
   mockUseCourses.mockReturnValue({
@@ -74,7 +90,10 @@ const checkpointItem: ChecklistItem = {
 };
 
 afterEach(cleanup);
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  stubRole(true); // default to the student lane; teacher case overrides below
+});
 
 describe("DashboardHome next-action slot", () => {
   it("renders the soonest work item with its source, due date, and a course link", () => {
@@ -135,5 +154,19 @@ describe("DashboardHome next-action slot", () => {
 
     expect(screen.queryByText("Your next step")).toBeNull();
     expect(screen.queryByText("You're all caught up")).toBeNull();
+  });
+
+  it("skips the next-action slot entirely on the teacher lane (no spine read)", () => {
+    stubRole(false); // instructor lane — the cockpit, not the student checklist
+    stubCourses([{ id: "course-1", updated_at: "2026-07-01T00:00:00Z" }]);
+    stubNextAction({ data: checkpointItem, isSuccess: true });
+
+    renderDashboard();
+
+    // Neither the active nor the caught-up next-action state renders, and the
+    // enrollment-gated spine is never queried for a teacher.
+    expect(screen.queryByText("Your next step")).toBeNull();
+    expect(screen.queryByText("You're all caught up")).toBeNull();
+    expect(mockUseNextAction).not.toHaveBeenCalled();
   });
 });
