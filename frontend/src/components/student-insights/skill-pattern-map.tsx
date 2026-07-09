@@ -61,19 +61,23 @@ export function SkillPatternMap({ courseId }: SkillPatternMapProps) {
       {/* Decision 5 — one honest reason for the whole grid's no-evidence state. */}
       <StateBanner tone="waiting" title={t("noEvidence")} reason={t("reason")} />
 
+      {/* The banner above states the no-evidence reason once; the tiles then
+          preview the skill areas we track (an empty meter track stands in for
+          the future strength bar) rather than repeating "no evidence" 6×. */}
       <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {data.skills.map((skill) => (
           <li
             key={skill.skill}
             data-skill={skill.skill}
-            className="flex flex-col gap-1 rounded-[var(--radius-xl)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-hover)] px-3 py-3"
+            className="flex flex-col gap-2.5 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3"
           >
             <span className="text-[13px] font-semibold text-[var(--color-text)]">
               {skill.label}
             </span>
-            <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-              {t("noEvidence")}
-            </span>
+            <span
+              aria-hidden="true"
+              className="h-1.5 w-full rounded-[var(--radius-pill)] bg-[var(--color-surface-hover)]"
+            />
           </li>
         ))}
       </ul>

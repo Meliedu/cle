@@ -34,7 +34,10 @@ import {
   type QuestionResponse,
   type QuizDetailResponse,
 } from "@/hooks/use-quizzes";
-import type { AssessmentConfig } from "@/components/quiz/assessment-config";
+import {
+  assessmentBase,
+  type AssessmentConfig,
+} from "@/components/quiz/assessment-config";
 
 /** Question renderers with a dedicated `typeLabel.*` i18n key (B7, Decision 2). */
 const KNOWN_QUESTION_TYPES = new Set([
@@ -136,7 +139,7 @@ export function AssessmentQuizBuilder({
     },
   });
 
-  const backHref = config.base(courseId);
+  const backHref = assessmentBase(config, courseId);
 
   if (isLoading) {
     return (

@@ -42,6 +42,7 @@ export function ActivityListSection({ courseId, onNew, onSelect }: ActivityListS
                 variant="outline"
                 size="sm"
                 onClick={() => onNew(format)}
+                className="border-[var(--color-primary-muted)] bg-[var(--color-primary-light)] text-[var(--color-primary-hover)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-muted)] hover:text-[var(--color-primary-hover)]"
               >
                 <Plus />
                 {t("newFormat", { format: tf(meta.labelKey) })}

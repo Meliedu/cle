@@ -42,7 +42,7 @@ export function TodoList() {
   }, [draft, draftDue, add]);
 
   return (
-    <section className="flex h-full flex-col rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+    <section className="flex flex-col rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
       <header className="flex items-center justify-between gap-3 border-b border-[var(--color-border)]/80 px-5 py-4">
         <div className="flex items-center gap-2">
           <ListChecks
@@ -146,8 +146,9 @@ export function TodoList() {
         ) : null}
       </div>
 
-      {/* Items */}
-      <div className="flex-1 overflow-y-auto px-2 py-2">
+      {/* Items — content-sized so an empty list stays compact; a long list
+          scrolls within a capped height instead of stretching the column. */}
+      <div className="max-h-[336px] overflow-y-auto px-2 py-2">
         {items.length === 0 ? (
           <EmptyState />
         ) : (
@@ -276,7 +277,7 @@ function TodoRow({ item, onToggle, onRemove, onSetDueDate }: TodoRowProps) {
 
 function EmptyState() {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-1 px-4 py-10 text-center">
+    <div className="flex flex-col items-center justify-center gap-1 px-4 py-8 text-center">
       <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">
         Nothing on your list yet.
       </p>

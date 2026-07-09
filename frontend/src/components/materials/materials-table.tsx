@@ -180,10 +180,18 @@ function MaterialTableRow({
       <td className="hidden px-3 py-2.5 text-[12px] text-[var(--color-text-secondary)] sm:table-cell">
         {t(`type.${kind}`)}
       </td>
-      <td className="hidden px-3 py-2.5 text-[12px] text-[var(--color-text-secondary)] md:table-cell">
-        {sessionIndex != null
-          ? t("folders.session", { index: sessionIndex })
-          : t("table.unassigned")}
+      <td className="hidden px-3 py-2.5 text-[12px] md:table-cell">
+        {sessionIndex != null ? (
+          <span className="text-[var(--color-text-secondary)]">
+            {t("folders.session", { index: sessionIndex })}
+          </span>
+        ) : (
+          // A deliberate "no session" state, not missing data — render it as a
+          // neutral chip so it doesn't read like an error next to Ready badges.
+          <span className="inline-flex items-center rounded-[var(--radius-pill)] bg-[var(--color-surface-hover)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-text-muted)]">
+            {t("table.unassigned")}
+          </span>
+        )}
       </td>
       <td className="px-3 py-2.5 pr-4">
         <StatusChip tone={status.tone} label={t(`docStatus.${status.key}`)} />

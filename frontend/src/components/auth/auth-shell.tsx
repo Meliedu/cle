@@ -35,7 +35,7 @@ export function AuthShell({ children, tagline }: AuthShellProps) {
               M
             </span>
             <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-secondary)]">
-              Meli · Language Studio
+              Meli · HKUST CLE
             </span>
           </header>
 
@@ -43,13 +43,16 @@ export function AuthShell({ children, tagline }: AuthShellProps) {
             <HoneycombMark className="size-[min(620px,72%)]" />
           </div>
 
-          <footer className="relative z-10 max-w-[36ch] space-y-3">
+          <footer className="relative z-10 max-w-[38ch] space-y-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-muted)]">
-              {tagline ?? "An editorial language studio"}
+              {tagline ?? "The checkpoint-centred course loop"}
             </p>
-            <p className="text-[15px] leading-relaxed text-[var(--color-text-secondary)]">
-              Class materials, AI-generated quizzes, and revision flashcards
-              — built for HKUST classrooms and the students who use them.
+            <p className="font-display text-[1.6rem] font-semibold leading-[1.15] text-[var(--color-text)]">
+              A reviewed loop from course materials to a clear next action.
+            </p>
+            <p className="text-[14px] leading-relaxed text-[var(--color-text-secondary)]">
+              Teachers review and publish checkpoints; students act from a
+              checklist, a calendar, or a QR scan in class.
             </p>
             <p className="pt-2 text-[11px] tracking-[0.04em] text-[var(--color-text-muted)]">
               Available to instructors at <span className="font-medium text-[var(--color-text-secondary)]">@ust.hk</span>{" "}

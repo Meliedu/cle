@@ -4,7 +4,9 @@ import { Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-export type HkustProviderId = "hkust-staff" | "hkust-student";
+// Staff is bare "hkust" (not "hkust-staff") — it must match the redirect URI
+// HKUST registered on the staff Entra app: .../api/auth/oauth2/callback/hkust.
+export type HkustProviderId = "hkust" | "hkust-student";
 
 interface HkustSsoButtonsProps {
   readonly onProvider: (providerId: HkustProviderId) => void;
@@ -24,7 +26,7 @@ interface ButtonSpec {
 // two SEPARATE Entra tenants, so each routes to its own OIDC provider. The
 // buttons are the routing decision the handoff doc calls for.
 const BUTTONS: readonly ButtonSpec[] = [
-  { id: "hkust-staff", label: "HKUST Staff", hint: "@ust.hk" },
+  { id: "hkust", label: "HKUST Staff", hint: "@ust.hk" },
   { id: "hkust-student", label: "HKUST Student", hint: "@connect.ust.hk" },
 ];
 

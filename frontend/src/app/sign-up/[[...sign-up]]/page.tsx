@@ -112,10 +112,10 @@ export default function SignUpPage() {
   const allowedDomainsLabel = ALLOWED_DOMAINS.map((d) => `@${d}`).join(" / ");
 
   return (
-    <AuthShell tagline="Create your account">
+    <AuthShell tagline="Get started">
       <AuthCard
-        eyebrow="New to Meli"
-        heading="Join the studio"
+        eyebrow="New to Meli · HKUST CLE"
+        heading="Create your account"
         subtitle={
           <>
             Open to{" "}

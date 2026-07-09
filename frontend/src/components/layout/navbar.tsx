@@ -11,9 +11,27 @@ interface NavbarProps {
   readonly onMenuClick?: () => void;
 }
 
-const TAB_LABELS: Record<string, string> = {
+// Human labels for path/tab segments across both the legacy `/dashboard/*` and
+// the role-scoped `/teacher/*` · `/student/*` route trees.
+const SEGMENT_LABELS: Record<string, string> = {
+  dashboard: "Dashboard",
+  courses: "Courses",
+  calendar: "Calendar",
+  insights: "Insights",
+  profile: "Profile",
+  notifications: "Notifications",
+  new: "New course",
   overview: "Overview",
+  sessions: "Sessions",
+  schedule: "Schedule",
+  enrollment: "Enrollment",
+  setup: "Course setup",
   materials: "Materials",
+  activities: "Activities",
+  checklist: "Checklist",
+  reports: "Reports",
+  memory: "Course memory",
+  join: "Join a course",
   quizzes: "Quizzes",
   flashcards: "Flashcards",
   revision: "Revision",
@@ -24,13 +42,12 @@ const TAB_LABELS: Record<string, string> = {
   students: "Students",
 };
 
-const SUB_PAGE_LABELS: Record<string, string> = {
-  revision: "Revision",
-  pronunciation: "Pronunciation",
-  live: "Live Quiz",
-  quizzes: "Quiz",
-  flashcards: "Flashcards",
-};
+function labelFor(segment: string): string {
+  return (
+    SEGMENT_LABELS[segment] ??
+    segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, " ")
+  );
+}
 
 interface Crumb {
   label: string;
@@ -42,33 +59,57 @@ function useBreadcrumbs(): readonly Crumb[] {
   const searchParams = useSearchParams();
   const { data: courses } = useCourses();
 
-  const crumbs: Crumb[] = [{ label: "Dashboard", href: "/dashboard" }];
+  const segments = pathname.split("/").filter(Boolean);
+  const lane = segments[0];
 
-  // Match /dashboard/courses/{courseId}
+  // Role-scoped route trees: /teacher/* and /student/*.
+  if (lane === "teacher" || lane === "student") {
+    const home = `/${lane}/dashboard`;
+    const crumbs: Crumb[] = [{ label: "Dashboard", href: home }];
+    const section = segments[1];
+    if (!section || section === "dashboard") return crumbs;
+
+    if (section === "courses") {
+      crumbs.push({ label: "Courses", href: `/${lane}/courses` });
+      const third = segments[2];
+      if (third === "new") {
+        crumbs.push({ label: "New course", href: pathname });
+      } else if (third) {
+        const course = courses?.find((c) => c.id === third);
+        crumbs.push({
+          label: course?.name ?? "Course",
+          href: `/${lane}/courses/${third}`,
+        });
+        if (segments[3]) {
+          crumbs.push({ label: labelFor(segments[3]), href: pathname });
+        }
+      }
+      return crumbs;
+    }
+
+    crumbs.push({ label: labelFor(section), href: `/${lane}/${section}` });
+    return crumbs;
+  }
+
+  // Legacy `/dashboard/*` fallback (kept until those routes are retired).
+  const crumbs: Crumb[] = [{ label: "Dashboard", href: "/dashboard" }];
   const courseMatch = pathname.match(/\/dashboard\/courses\/([^/]+)/);
   if (!courseMatch) return crumbs;
 
   const courseId = courseMatch[1];
   const course = courses?.find((c) => c.id === courseId);
-  const courseName = course?.name ?? "Course";
-
   crumbs.push({
-    label: courseName,
+    label: course?.name ?? "Course",
     href: `/dashboard/courses/${courseId}?tab=overview`,
   });
 
-  // Check for sub-page (e.g., /courses/{id}/revision, /courses/{id}/quizzes/{quizId})
   const subMatch = pathname.match(/\/courses\/[^/]+\/(\w+)/);
   if (subMatch) {
-    const segment = subMatch[1];
-    const label = SUB_PAGE_LABELS[segment] ?? segment.charAt(0).toUpperCase() + segment.slice(1);
-    crumbs.push({ label, href: pathname });
+    crumbs.push({ label: labelFor(subMatch[1]), href: pathname });
   } else {
-    // On main course page, show the active tab
     const tab = searchParams.get("tab");
     if (tab && tab !== "overview") {
-      const label = TAB_LABELS[tab] ?? tab;
-      crumbs.push({ label, href: `${pathname}?tab=${tab}` });
+      crumbs.push({ label: labelFor(tab), href: `${pathname}?tab=${tab}` });
     }
   }
 
@@ -122,7 +163,7 @@ export function Navbar({ onMenuClick }: NavbarProps) {
           </nav>
         ) : (
           <span className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--color-text-muted)]">
-            Meli · Language studio
+            Meli · HKUST CLE
           </span>
         )}
       </div>

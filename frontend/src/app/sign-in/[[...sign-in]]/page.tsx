@@ -125,11 +125,11 @@ export default function SignInPage() {
   };
 
   return (
-    <AuthShell tagline="Sign in to your studio">
+    <AuthShell tagline="Welcome back">
       <AuthCard
-        eyebrow="Welcome back · HKUST"
+        eyebrow="Welcome back · HKUST CLE"
         heading="Sign in to Meli"
-        subtitle="Pick up your courses, materials, and AI-generated study sets."
+        subtitle="Pick up your courses, checkpoints, and this week's next steps."
         footer={
           <AuthLinkRow
             question="New here?"

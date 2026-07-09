@@ -19,6 +19,21 @@ function formatDateLong(d: Date): string {
   return `${weekday}, ${day} ${month}`;
 }
 
+const HONORIFIC = /^(dr|prof|mr|mrs|ms|mx|sir|madam)\.?$/i;
+
+/** First given name, skipping a leading honorific ("Dr. Wei Chen" → "Wei"). */
+function firstNameFrom(
+  firstName: string | null | undefined,
+  fullName: string | null | undefined
+): string | null {
+  if (firstName && !HONORIFIC.test(firstName)) return firstName;
+  // Reaching here, `firstName` is empty or itself an honorific — so it is never
+  // a valid greeting name. With no full name to parse, there is nothing to show.
+  if (!fullName) return null;
+  const parts = fullName.trim().split(/\s+/).filter((p) => !HONORIFIC.test(p));
+  return parts[0] ?? null;
+}
+
 export function WelcomeHero() {
   const { user } = useUser();
   const { isInstructor } = useRole();
@@ -29,8 +44,7 @@ export function WelcomeHero() {
   const dateLine = formatDateLong(now);
   const dayNumber = now.getDate();
 
-  const firstName =
-    user?.firstName ?? user?.fullName?.split(" ")[0] ?? null;
+  const firstName = firstNameFrom(user?.firstName, user?.fullName);
   const count = courses?.length ?? 0;
 
   const subtitle = useMemo(() => {
@@ -51,7 +65,7 @@ export function WelcomeHero() {
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
           {greet}
         </p>
-        <h1 className="text-[clamp(1.75rem,1.3rem+1vw,2.25rem)] font-semibold leading-[1.1] tracking-tight text-[var(--color-text)]">
+        <h1 className="font-display text-[clamp(1.9rem,1.4rem+1.4vw,2.6rem)] font-semibold leading-[1.05] text-[var(--color-text)]">
           {firstName ? `Welcome back, ${firstName}.` : "Welcome back."}
         </h1>
         <p className="max-w-[48ch] text-[14px] leading-relaxed text-[var(--color-text-secondary)]">

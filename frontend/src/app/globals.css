@@ -12,6 +12,7 @@
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
+  --font-display: var(--font-display);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -50,39 +51,46 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Reconcile the shadcn token layer onto the "Honey & Salt" system in
+   tokens.css. Every shadcn-driven utility (bg-primary, border-border,
+   bg-card, ring, sidebar-*) now resolves to a brand value, so components
+   built on shadcn primitives are automatically on-brand — no more stray
+   near-black `bg-primary` buttons. tokens.css `--color-*` are concrete oklch
+   values (the `@theme inline` block above inlines rather than re-emits them,
+   so there is no self-reference cycle here). */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --background: var(--color-bg);
+  --foreground: var(--color-text);
+  --card: var(--color-surface);
+  --card-foreground: var(--color-text);
+  --popover: var(--color-surface);
+  --popover-foreground: var(--color-text);
+  --primary: var(--color-primary);
+  --primary-foreground: var(--color-text-on-primary);
+  --secondary: var(--color-surface-hover);
+  --secondary-foreground: var(--color-text);
+  --muted: var(--color-surface-hover);
+  --muted-foreground: var(--color-text-muted);
+  --accent: var(--color-primary-light);
+  --accent-foreground: var(--color-primary-hover);
+  --destructive: var(--color-error);
+  --border: var(--color-border);
+  --input: var(--color-border);
+  --ring: var(--color-primary-muted);
+  --chart-1: var(--color-primary);
+  --chart-2: var(--color-accent);
+  --chart-3: var(--color-coral);
+  --chart-4: var(--color-olive);
+  --chart-5: var(--color-gold);
+  --radius: 0.75rem;
+  --sidebar: var(--color-rail);
+  --sidebar-foreground: var(--color-rail-text);
+  --sidebar-primary: var(--color-primary);
+  --sidebar-primary-foreground: var(--color-text-on-primary);
+  --sidebar-accent: var(--color-rail-raised);
+  --sidebar-accent-foreground: var(--color-rail-text);
+  --sidebar-border: var(--color-rail-border);
+  --sidebar-ring: var(--color-primary-muted);
 }
 
 .dark {
@@ -402,5 +410,139 @@
 @media (prefers-reduced-motion: reduce) {
   .auth-card {
     animation: none;
+  }
+}
+
+/* ==========================================================================
+   Display type — Fraunces, tuned for hero + page titles
+   ========================================================================== */
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display), Georgia, "Times New Roman", serif;
+    font-optical-sizing: auto;
+    letter-spacing: -0.015em;
+    /* A touch of softness + weight balance from Fraunces' variable axes. */
+    font-variation-settings: "SOFT" 0, "WONK" 0, "opsz" 40;
+  }
+}
+
+/* ==========================================================================
+   Motion primitives — one orchestrated page-load reveal + hover micro-lifts.
+   Respected only when the user allows motion (guard at the bottom).
+   ========================================================================== */
+@keyframes meli-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes meli-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes meli-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@layer utilities {
+  .animate-rise {
+    animation: meli-rise var(--duration-slow, 400ms)
+      var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;
+  }
+  .animate-fade {
+    animation: meli-fade var(--duration-normal, 250ms) var(--ease-out) both;
+  }
+  .animate-scale-in {
+    animation: meli-scale-in var(--duration-normal, 250ms) var(--ease-spring) both;
+  }
+
+  /* Staggered reveal: apply `.stagger` to a container and `.stagger-item` to
+     its children (or just rely on direct-child selector). Each child enters a
+     beat after the previous — one composed entrance beats scattered micro-fx. */
+  .stagger > * {
+    animation: meli-rise var(--duration-slow, 400ms)
+      var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;
+  }
+  .stagger > *:nth-child(1) { animation-delay: 40ms; }
+  .stagger > *:nth-child(2) { animation-delay: 100ms; }
+  .stagger > *:nth-child(3) { animation-delay: 160ms; }
+  .stagger > *:nth-child(4) { animation-delay: 220ms; }
+  .stagger > *:nth-child(5) { animation-delay: 280ms; }
+  .stagger > *:nth-child(6) { animation-delay: 340ms; }
+  .stagger > *:nth-child(7) { animation-delay: 400ms; }
+  .stagger > *:nth-child(8) { animation-delay: 460ms; }
+
+  /* Hover lift used on interactive cards. Pair with a transition utility. */
+  .hover-lift {
+    transition:
+      transform var(--duration-normal) var(--ease-out),
+      box-shadow var(--duration-normal) var(--ease-out),
+      border-color var(--duration-normal) var(--ease-out);
+    will-change: transform;
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+  }
+}
+
+/* ==========================================================================
+   Atmosphere — subtle depth/texture primitives (opt-in, brand-tinted)
+   ========================================================================== */
+@layer utilities {
+  /* Warm layered gradient mesh for hero / marketing surfaces. */
+  .bg-honey-mesh {
+    background-color: var(--color-bg);
+    background-image:
+      radial-gradient(60% 55% at 12% 8%, oklch(88% 0.08 80 / 0.55) 0%, transparent 60%),
+      radial-gradient(50% 45% at 92% 4%, oklch(90% 0.06 35 / 0.45) 0%, transparent 55%),
+      radial-gradient(45% 60% at 88% 92%, oklch(92% 0.05 230 / 0.4) 0%, transparent 60%);
+  }
+  /* Fine film grain overlay — layer above gradients for tactile depth. */
+  .bg-grain::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.4;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  }
+  /* Hairline honey divider used between editorial sections. */
+  .rule-honey {
+    height: 1px;
+    background: linear-gradient(
+      to right,
+      transparent,
+      var(--color-border-hover),
+      transparent
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise,
+  .animate-fade,
+  .animate-scale-in,
+  .stagger > *,
+  .hover-lift {
+    animation: none !important;
+    transition: none !important;
+  }
+  .hover-lift:hover {
+    transform: none;
   }
 }

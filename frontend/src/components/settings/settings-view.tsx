@@ -128,7 +128,7 @@ function ProfileSection() {
     <SectionShell
       eyebrow="Profile"
       title="Your details"
-      description="Your name appears on shared materials and live-quiz leaderboards. Email and role come from your HKUST account and can't be changed here."
+      description="Your name appears on shared materials and class activities. Email and role come from your HKUST account and can't be changed here."
     >
       <form onSubmit={onSubmit} className="space-y-5" noValidate>
         <TextField

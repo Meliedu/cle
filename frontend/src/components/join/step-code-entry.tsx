@@ -87,7 +87,10 @@ export function StepCodeEntry({
             }}
             maxLength={12}
             disabled={isSubmitting}
-            className="font-mono text-base uppercase tracking-[0.3em]"
+            // Wide tracking makes a typed code scannable, but the placeholder
+            // must read as a subtle hint — not a pre-filled value — so reset its
+            // tracking/case/weight to a muted normal treatment.
+            className="font-mono text-base uppercase tracking-[0.3em] placeholder:font-sans placeholder:tracking-normal placeholder:normal-case placeholder:text-[var(--color-text-muted)]"
             aria-invalid={Boolean(error)}
             aria-describedby={error ? "join-code-error" : "join-code-hint"}
           />

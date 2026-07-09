@@ -879,7 +879,7 @@
       "eyebrow": "Checkpoint studio",
       "backToSession": "Back to session",
       "subtitle": "Review the drafted cards, edit a review point, or remove one with a reason before you approve and publish this check-in.",
-      "subtitleLocked": "This checkpoint has left draft, so its cards are locked. It moves through its lifecycle from here.",
+      "subtitleLocked": "This checkpoint has moved out of draft, so its cards are locked. It moves through its lifecycle from here.",
       "notFound": {
         "title": "We couldn't find this checkpoint",
         "reason": "It may have been removed or belongs to another session. Return to the session."
@@ -919,7 +919,7 @@
       "fixed": "Fixed card",
       "errors": {
         "generic": "Something went wrong. Please try again.",
-        "REVIEW_REQUIRED": "This checkpoint has left draft, so its cards can no longer be edited.",
+        "REVIEW_REQUIRED": "This checkpoint has moved out of draft, so its cards can no longer be edited.",
         "FINAL_CARD_FIXED": "The final-comments card is fixed and can't be removed.",
         "REMOVE_REASON_REQUIRED": "Choose a reason before removing this card."
       },
@@ -2831,9 +2831,9 @@
       },
       "skills": {
         "title": "Skill patterns",
-        "subtitle": "The pilot skill areas we track.",
-        "noEvidence": "No evidence yet",
-        "reason": "We do not have skill-level evidence yet. Skill patterns need a concept-to-skill mapping that is not in place for this pilot, so we will not show a score we cannot back up.",
+        "subtitle": "The skill areas we track.",
+        "noEvidence": "No skill evidence yet",
+        "reason": "We don't have skill-level evidence yet. Skill patterns need a concept-to-skill mapping that isn't in place for this pilot, so we won't show a score we can't back up.",
         "error": {
           "title": "We couldn't load the skill map",
           "reason": "Refresh the page to try again."

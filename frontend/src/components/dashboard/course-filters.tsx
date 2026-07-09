@@ -42,7 +42,7 @@ export function CourseFilters({
       {/* Title row */}
       <div className="flex items-end justify-between gap-4">
         <div className="flex items-end gap-3">
-          <h1 className="text-[clamp(1.75rem,1.1rem+1.8vw,2.25rem)] font-semibold leading-[1.1] tracking-tight text-[var(--color-text)]">
+          <h1 className="font-display text-[clamp(1.75rem,1.1rem+1.8vw,2.25rem)] font-semibold leading-[1.05] text-[var(--color-text)]">
             Courses
           </h1>
           <span className="pb-2 text-sm text-[var(--color-text-muted)] tabular-nums">
@@ -59,7 +59,7 @@ export function CourseFilters({
           <button
             type="button"
             onClick={isInstructor ? onCreate : onJoin}
-            className="inline-flex items-center gap-1.5 rounded-[var(--radius-pill)] bg-[var(--color-text)] px-3.5 py-2 text-xs font-semibold text-[var(--color-surface)] shadow-[var(--shadow-sm)] transition-all duration-[var(--duration-fast)] hover:bg-[var(--color-text-secondary)]"
+            className="inline-flex items-center gap-1.5 rounded-[var(--radius-pill)] bg-[var(--color-primary)] px-3.5 py-2 text-xs font-semibold text-[var(--color-text-on-primary)] shadow-[var(--shadow-sm)] transition-all duration-[var(--duration-fast)] hover:bg-[var(--color-primary-hover)] hover:shadow-[var(--shadow-md)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
           >
             {isInstructor ? (
               <>
@@ -158,14 +158,16 @@ function LanguageChip({
       className={cn(
         "inline-flex items-center gap-2 rounded-[var(--radius-pill)] border px-3 py-1.5 text-xs font-medium transition-all duration-[var(--duration-fast)]",
         active
-          ? "border-[var(--color-text)] bg-[var(--color-text)] text-[var(--color-surface)]"
+          ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-hover)]"
           : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)] hover:text-[var(--color-text)]"
       )}
     >
       <span
-        className="inline-flex size-5 items-center justify-center rounded-full bg-[var(--color-surface-hover)] text-[13px] leading-none"
+        className={cn(
+          "inline-flex size-5 items-center justify-center rounded-full text-[13px] leading-none",
+          active ? "bg-[var(--color-primary-muted)]" : "bg-[var(--color-surface-hover)]"
+        )}
         aria-hidden="true"
-        style={active ? { backgroundColor: "oklch(100% 0 0 / 0.15)" } : undefined}
       >
         {flag}
       </span>
@@ -174,7 +176,7 @@ function LanguageChip({
         className={cn(
           "tabular-nums text-[10px]",
           active
-            ? "text-[var(--color-surface)]/70"
+            ? "text-[var(--color-primary-hover)]/70"
             : "text-[var(--color-text-muted)]"
         )}
       >

@@ -46,7 +46,7 @@ export function PageHeader({
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1.5">
-          <Heading className="text-[clamp(1.5rem,1.2rem+1vw,2rem)] font-semibold leading-[1.15] tracking-tight text-[var(--color-text)]">
+          <Heading className="font-display text-[clamp(1.6rem,1.25rem+1.1vw,2.15rem)] font-semibold leading-[1.1] text-[var(--color-text)]">
             {title}
           </Heading>
           {description ? (

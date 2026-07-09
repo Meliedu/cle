@@ -19,23 +19,36 @@ export interface AssessmentConfig {
   readonly graded: boolean;
   /** next-intl namespace for this surface's copy. */
   readonly ns: AssessmentNamespace;
-  /** Path base under the teacher course workspace, e.g. `.../practice`. */
-  readonly base: (courseId: string) => string;
+  /**
+   * Route segment under the teacher course workspace (`practice` | `quiz`).
+   * A plain string (not a function) so the config stays fully serializable and
+   * can be passed from a Server Component page into the client list/builder —
+   * build the path with `assessmentBase(config, courseId)`.
+   */
+  readonly segment: "practice" | "quiz";
 }
 
 export const PRACTICE_CONFIG: AssessmentConfig = {
   purpose: "practice",
   graded: false,
   ns: "teacher.practice",
-  base: (courseId) => `/teacher/courses/${courseId}/practice`,
+  segment: "practice",
 };
 
 export const QUIZ_CONFIG: AssessmentConfig = {
   purpose: "graded",
   graded: true,
   ns: "teacher.quiz",
-  base: (courseId) => `/teacher/courses/${courseId}/quiz`,
+  segment: "quiz",
 };
+
+/** Path base for an assessment surface under the teacher course workspace. */
+export function assessmentBase(
+  config: AssessmentConfig,
+  courseId: string
+): string {
+  return `/teacher/courses/${courseId}/${config.segment}`;
+}
 
 /**
  * Filter a course's quiz list down to one assessment surface. The list hook

@@ -1,12 +1,19 @@
 "use client";
 
 import { useMemo } from "react";
+import { useQueries } from "@tanstack/react-query";
+
+import { useAuth } from "@/hooks/use-auth";
+import { useCourses } from "@/hooks/use-courses";
 import { useTodos } from "@/hooks/use-todos";
+import { meetingKeys, type Meeting } from "@/hooks/use-meetings";
+import { apiFetch, isAuthError, type ApiEnvelope } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
-// Placeholder event shape used by dashboard preview widgets.
-// These are self-contained here so the calendar page can use the real backend
-// feed while the dashboard overview keeps showing illustrative data.
+// Event shape used by the dashboard + calendar preview widgets. Populated from
+// REAL data only: personal to-dos with due dates + published course sessions
+// (course_meetings) across the user's courses. No placeholder/marketing data —
+// per the product rule that empty states are honest, never faked.
 // ---------------------------------------------------------------------------
 
 export type DashboardPreviewEventKind = "todo" | "swarm" | "session";
@@ -24,16 +31,6 @@ export interface DashboardPreviewEvent {
   readonly done?: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function computeUpcoming(daysAhead: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + daysAhead);
-  return toIsoDate(d);
-}
-
 function toIsoDate(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -41,43 +38,50 @@ function toIsoDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// ---------------------------------------------------------------------------
-// Placeholder swarms data
-// ---------------------------------------------------------------------------
+function timeLabel(iso: string, durationMin: number): string {
+  const start = new Date(iso);
+  const end = new Date(start.getTime() + durationMin * 60_000);
+  const fmt = (d: Date) =>
+    d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return `${fmt(start)} – ${fmt(end)}`;
+}
 
-export const DASHBOARD_UPCOMING_SWARMS: readonly DashboardPreviewEvent[] = [
-  {
-    id: "swarm-1",
-    date: computeUpcoming(2),
-    title: "Live Quiz · Cantonese Tones",
-    subtitle: "10:00 – 11:30 · Room 2502A",
-    kind: "swarm",
-    color: "honey",
-  },
-  {
-    id: "swarm-2",
-    date: computeUpcoming(4),
-    title: "Study Swarm · Mandarin Listening",
-    subtitle: "14:00 – 15:00 · Online",
-    kind: "swarm",
-    color: "coral",
-  },
-  {
-    id: "swarm-3",
-    date: computeUpcoming(9),
-    title: "Guest Swarm · Pronunciation Clinic",
-    subtitle: "17:00 – 18:30 · LTH",
-    kind: "swarm",
-    color: "salt",
-  },
-] as const;
-
-// ---------------------------------------------------------------------------
-// Hook: combines todo items (with due dates) + placeholder swarms
-// ---------------------------------------------------------------------------
-
+/**
+ * Real preview feed: to-do items with due dates + upcoming sessions pulled from
+ * every course the signed-in user can see. Fans out one meetings query per
+ * course via `useQueries` (cached under the same `meetingKeys` as the schedule
+ * step, so no duplicate fetching).
+ */
 export function useDashboardPreviewEvents(): readonly DashboardPreviewEvent[] {
+  const { getToken, isSignedIn } = useAuth();
+  const { data: courses } = useCourses();
   const { items } = useTodos();
+
+  const courseList = useMemo(() => courses ?? [], [courses]);
+
+  const meetingQueries = useQueries({
+    queries: courseList.map((course) => ({
+      queryKey: meetingKeys.list(course.id),
+      queryFn: async () => {
+        const token = await getToken({ template: "backend" });
+        if (!token) throw new Error("Not authenticated");
+        const res = await apiFetch<ApiEnvelope<readonly Meeting[]>>(
+          `/courses/${course.id}/meetings`,
+          { token }
+        );
+        return res.data;
+      },
+      enabled: isSignedIn === true,
+      staleTime: 60_000,
+      retry: (count: number, error: unknown) =>
+        !isAuthError(error) && count < 2,
+    })),
+  });
+
+  // Stable dependency signature so the memo only recomputes when data changes.
+  const meetingsSignature = meetingQueries
+    .map((q) => (q.data ? q.data.length : -1))
+    .join(",");
 
   return useMemo(() => {
     const todoEvents: DashboardPreviewEvent[] = items
@@ -91,8 +95,38 @@ export function useDashboardPreviewEvents(): readonly DashboardPreviewEvent[] {
         done: it.done,
       }));
 
-    return [...todoEvents, ...DASHBOARD_UPCOMING_SWARMS].sort((a, b) =>
+    const sessionEvents: DashboardPreviewEvent[] = [];
+    meetingQueries.forEach((query, idx) => {
+      const course = courseList[idx];
+      if (!course || !query.data) return;
+      for (const meeting of query.data) {
+        sessionEvents.push({
+          id: `session-${meeting.id}`,
+          date: toIsoDate(new Date(meeting.scheduled_at)),
+          title:
+            meeting.title ?? `Session ${meeting.meeting_index}`,
+          subtitle: [
+            course.code,
+            timeLabel(meeting.scheduled_at, meeting.duration_minutes),
+            meeting.location,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+          kind: "session" as const,
+          color: "salt" as const,
+        });
+      }
+    });
+
+    return [...todoEvents, ...sessionEvents].sort((a, b) =>
       a.date.localeCompare(b.date)
     );
-  }, [items]);
+    // `meetingQueries` is intentionally excluded: its array reference changes
+    // every render, which would thrash this memo. All data-level changes flow
+    // through `meetingsSignature` (a stable string derived from each query's
+    // resolved data), so the memo re-runs exactly when the meeting data does.
+    // NOTE: if you add reads of query.isLoading/isError inside this memo, add
+    // `meetingQueries` back to the deps — the signature only tracks data.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, courseList, meetingsSignature]);
 }

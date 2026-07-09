@@ -57,8 +57,9 @@ describe("SkillPatternMap — S065 / Decision 5", () => {
     expect(screen.getByText("Speaking")).toBeTruthy();
     expect(screen.getByText("Writing")).toBeTruthy();
 
-    // ...each cell carries a no-evidence marker (one per cell + the banner title).
-    expect(screen.getAllByText("No evidence yet").length).toBe(skills.length + 1);
+    // The no-evidence state is stated ONCE in the banner (not repeated per
+    // cell) — the tiles preview the tracked skill areas with an empty meter.
+    expect(screen.getByText("No skill evidence yet")).toBeTruthy();
     // The honest Decision-5 reason is shown exactly once.
     expect(
       screen.getByText(/skill-level evidence yet/)

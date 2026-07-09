@@ -88,7 +88,7 @@ export function UpcomingSwarms({
                     </span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[14px] font-semibold text-[var(--color-text)]">
+                    <p className="line-clamp-2 text-[14px] font-semibold leading-snug text-[var(--color-text)]">
                       {event.title}
                     </p>
                     {event.subtitle ? (

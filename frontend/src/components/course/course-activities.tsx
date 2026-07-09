@@ -129,7 +129,12 @@ function QuizSummarySection({
         <ul className="space-y-2">
           {quizzes.map((quiz) => (
             <li key={quiz.id}>
-              <QuizRow courseId={courseId} quiz={quiz} openLabel={t("open")} />
+              <QuizRow
+                courseId={courseId}
+                quiz={quiz}
+                purpose={purpose}
+                openLabel={t("open")}
+              />
             </li>
           ))}
         </ul>
@@ -141,14 +146,18 @@ function QuizSummarySection({
 interface QuizRowProps {
   readonly courseId: string;
   readonly quiz: QuizResponse;
+  readonly purpose: AssessmentPurpose;
   readonly openLabel: string;
 }
 
-function QuizRow({ courseId, quiz, openLabel }: QuizRowProps) {
+function QuizRow({ courseId, quiz, purpose, openLabel }: QuizRowProps) {
   const t = useTranslations("teacher.activities.home");
+  // Deep-link into the new teacher assessment surface (practice vs graded),
+  // not the legacy /dashboard route.
+  const segment = purpose === "graded" ? "quiz" : "practice";
   return (
     <Link
-      href={`/dashboard/courses/${courseId}/quizzes/${quiz.id}`}
+      href={`/teacher/courses/${courseId}/${segment}/${quiz.id}`}
       className="group flex items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-surface-hover)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[var(--color-primary)]/40"
     >
       <span className="min-w-0 flex-1">

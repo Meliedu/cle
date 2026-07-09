@@ -52,7 +52,14 @@ export function TeacherInsightsBrowser() {
           onValueChange={(val) => setSelectedId((val as string | null) ?? null)}
         >
           <SelectTrigger id="insights-course" className="w-full max-w-xs">
-            <SelectValue placeholder={t("picker.placeholder")} />
+            {/* base-ui Select.Value renders the raw value by default; map the
+                selected course id back to its display name. */}
+            <SelectValue placeholder={t("picker.placeholder")}>
+              {(value) =>
+                courses.find((c) => c.id === value)?.name ??
+                t("picker.placeholder")
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {courses.map((course) => (

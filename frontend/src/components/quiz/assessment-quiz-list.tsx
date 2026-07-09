@@ -13,6 +13,7 @@ import { EmptyState, StateBanner } from "@/components/patterns";
 import { GenerateQuizDialog } from "@/components/quiz/generate-quiz-dialog";
 import { useQuizzes, type QuizResponse } from "@/hooks/use-quizzes";
 import {
+  assessmentBase,
   filterByPurpose,
   type AssessmentConfig,
 } from "@/components/quiz/assessment-config";
@@ -136,7 +137,7 @@ function QuizCard({ courseId, config, quiz, t }: QuizCardProps) {
   const published = quiz.is_published;
   return (
     <Card className="group h-full transition-all duration-[var(--duration-normal)] hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)]">
-      <Link href={`${config.base(courseId)}/${quiz.id}`} className="block">
+      <Link href={`${assessmentBase(config, courseId)}/${quiz.id}`} className="block">
         <CardContent className="space-y-3">
           <h3 className="line-clamp-2 font-semibold text-[var(--color-text)] transition-colors duration-[var(--duration-fast)] group-hover:text-[var(--color-primary)]">
             {quiz.title}

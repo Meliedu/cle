@@ -8,7 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, StateBanner } from "@/components/patterns";
 import { useQuiz } from "@/hooks/use-quizzes";
-import type { AssessmentConfig } from "@/components/quiz/assessment-config";
+import {
+  assessmentBase,
+  type AssessmentConfig,
+} from "@/components/quiz/assessment-config";
 
 interface AssessmentQuizResultsProps {
   readonly courseId: string;
@@ -32,7 +35,7 @@ export function AssessmentQuizResults({
   const t = useTranslations(config.ns);
   const { data: quiz, isLoading, error } = useQuiz(quizId);
 
-  const backHref = `${config.base(courseId)}/${quizId}`;
+  const backHref = `${assessmentBase(config, courseId)}/${quizId}`;
 
   return (
     <div className="space-y-6">
