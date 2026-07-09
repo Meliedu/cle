@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { AuthCard } from "@/components/auth/auth-card";
@@ -15,6 +15,7 @@ import { MicrosoftButton } from "@/components/auth/microsoft-button";
 import { PrimaryButton } from "@/components/auth/auth-buttons";
 import { TextField } from "@/components/auth/text-field";
 import { authClient } from "@/lib/auth-client";
+import { isEmailPasswordHost } from "@/lib/auth-flags";
 import { sanitizeRedirect } from "@/lib/redirect";
 
 const MICROSOFT_SSO_ENABLED =
@@ -45,6 +46,13 @@ export default function SignInPage() {
   const [busy, setBusy] = useState(false);
   const [microsoftBusy, setMicrosoftBusy] = useState(false);
   const [hkustPending, setHkustPending] = useState<HkustProviderId | null>(null);
+  // Email/password is host-gated: on only for the dev domain + localhost, off
+  // for the SSO-only production host. Resolved after mount (needs the real
+  // hostname); defaults to off so production never flashes the credential form.
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  useEffect(() => {
+    setEmailEnabled(isEmailPasswordHost(window.location.hostname));
+  }, []);
 
   const emailRef = useRef<HTMLInputElement | null>(null);
   const passwordRef = useRef<HTMLInputElement | null>(null);
@@ -131,41 +139,48 @@ export default function SignInPage() {
         heading="Sign in to Meli"
         subtitle="Pick up your courses, checkpoints, and this week's next steps."
         footer={
-          <AuthLinkRow
-            question="New here?"
-            href="/sign-up"
-            cta="Create an account"
-          />
+          // Manual account creation only exists on the email/password path;
+          // SSO-only environments auto-provision on first login.
+          emailEnabled ? (
+            <AuthLinkRow
+              question="New here?"
+              href="/sign-up"
+              cta="Create an account"
+            />
+          ) : undefined
         }
       >
         {HKUST_SSO_ENABLED || MICROSOFT_SSO_ENABLED ? (
-          <>
-            <div className="space-y-3">
-              {HKUST_SSO_ENABLED ? (
-                <div className="space-y-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                    Sign in with HKUST
-                  </p>
-                  <HkustSsoButtons
-                    onProvider={onHkust}
-                    pending={hkustPending}
-                    disabled={busy || microsoftBusy}
-                  />
-                </div>
-              ) : null}
-
-              {MICROSOFT_SSO_ENABLED ? (
-                <MicrosoftButton
-                  onClick={onMicrosoft}
-                  loading={microsoftBusy}
-                  disabled={busy || Boolean(hkustPending)}
+          <div className="space-y-3">
+            {HKUST_SSO_ENABLED ? (
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                  Sign in with HKUST
+                </p>
+                <HkustSsoButtons
+                  onProvider={onHkust}
+                  pending={hkustPending}
+                  disabled={busy || microsoftBusy}
                 />
-              ) : null}
-            </div>
-            <DividerLabel label="or with email" />
-          </>
+              </div>
+            ) : null}
+
+            {MICROSOFT_SSO_ENABLED ? (
+              <MicrosoftButton
+                onClick={onMicrosoft}
+                loading={microsoftBusy}
+                disabled={busy || Boolean(hkustPending)}
+              />
+            ) : null}
+          </div>
         ) : null}
 
+        {/* The divider only belongs between two real methods. */}
+        {(HKUST_SSO_ENABLED || MICROSOFT_SSO_ENABLED) && emailEnabled ? (
+          <DividerLabel label="or with email" />
+        ) : null}
+
+        {emailEnabled ? (
         <form onSubmit={onSubmit} className="space-y-4" noValidate>
           <TextField
             ref={emailRef}
@@ -223,6 +238,7 @@ export default function SignInPage() {
             Sign in
           </PrimaryButton>
         </form>
+        ) : null}
       </AuthCard>
     </AuthShell>
   );

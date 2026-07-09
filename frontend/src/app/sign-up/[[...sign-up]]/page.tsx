@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AuthCard } from "@/components/auth/auth-card";
@@ -14,6 +14,7 @@ import {
 import { PrimaryButton } from "@/components/auth/auth-buttons";
 import { TextField } from "@/components/auth/text-field";
 import { authClient } from "@/lib/auth-client";
+import { isEmailPasswordHost } from "@/lib/auth-flags";
 import { ALLOWED_DOMAINS } from "@/lib/auth-domain";
 
 const MICROSOFT_SSO_ENABLED =
@@ -51,6 +52,17 @@ export default function SignUpPage() {
   const nameRef = useRef<HTMLInputElement | null>(null);
   const emailRef = useRef<HTMLInputElement | null>(null);
   const passwordRef = useRef<HTMLInputElement | null>(null);
+
+  // Host-gated like sign-in. `null` = not yet resolved (needs the real
+  // hostname, only available after mount). SSO-only environments (production)
+  // have no email/password sign-up, so send people to /sign-in — it hosts the
+  // SSO buttons and auto-provisions the account on first login.
+  const [emailEnabled, setEmailEnabled] = useState<boolean | null>(null);
+  useEffect(() => {
+    const ok = isEmailPasswordHost(window.location.hostname);
+    setEmailEnabled(ok);
+    if (!ok) router.replace("/sign-in");
+  }, [router]);
 
   const onMicrosoft = async () => {
     setErrors({});
@@ -110,6 +122,10 @@ export default function SignUpPage() {
   };
 
   const allowedDomainsLabel = ALLOWED_DOMAINS.map((d) => `@${d}`).join(" / ");
+
+  // Render nothing until the host is resolved, or while redirecting away in
+  // SSO-only mode.
+  if (emailEnabled !== true) return null;
 
   return (
     <AuthShell tagline="Get started">

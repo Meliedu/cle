@@ -27,6 +27,7 @@ import {
   DisallowedEmailDomainError,
   ALLOWED_DOMAINS,
 } from "@/lib/auth-domain";
+import { isEmailPasswordHost } from "@/lib/auth-flags";
 import {
   sendResetPasswordEmail,
   sendVerificationEmail,
@@ -185,6 +186,10 @@ export const auth = betterAuth({
   trustedOrigins: [baseURL],
 
   emailAndPassword: {
+    // Registered on every host, but the before-hook below rejects the email
+    // sign-in/up/reset endpoints on the SSO-only production host. (Prod and dev
+    // share one deployment, so a static per-env `enabled` can't tell them
+    // apart — the gate has to be per-request by Host.)
     enabled: true,
     requireEmailVerification: true,
     minPasswordLength: 8,
@@ -291,6 +296,29 @@ export const auth = betterAuth({
     // databaseHooks.user.create.before path below, which runs after the
     // OAuth round-trip but BEFORE the row is committed.
     before: createAuthMiddleware(async (ctx) => {
+      // SSO-only production gate. The email/password endpoints stay live on the
+      // dev domain + localhost but are rejected on the production host — hiding
+      // the form is not enough, since a direct API call would otherwise still
+      // create/authenticate a credential account. Host is read per-request
+      // because prod and dev are the same deployment.
+      const EMAIL_AUTH_PATHS = new Set([
+        "/sign-in/email",
+        "/sign-up/email",
+        "/forget-password",
+        "/reset-password",
+      ]);
+      if (EMAIL_AUTH_PATHS.has(ctx.path)) {
+        const host =
+          ctx.headers?.get("x-forwarded-host") ??
+          ctx.headers?.get("host") ??
+          "";
+        if (!isEmailPasswordHost(host)) {
+          throw new APIError("FORBIDDEN", {
+            message: "Email sign-in is disabled here. Please sign in with HKUST.",
+          });
+        }
+      }
+
       if (ctx.path !== "/sign-up/email") return;
       const email = ctx.body?.email as string | undefined;
       if (!email) return;
