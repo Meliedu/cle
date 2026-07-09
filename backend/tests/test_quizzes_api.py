@@ -591,6 +591,40 @@ async def test_get_quiz_exposes_disclosure_fields_redacts_answer_for_student(
     assert data["questions"][0]["correct_answer"] is None
 
 
+@pytest.mark.asyncio
+async def test_get_quiz_serializes_list_form_options(
+    db_session: AsyncSession, owned_course: Course,
+    logged_in_user: User, enrolled_student: User,
+):
+    """GET /quizzes/{id} must not 500 on questions whose `options` is a JSON
+    array. Ordering questions (and some seeded MC questions) store `options`
+    as a list; the response schema must represent that, not only dicts.
+    Regression: a `dict | None` schema raised ResponseValidationError -> 500,
+    which bypassed CORS and left the student practice/quiz pages on skeletons."""
+    quiz = await _make_quiz(
+        db_session, owned_course, logged_in_user.id, is_published=True,
+    )
+    q = Question(
+        quiz_id=quiz.id,
+        question_index=0,
+        type="ordering",
+        question_text="Put these in order.",
+        options=["first", "second", "third"],
+        correct_answer='["first","second","third"]',
+        explanation=None,
+    )
+    db_session.add(q)
+    await db_session.commit()
+
+    async with _student_client(db_session, enrolled_student) as ac:
+        r = await ac.get(f"/api/quizzes/{quiz.id}")
+        assert r.status_code == 200, r.text
+    app.dependency_overrides.clear()
+
+    options = r.json()["data"]["questions"][0]["options"]
+    assert options == ["first", "second", "third"]
+
+
 # --------------------------------------------------------------------------- #
 #  PUT /quizzes/{id}: persist score-policy fields (B1 columns) — the gap fix   #
 # --------------------------------------------------------------------------- #

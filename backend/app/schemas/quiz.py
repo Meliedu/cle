@@ -23,7 +23,12 @@ class QuestionResponse(BaseModel):
     question_index: int
     type: str
     question_text: str
-    options: dict | None
+    # `options` is polymorphic by question type: MC/matching store a JSON object
+    # ({key: label} / {left, right}), ordering stores a JSON array (items[]),
+    # short_answer stores null. The response schema must represent all three or
+    # FastAPI raises ResponseValidationError (500) on list-form options — which
+    # bypasses CORS and strands the student practice/quiz pages on skeletons.
+    options: dict | list | None
     explanation: str | None
     difficulty: str = "medium"
     # Populated only for instructors / quiz creators on endpoints that return
