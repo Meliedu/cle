@@ -133,9 +133,14 @@ async function linkUserOnBackend(input: {
 //
 // VERIFIED callback path (better-auth 1.6.23 generic-oauth plugin):
 //   ${baseURL}/api/auth/oauth2/callback/{providerId}
-// i.e. /api/auth/oauth2/callback/hkust-staff and .../hkust-student.
+// i.e. /api/auth/oauth2/callback/hkust and .../hkust-student.
 // Route registered as "/oauth2/callback/:providerId" under basePath
 // "/api/auth" — see docs/oidc-redirect-uris.md for the evidence trail.
+//
+// The staff providerId is bare "hkust" (not "hkust-staff") because the staff
+// Entra app was registered by HKUST with redirect URIs ending in
+// .../callback/hkust (ITSO email 2026-07). The registered URI wins — renaming
+// on our side is a one-line change; re-registering theirs is a round-trip.
 //
 // The email-domain gate + user-linking databaseHooks below fire on
 // `user.create` regardless of sign-in method, so OIDC sign-ups are gated and
@@ -144,9 +149,19 @@ async function linkUserOnBackend(input: {
 // tracked in the ITSO doc; it is intentionally out of scope here.
 const hkustOidcProviders = [
   {
-    providerId: "hkust-staff",
-    clientId: process.env.HKUST_STAFF_MELI_CLIENT_ID ?? "",
-    clientSecret: process.env.HKUST_STAFF_MELI_CLIENT_SECRET ?? "",
+    providerId: "hkust",
+    // Canonical names carry the MELI_ infix (the HKUST tenant hosts a second
+    // app, XiYouQuest, so secrets are disambiguated per app). The deployed
+    // Vercel project predates that convention and stores the staff pair as
+    // HKUST_STAFF_CLIENT_ID / _SECRET — accept both so neither store breaks.
+    clientId:
+      process.env.HKUST_STAFF_MELI_CLIENT_ID ??
+      process.env.HKUST_STAFF_CLIENT_ID ??
+      "",
+    clientSecret:
+      process.env.HKUST_STAFF_MELI_CLIENT_SECRET ??
+      process.env.HKUST_STAFF_CLIENT_SECRET ??
+      "",
     discoveryUrl: process.env.HKUST_STAFF_DISCOVERY_URL ?? "",
     scopes: ["openid", "profile", "email"],
   },
@@ -232,22 +247,27 @@ export const auth = betterAuth({
     },
   },
 
-  socialProviders: {
-    // HKUST uses Microsoft 365 — both ust.hk (faculty) and connect.ust.hk
-    // (students) live in the HKUST Entra ID tenant, so Microsoft SSO is the
-    // primary path. Email/password is kept on for testing only. We do not
-    // enable Google or any other provider per product policy.
-    //
-    // tenantId defaults to "organizations" (only work/school accounts, no
-    // personal Microsoft accounts). Set MICROSOFT_TENANT_ID to the HKUST
-    // tenant GUID to lock to that tenant only.
-    microsoft: {
-      clientId: process.env.MICROSOFT_CLIENT_ID ?? "",
-      clientSecret: process.env.MICROSOFT_CLIENT_SECRET ?? "",
-      tenantId: process.env.MICROSOFT_TENANT_ID ?? "organizations",
-      prompt: "select_account",
-    },
-  },
+  // HKUST uses Microsoft 365 — both ust.hk (faculty) and connect.ust.hk
+  // (students) live in the HKUST Entra ID tenant, so Microsoft SSO is the
+  // primary path. Email/password is kept on for testing only. We do not
+  // enable Google or any other provider per product policy.
+  //
+  // Only register the provider when both credentials exist (mirrors the
+  // genericOAuth filter above); otherwise Better Auth logs a "missing
+  // clientId/clientSecret" warning on every request in dev. tenantId defaults
+  // to "organizations" (work/school accounts only); set MICROSOFT_TENANT_ID to
+  // the HKUST tenant GUID to lock to that tenant.
+  socialProviders:
+    process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET
+      ? {
+          microsoft: {
+            clientId: process.env.MICROSOFT_CLIENT_ID,
+            clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+            tenantId: process.env.MICROSOFT_TENANT_ID ?? "organizations",
+            prompt: "select_account",
+          },
+        }
+      : {},
 
   plugins: [
     // Issues signed JWTs and exposes a JWKS endpoint at /api/auth/jwks
