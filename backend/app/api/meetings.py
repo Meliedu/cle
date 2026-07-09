@@ -6,6 +6,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._helpers import verify_enrollment
 from app.api.deps import get_current_user, get_db, get_owned_course
 from app.models import (
     Assignment,
@@ -82,15 +83,39 @@ async def create_meeting(
 
 @router.get("/meetings", response_model=APIResponse[list[CourseMeetingResponse]])
 async def list_meetings(
+    course_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    course: Course = Depends(get_owned_course),
+    user: User = Depends(get_current_user),
 ) -> APIResponse[list[CourseMeetingResponse]]:
-    result = await db.execute(
-        select(CourseMeeting)
-        .where(CourseMeeting.course_id == course.id, CourseMeeting.deleted_at.is_(None))
-        .order_by(CourseMeeting.scheduled_at)
+    """List a course's sessions.
+
+    The owning instructor sees every session (all release states). Enrolled
+    students see only ``released``/``completed`` sessions — the release-state
+    visibility rule (S025/S026): locked and archived sessions are never exposed
+    to students. Non-owners must hold an active enrollment (403 otherwise).
+    """
+    course = (
+        await db.execute(
+            select(Course).where(
+                Course.id == course_id, Course.deleted_at.is_(None)
+            )
+        )
+    ).scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    is_owner = course.instructor_id == user.id
+    if not is_owner:
+        await verify_enrollment(db, course_id, user.id)
+
+    stmt = select(CourseMeeting).where(
+        CourseMeeting.course_id == course.id, CourseMeeting.deleted_at.is_(None)
     )
-    meetings = result.scalars().all()
+    if not is_owner:
+        stmt = stmt.where(CourseMeeting.release_state.in_(("released", "completed")))
+    stmt = stmt.order_by(CourseMeeting.scheduled_at)
+
+    meetings = (await db.execute(stmt)).scalars().all()
     return APIResponse(
         success=True,
         data=[CourseMeetingResponse.model_validate(m) for m in meetings],
