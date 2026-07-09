@@ -194,11 +194,14 @@ export const auth = betterAuth({
   database: pool,
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL,
-  // Defense-in-depth against open redirects / CSRF: only our own origin may
+  // Defense-in-depth against open redirects / CSRF: only our own origins may
   // receive auth callbacks and redirects. The client-side sanitizeRedirect
   // guard (src/lib/redirect.ts) is the first line; this is the server-side
-  // backstop. Deliberately minimal — one origin, derived from baseURL.
-  trustedOrigins: [baseURL],
+  // backstop. The dev domain is included because prod and dev are ONE
+  // deployment (baseURL points at prod): without it, better-auth rejects
+  // every auth POST from cle-meli-dev with INVALID_ORIGIN — including the
+  // email/password path that domain exists to keep.
+  trustedOrigins: [baseURL, "https://cle-meli-dev.hkust.edu.hk"],
 
   emailAndPassword: {
     // Registered on every host, but the before-hook below rejects the email
