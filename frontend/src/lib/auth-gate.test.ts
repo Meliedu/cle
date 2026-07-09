@@ -110,4 +110,23 @@ describe("SSO-only production gate (server hook)", () => {
     const res = await auth.handler(prodRequest("/ok", { method: "GET" }));
     expect(res.status).toBe(200);
   });
+
+  it("blocks a spoofed X-Forwarded-Host=dev when the real Host is production", async () => {
+    // Fail-closed proof: an attacker on the prod domain who spoofs the
+    // forwarded header to a dev host must NOT re-enable the credential path —
+    // the authoritative Host still says prod, so `.every()` rejects it.
+    const req = new Request(`${BASE}/sign-in/email`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost:3000",
+        host: PROD_HOST,
+        "x-forwarded-host": "cle-meli-dev.hkust.edu.hk",
+      },
+      body: JSON.stringify({ email: "a@ust.hk", password: "hunter2hunter2" }),
+    });
+    const res = await auth.handler(req);
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain("HKUST");
+  });
 });

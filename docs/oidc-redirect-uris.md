@@ -42,9 +42,11 @@ instance uses the default basePath `/api/auth` (no `basePath` override in
    `basePath`, so the default `/api/auth` applies (consistent with the JWKS
    endpoint the backend already consumes at `/api/auth/jwks`).
 
-`providerId` is our choice, set in `src/lib/auth.ts`. We use **`hkust-staff`**
-and **`hkust-student`** — two distinct provider IDs so the two Entra tenants
-never collide on a shared callback path.
+`providerId` is our choice, set in `src/lib/auth.ts`. We use **`hkust`**
+(staff) and **`hkust-student`** — two distinct provider IDs so the two Entra
+tenants never collide on a shared callback path. The staff ID is bare `hkust`
+because that is the redirect URI HKUST registered on the staff Entra app
+(see §4 — decision resolved).
 
 ---
 
@@ -61,13 +63,20 @@ Origins (from handoff §3.2 / §4):
 **Sign-in entry URL** (app login page, same for both tenants):
 `https://cle-meli.hkust.edu.hk`
 
-### 2.1 Staff provider — `providerId = hkust-staff`
+### 2.1 Staff provider — `providerId = hkust`
 
 | Env   | Redirect URI |
 |-------|--------------|
-| Local | `http://localhost:3000/api/auth/oauth2/callback/hkust-staff` |
-| Dev   | `https://cle-meli-dev.hkust.edu.hk/api/auth/oauth2/callback/hkust-staff` |
-| Prod  | `https://cle-meli.hkust.edu.hk/api/auth/oauth2/callback/hkust-staff` |
+| Local | `http://localhost:3000/api/auth/oauth2/callback/hkust` |
+| Dev   | `https://cle-meli-dev.hkust.edu.hk/api/auth/oauth2/callback/hkust` |
+| Prod  | `https://cle-meli.hkust.edu.hk/api/auth/oauth2/callback/hkust` |
+
+Per the ITSO/CLE email (2026-07), the staff app is registered with the Dev
+and Prod URIs above, plus bare `http://localhost:3000` — **not** the full
+local callback path. Local staff sign-in will fail with a redirect-URI
+mismatch until `http://localhost:3000/api/auth/oauth2/callback/hkust` is
+added to the staff app registration (flagged back to ITSO; does not affect
+Dev/Prod).
 
 ### 2.2 Student provider — `providerId = hkust-student`
 
@@ -92,24 +101,22 @@ Origins (from handoff §3.2 / §4):
 
 ---
 
-## 4. Open decision — staff callback path (`hkust` vs `hkust-staff`)
+## 4. RESOLVED — staff callback path is `hkust` (not `hkust-staff`)
 
-The handoff (§3.2) notes the **staff** Entra app may already be registered
-with a redirect URI ending in `.../callback/hkust` (the old inferred single
-provider). Our code now uses **`hkust-staff`** for tenant symmetry with
-`hkust-student`. Two ways to reconcile:
+The CLE/ITSO email (2026-07) confirmed the staff Entra app is registered
+with redirect URIs ending in `.../callback/hkust`:
 
-- **Recommended (default): ITSO updates the staff app** to the three
-  `.../callback/hkust-staff` URIs in §2.1. Keeps the two providers symmetric
-  and self-documenting (`hkust-staff` / `hkust-student`).
-- **Alternative: rename our providerId to `hkust`.** A one-line change in
-  `src/lib/auth.ts` (and the button `providerId`), avoiding any ITSO edit to
-  the staff app — but then the student provider is `hkust-student` while the
-  staff one is bare `hkust`, which is asymmetric.
+```
+https://cle-meli.hkust.edu.hk/api/auth/oauth2/callback/hkust
+https://cle-meli-dev.hkust.edu.hk/api/auth/oauth2/callback/hkust
+http://localhost:3000
+```
 
-**Action:** ask ITSO to confirm the currently-registered staff redirect
-path. If they can add/update URIs easily, go with `hkust-staff`. Do **not**
-finalise the student registration until this is settled so both match.
+We took the "rename our providerId" path: the staff provider in
+`src/lib/auth.ts` (and the sign-in button) is now **`hkust`**, matching the
+registration as-is with no ITSO round-trip. The student provider stays
+`hkust-student` — asymmetric but harmless. Remaining loose end: the local
+entry is the bare origin, not the full callback path (see §2.1 note).
 
 ---
 
@@ -183,3 +190,8 @@ they already do for Microsoft-social and email/password sign-ups:
   `.../callback/hkust-student` split (handoff §3.2) with the verified
   `.../api/auth/oauth2/callback/{providerId}` pattern and standardised the
   staff provider on `hkust-staff` (pending the §4 decision).
+- 2026-07-09: §4 resolved by CLE/ITSO email — staff app is registered as
+  `.../callback/hkust`, so the staff providerId was renamed `hkust-staff` →
+  `hkust` in `src/lib/auth.ts`, `components/auth/hkust-sso-buttons.tsx`, and
+  `.env.example`. Flagged the bare `http://localhost:3000` local entry back
+  to ITSO (full callback path needed for local staff sign-in).

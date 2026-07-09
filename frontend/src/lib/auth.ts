@@ -317,14 +317,21 @@ export const auth = betterAuth({
       // create/authenticate a credential account. Host is read per-request
       // because prod and dev are the same deployment.
       if (EMAIL_AUTH_PATHS.has(ctx.path)) {
-        // x-forwarded-host is trusted because Vercel overwrites it at the
-        // edge. Revisit if another proxy ever fronts this deployment — a
-        // pass-through proxy would let clients spoof it.
-        const host =
-          ctx.headers?.get("x-forwarded-host") ??
-          ctx.headers?.get("host") ??
-          "";
-        if (!isEmailPasswordHost(host)) {
+        // Fail-closed on host. Email is allowed only when EVERY host signal
+        // present (Host + X-Forwarded-Host) is an email host. This does NOT
+        // rely on Vercel overwriting a client-supplied X-Forwarded-Host:
+        // Vercel sets at least one of these authoritatively to the served
+        // domain, so a request that actually arrived on the production host
+        // always carries prod in Host and/or X-Forwarded-Host — spoofing just
+        // one to a dev value still leaves the real prod host in the other, and
+        // `.every()` blocks it. (Absent all host headers → also blocked.)
+        const hostSignals = [
+          ctx.headers?.get("host"),
+          ctx.headers?.get("x-forwarded-host"),
+        ].filter((h): h is string => Boolean(h));
+        const emailAllowedHere =
+          hostSignals.length > 0 && hostSignals.every(isEmailPasswordHost);
+        if (!emailAllowedHere) {
           throw new APIError("FORBIDDEN", {
             message: "Email sign-in is disabled here. Please sign in with HKUST.",
           });
