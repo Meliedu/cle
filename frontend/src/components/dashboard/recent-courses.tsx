@@ -1,9 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, KeyRound, Plus } from "lucide-react";
 import type { CourseResponse } from "@/hooks/use-courses";
 import { CourseRowCard } from "@/components/dashboard/course-row-card";
+import { Button } from "@/components/ui/button";
+import { useRole } from "@/hooks/use-role";
+import { JoinCourseDialog } from "@/components/course/join-course-dialog";
+import { CreateCourseDialog } from "@/components/course/create-course-dialog";
 
 interface RecentCoursesProps {
   readonly courses: readonly CourseResponse[];
@@ -11,6 +16,10 @@ interface RecentCoursesProps {
 }
 
 export function RecentCourses({ courses, limit = 4 }: RecentCoursesProps) {
+  const { isInstructor } = useRole();
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+
   const sorted = [...courses].sort((a, b) =>
     b.updated_at.localeCompare(a.updated_at)
   );
@@ -39,7 +48,11 @@ export function RecentCourses({ courses, limit = 4 }: RecentCoursesProps) {
       </header>
 
       {recent.length === 0 ? (
-        <EmptyState />
+        <EmptyState
+          isInstructor={isInstructor}
+          onCreate={() => setCreateOpen(true)}
+          onJoin={() => setJoinOpen(true)}
+        />
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
           {recent.map((course) => (
@@ -49,19 +62,49 @@ export function RecentCourses({ courses, limit = 4 }: RecentCoursesProps) {
           ))}
         </ul>
       )}
+
+      {/* Students join with an enrollment code; only instructors create. */}
+      {isInstructor ? (
+        <CreateCourseDialog open={createOpen} onOpenChange={setCreateOpen} />
+      ) : (
+        <JoinCourseDialog open={joinOpen} onOpenChange={setJoinOpen} />
+      )}
     </section>
   );
 }
 
-function EmptyState() {
+interface EmptyStateProps {
+  readonly isInstructor: boolean;
+  readonly onCreate: () => void;
+  readonly onJoin: () => void;
+}
+
+function EmptyState({ isInstructor, onCreate, onJoin }: EmptyStateProps) {
   return (
     <div className="rounded-[var(--radius-2xl)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-hover)] px-5 py-8 text-center">
       <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">
         No courses yet.
       </p>
-      <p className="mt-1 text-[12px] text-[var(--color-text-muted)]">
-        Create or join one to see it here.
+      <p className="mx-auto mt-1 max-w-sm text-[12px] text-[var(--color-text-muted)]">
+        {isInstructor
+          ? "Create your first course to start uploading materials and generating quizzes."
+          : "Enter the 8-character enrollment code from your instructor to join your first course."}
       </p>
+      <Button
+        size="sm"
+        className="mt-4 gap-2"
+        onClick={isInstructor ? onCreate : onJoin}
+      >
+        {isInstructor ? (
+          <>
+            <Plus className="size-4" /> Create a course
+          </>
+        ) : (
+          <>
+            <KeyRound className="size-4" /> Enter enrollment code
+          </>
+        )}
+      </Button>
     </div>
   );
 }
