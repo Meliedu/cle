@@ -30,8 +30,8 @@ const BUTTONS: readonly ButtonSpec[] = [
 ];
 
 /**
- * The two tenant-routing SSO buttons. Presentational only — the page owns the
- * `authClient.signIn.oauth2(...)` call and error surface (mirrors how
+ * The single "Sign in with HKUST" button. Presentational only — the page owns
+ * the `authClient.signIn.oauth2(...)` call and error surface (mirrors how
  * MicrosoftButton is wired). Rendered by the sign-in page ONLY when
  * NEXT_PUBLIC_HKUST_SSO === "enabled".
  */

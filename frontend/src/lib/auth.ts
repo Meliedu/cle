@@ -170,7 +170,15 @@ const hkustOidcProviders = [
     // preferred_username, so the email-domain gate always sees an address.
     getUserInfo: async (tokens: { idToken?: string }) => {
       if (!tokens.idToken) return null;
-      const c = decodeJwt(tokens.idToken);
+      // decodeJwt throws (JWTInvalid) on a malformed token; the caller does not
+      // wrap getUserInfo, so returning null here yields a clean error redirect
+      // instead of an unhandled 500.
+      let c: ReturnType<typeof decodeJwt>;
+      try {
+        c = decodeJwt(tokens.idToken);
+      } catch {
+        return null;
+      }
       if (!c.sub) return null;
       const email = String(
         (c.email as string) ?? (c.preferred_username as string) ?? "",
