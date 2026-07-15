@@ -21,6 +21,7 @@ import { createAuthMiddleware, APIError } from "better-auth/api";
 import { dash } from "@better-auth/infra";
 import { Pool } from "pg";
 import bcrypt from "bcrypt";
+import { decodeJwt } from "jose";
 
 import {
   detectRoleFromEmail,
@@ -119,42 +120,37 @@ async function linkUserOnBackend(input: {
 }
 
 // ---------------------------------------------------------------------------
-// HKUST OIDC (Entra ID) — dormant until env vars are supplied.
+// HKUST OIDC (Entra ID) — single multi-tenant provider.
 //
-// HKUST runs TWO separate Microsoft Entra tenants: a Staff tenant (@ust.hk)
-// and a Student tenant (@connect.ust.hk). Each needs its own OIDC app
-// registration (client id, secret, discovery URL), so we configure two
-// generic-OAuth providers and route users at login (see the sign-in page's
-// "HKUST Staff" / "HKUST Student" buttons).
+// Per ITSO (Mandy email, 2026-07), both CLE apps authenticate through the
+// MULTI-TENANT `/organizations/` endpoint: ONE app serves staff (@ust.hk) and
+// students (@connect.ust.hk), and Microsoft routes each user to their home
+// tenant by email domain. There is no need to split staff/student into
+// separate providers or buttons.
 //
-// Both slots stay OFF until their env vars exist: any provider missing a
-// clientId / clientSecret / discoveryUrl is filtered out, and the plugin is
-// only registered when at least one provider survives the filter. With no
-// env vars set (today's state) this contributes ZERO behavior change.
+// We supply EXPLICIT endpoints instead of a discovery URL on purpose: the
+// `/organizations/` discovery `issuer` is the templated `.../{tenantid}/v2.0`,
+// and Better Auth's RFC 9207 check compares the callback `iss` (the user's REAL
+// tenant) against that template — rejecting every login with `issuer_mismatch`.
+// With no discoveryUrl/issuer set, that check is skipped; the id_token
+// (back-channel over TLS, PKCE) is the trusted profile source.
 //
-// VERIFIED callback path (better-auth 1.6.23 generic-oauth plugin):
-//   ${baseURL}/api/auth/oauth2/callback/{providerId}
-// i.e. /api/auth/oauth2/callback/hkust and .../hkust-student.
-// Route registered as "/oauth2/callback/:providerId" under basePath
-// "/api/auth" — see docs/oidc-redirect-uris.md for the evidence trail.
-//
-// The staff providerId is bare "hkust" (not "hkust-staff") because the staff
-// Entra app was registered by HKUST with redirect URIs ending in
-// .../callback/hkust (ITSO email 2026-07). The registered URI wins — renaming
-// on our side is a one-line change; re-registering theirs is a round-trip.
-//
-// The email-domain gate + user-linking databaseHooks below fire on
-// `user.create` regardless of sign-in method, so OIDC sign-ups are gated and
-// linked to public.users exactly like Microsoft-social and email/password
-// sign-ups. Affiliation-claim gating (eduPersonAffiliation) is a to-wire item
-// tracked in the ITSO doc; it is intentionally out of scope here.
+// providerId stays bare "hkust" to match the redirect URI HKUST registered
+// (.../api/auth/oauth2/callback/hkust). The provider mounts once clientId +
+// endpoints exist; the client secret is optional (public-client PKCE — Better
+// Auth only sends client_secret when non-empty). The databaseHooks below still
+// gate + link every OIDC sign-up by email domain.
+const HKUST_AUTHORIZE_URL =
+  "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize";
+const HKUST_TOKEN_URL =
+  "https://login.microsoftonline.com/organizations/oauth2/v2.0/token";
+
 const hkustOidcProviders = [
   {
     providerId: "hkust",
-    // Canonical names carry the MELI_ infix (the HKUST tenant hosts a second
-    // app, XiYouQuest, so secrets are disambiguated per app). The deployed
-    // Vercel project predates that convention and stores the staff pair as
-    // HKUST_STAFF_CLIENT_ID / _SECRET — accept both so neither store breaks.
+    // The deployed Vercel project stores the staff pair as
+    // HKUST_STAFF_CLIENT_ID / _SECRET; the canonical names carry a MELI_ infix.
+    // Accept both so neither store breaks. Secret is optional (public client).
     clientId:
       process.env.HKUST_STAFF_MELI_CLIENT_ID ??
       process.env.HKUST_STAFF_CLIENT_ID ??
@@ -163,17 +159,35 @@ const hkustOidcProviders = [
       process.env.HKUST_STAFF_MELI_CLIENT_SECRET ??
       process.env.HKUST_STAFF_CLIENT_SECRET ??
       "",
-    discoveryUrl: process.env.HKUST_STAFF_DISCOVERY_URL ?? "",
+    authorizationUrl: HKUST_AUTHORIZE_URL,
+    tokenUrl: HKUST_TOKEN_URL,
     scopes: ["openid", "profile", "email"],
+    pkce: true,
+    authorizationUrlParams: { prompt: "select_account" },
+    // Entra frequently omits the `email` claim, so the default getUserInfo
+    // (which needs id_token.email) would fall through to a userinfo URL we
+    // don't configure. Decode the id_token ourselves, falling back to
+    // preferred_username, so the email-domain gate always sees an address.
+    getUserInfo: async (tokens: { idToken?: string }) => {
+      if (!tokens.idToken) return null;
+      const c = decodeJwt(tokens.idToken);
+      if (!c.sub) return null;
+      const email = String(
+        (c.email as string) ?? (c.preferred_username as string) ?? "",
+      ).toLowerCase();
+      return {
+        id: String(c.sub),
+        email,
+        emailVerified: true,
+        name: String(
+          (c.name as string) ?? (c.preferred_username as string) ?? "User",
+        ),
+        image:
+          typeof c.picture === "string" ? (c.picture as string) : undefined,
+      };
+    },
   },
-  {
-    providerId: "hkust-student",
-    clientId: process.env.HKUST_STUDENT_MELI_CLIENT_ID ?? "",
-    clientSecret: process.env.HKUST_STUDENT_MELI_CLIENT_SECRET ?? "",
-    discoveryUrl: process.env.HKUST_STUDENT_DISCOVERY_URL ?? "",
-    scopes: ["openid", "profile", "email"],
-  },
-].filter((p) => p.clientId && p.clientSecret && p.discoveryUrl);
+].filter((p) => p.clientId && p.authorizationUrl && p.tokenUrl);
 
 // Credential-path endpoints rejected on SSO-only hosts (see the before-hook).
 // Entries are better-auth's REGISTERED route templates for v1.6.23 — e.g. the

@@ -4,15 +4,15 @@ import { Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-// Staff is bare "hkust" (not "hkust-staff") — it must match the redirect URI
-// HKUST registered on the staff Entra app: .../api/auth/oauth2/callback/hkust.
-export type HkustProviderId = "hkust" | "hkust-student";
+// providerId "hkust" must match the redirect URI HKUST registered on the app:
+// .../api/auth/oauth2/callback/hkust.
+export type HkustProviderId = "hkust";
 
 interface HkustSsoButtonsProps {
   readonly onProvider: (providerId: HkustProviderId) => void;
   /** The provider whose OAuth round-trip is currently in flight, if any. */
   readonly pending?: HkustProviderId | null;
-  /** Disable both buttons (e.g. while another auth action runs). */
+  /** Disable the button (e.g. while another auth action runs). */
   readonly disabled?: boolean;
 }
 
@@ -22,12 +22,11 @@ interface ButtonSpec {
   readonly hint: string;
 }
 
-// HKUST authenticates staff (@ust.hk) and students (@connect.ust.hk) through
-// two SEPARATE Entra tenants, so each routes to its own OIDC provider. The
-// buttons are the routing decision the handoff doc calls for.
+// One button for everyone: per ITSO the app is multi-tenant (/organizations/),
+// so staff (@ust.hk) and students (@connect.ust.hk) sign in through the same
+// provider and Microsoft resolves the tenant by email domain.
 const BUTTONS: readonly ButtonSpec[] = [
-  { id: "hkust", label: "HKUST Staff", hint: "@ust.hk" },
-  { id: "hkust-student", label: "HKUST Student", hint: "@connect.ust.hk" },
+  { id: "hkust", label: "Sign in with HKUST", hint: "@ust.hk / @connect.ust.hk" },
 ];
 
 /**
@@ -42,7 +41,7 @@ export function HkustSsoButtons({
   disabled,
 }: HkustSsoButtonsProps) {
   return (
-    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-2.5">
       {BUTTONS.map(({ id, label, hint }) => {
         const loading = pending === id;
         return (
