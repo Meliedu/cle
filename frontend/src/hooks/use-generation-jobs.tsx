@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
+import { userSafeOr } from "@/lib/contracts/user-safe-text";
 
 export type GenerationJobKind =
   | "generate_quiz"
@@ -62,6 +63,10 @@ interface GenerationJobStore {
 }
 
 const POLL_INTERVAL_MS = 2000;
+
+/** Shown when a background job fails with no user-safe explanation. */
+const GENERIC_JOB_ERROR = "Generation failed. Try again.";
+
 const MAX_POLL_MS = 5 * 60 * 1000; // 5 minutes — hard ceiling
 const KIND_LABEL: Record<GenerationJobKind, string> = {
   generate_quiz: "Quiz",
@@ -197,7 +202,12 @@ export function GenerationJobsProvider({ children }: { children: ReactNode }) {
             patch: {
               status: data.status,
               result: data.result,
-              error: data.error,
+              // `tasks.error_message` is written by the worker's sanitiser,
+              // which redacts credential URLs but deliberately KEEPS the
+              // exception class name. The dock and its toast render this
+              // string directly, so it is filtered here at ingest rather than
+              // at each render site.
+              error: userSafeOr(data.error, GENERIC_JOB_ERROR),
             },
           });
 
@@ -210,7 +220,10 @@ export function GenerationJobsProvider({ children }: { children: ReactNode }) {
             type: "update",
             jobId: job.jobId,
             patch: {
-              error: err instanceof Error ? err.message : "Network error",
+              error:
+                err instanceof Error
+                  ? userSafeOr(err.message, "Network error")
+                  : "Network error",
             },
           });
         }

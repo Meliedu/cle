@@ -14,7 +14,29 @@
     "flashcards": "字卡",
     "pronunciation": "發音練習",
     "liveQuiz": "即時問答",
-    "signOut": "登出"
+    "signOut": "登出",
+    "home": "首頁",
+    "calendar": "行事曆",
+    "insights": "洞察",
+    "myProgress": "我的進度",
+    "logout": "登出",
+    "mainLabel": "主要導覽",
+    "courseLabel": "課程",
+    "navigationLabel": "導覽",
+    "closeNavigation": "關閉導覽",
+    "brandHome": "Meli 首頁",
+    "openNavigation": "開啟導覽",
+    "course": {
+      "overview": "總覽",
+      "sessions": "課堂",
+      "materials": "教材",
+      "activities": "活動",
+      "practice": "練習",
+      "students": "學生",
+      "insights": "洞察",
+      "progress": "進度"
+    },
+    "wordmark": "Meli / 課程工作室"
   },
   "dashboard": {
     "welcome": "歡迎回來",
@@ -63,6 +85,21 @@
       "next": "下一步",
       "save": "儲存",
       "progress": "第 {current} 步，共 {total} 步"
+    },
+    "calendar": {
+      "subtitle": "課程課堂與自動產生的活動會自動顯示。",
+      "addEvent": "新增事件",
+      "periodLabel": "顯示期間",
+      "daySelected": "已選擇 {date}",
+      "provenance": "由課程設定自動加入",
+      "canvasProvenance": "自 Canvas 同步",
+      "filterHint": "顯示 {total} 門課程中的 {shown} 門",
+      "showAll": "顯示所有課程",
+      "dayEmptyReason": "這天的課堂、自動發布與截止項目會顯示在這裡。",
+      "monthEmpty": "本月沒有排程。",
+      "weekEmpty": "本週沒有排程。",
+      "viewWeek": "查看本週",
+      "venueOnline": "線上"
     }
   },
   "teacher": {
@@ -152,7 +189,219 @@
         "FINAL_CARD_FIXED": "最終意見卡片無法移除。",
         "REVIEW_REQUIRED": "此檢查點僅能在草稿狀態下編輯。",
         "REMOVE_REASON_REQUIRED": "移除此卡片前請選擇原因。"
+      },
+      "stages": {
+        "basics": "基本資料",
+        "sources": "教材",
+        "schedule": "課表",
+        "review": "檢視",
+        "publish": "發佈"
+      },
+      "stageProgress": "已完成 {total} 項中的 {done} 項",
+      "stepperLabel": "課程設定階段",
+      "stageLocked": "完成先前階段後才會開啟「{stage}」",
+      "savedJustNow": "剛剛已儲存",
+      "savedAt": "已於 {when} 儲存",
+      "saving": "儲存中",
+      "saveAndLeave": "儲存並離開",
+      "exitConfirm": "您的進度已儲存，可以隨時回到此課程設定。",
+      "processingContinues": "即使離開此頁面，處理仍會安全繼續。",
+      "backToCourses": "課程",
+      "setupBreadcrumb": "課程設定",
+      "provenanceTitle": "教材來源",
+      "provenanceReason": "Meli 在此步驟使用的內容",
+      "provenanceEmpty": "尚未加入教材。",
+      "grounded": "已建立索引",
+      "processing": "處理中",
+      "failed": "需要處理",
+      "queued": "排隊中",
+      "safeToLeaveTitle": "可安全離開",
+      "safeProcessing": "{count} 份教材處理中",
+      "safeAttention": "{count} 份教材需要處理",
+      "safeAllReady": "{count} 份教材已就緒",
+      "lastChecked": "最後檢查 · {when}",
+      "stateOk": "就緒",
+      "stateWarning": "警告",
+      "stateWorking": "處理中",
+      "retryParsing": "重新解析",
+      "replaceFile": "更換檔案",
+      "removeSource": "移除教材",
+      "filesSaved": "您的檔案已儲存",
+      "sourcesTitle": "課程教材",
+      "sourcesReason": "Meli 會依據這些內容草擬學習成果、課表與檢核點。",
+      "readingSources": "正在讀取課程教材",
+      "stageTitle": {
+        "basics": "課程基本資料",
+        "sources": "課程教材",
+        "schedule": "課表與課堂",
+        "review": "檢視課程內容",
+        "publish": "檢視並發佈"
+      },
+      "continueTo": "繼續前往{stage}",
+      "blockedReason": "請先完成此階段再繼續。",
+      "jumpToSource": "前往需要處理的教材",
+      "saved": "已儲存"
+    },
+    "course": {
+      "breadcrumb": "課程",
+      "tabs": {
+        "overview": "總覽",
+        "sessions": "課堂",
+        "materials": "教材",
+        "activities": "活動",
+        "practice": "練習",
+        "students": "學生",
+        "enrollment": "學生",
+        "insights": "洞察",
+        "reports": "報表",
+        "memory": "課程記憶",
+        "schedule": "課表",
+        "setup": "設定"
+      },
+      "status": {
+        "draft": "草稿",
+        "setup": "設定中",
+        "published": "已發佈",
+        "archived": "已封存"
+      },
+      "overview": {
+        "nextTeachingToday": "今天 {time} 上課",
+        "nextTeachingOn": "{date} {time} 上課",
+        "teachingNow": "正在授課",
+        "openSession": "開啟{title}",
+        "editSession": "編輯課堂",
+        "enrolled": "{count} 人已註冊",
+        "minutes": "{count} 分鐘",
+        "sourcesReady": "{total} 份教材中有 {ready} 份就緒",
+        "sourcesNone": "尚未加入教材",
+        "noSessionTitle": "尚未排定課堂",
+        "noSessionReason": "新增課表後，下一堂課與其就緒狀態會顯示在這裡。",
+        "noSessionAction": "開啟課表",
+        "setupTitle": "完成本課程的設定",
+        "setupReason": "必須完成基本資料、教材、課表與檢視並發佈後，學生才能加入。",
+        "setupAction": "繼續設定",
+        "thisWeek": "本週",
+        "thisWeekReason": "單一順序；每次發布都沿用相同教材。",
+        "thisWeekEmpty": "未來七天沒有排程。",
+        "readinessLabel": "課程就緒狀態",
+        "readyTitle": "已準備好下一堂課",
+        "notReadyTitle": "下一堂課前需要處理",
+        "noClassTitle": "沒有待準備的課堂",
+        "readinessReason": "依課程活動判斷的下一堂課就緒狀態。",
+        "learnersEnrolled": "位學生已註冊",
+        "sessionsScheduled": "堂課已排定",
+        "sourcesReadyShort": "份教材就緒",
+        "accessNote": "課程存取權在「學生」管理，而非「總覽」。",
+        "openStudents": "管理學生",
+        "settingsTitle": "課程設定",
+        "settingsReason": "調整已發佈課程的基本資料、教材或課表。",
+        "openSettings": "開啟課程設定"
       }
+    },
+    "home": {
+      "greeting": "歡迎回來，{name}。",
+      "greetingFallback": "歡迎回來。",
+      "subtitle": "{date} · {count, plural, =0 {教學名單中沒有課程} other {教學名單中有 # 門課程}}",
+      "lead": {
+        "inProgress": "正在授課",
+        "inMinutes": "距離下一堂課還有 {minutes, plural, =0 {不到一分鐘} other {# 分鐘}}",
+        "todayAt": "今天 {time} 有下一堂課",
+        "onDay": "{date} {time} 有下一堂課"
+      },
+      "hero": {
+        "openSession": "開啟{title}",
+        "editSession": "編輯課堂",
+        "students": "{count} 位學生",
+        "minutes": "{count} 分鐘",
+        "sourceReadiness": "教材就緒狀態",
+        "sourcesReady": "{ready} / {total} 已就緒",
+        "sourcesNone": "尚未加入教材",
+        "sourcesProcessing": "{count} 份教材處理中",
+        "sourcesAttention": "{count} 份教材需要處理",
+        "sourcesAllReady": "本堂課的教材全部就緒。",
+        "readyChip": "就緒",
+        "attentionChip": "需要處理",
+        "processingChip": "處理中"
+      },
+      "empty": {
+        "title": "接下來沒有排定的課堂",
+        "reason": "課程排定課表後，下一堂課會顯示在這裡，並附上就緒狀態與單一入口。",
+        "action": "前往課程"
+      },
+      "laterToday": {
+        "title": "今天稍後",
+        "empty": "今天沒有其他排程。"
+      },
+      "roster": {
+        "title": "教學名單",
+        "empty": "尚無課程。",
+        "viewAll": "查看所有課程",
+        "updated": "更新於 {when}"
+      },
+      "rail": {
+        "agendaTitle": "這堂課之後",
+        "agendaTitleNoClass": "即將到來",
+        "agendaEmpty": "未來三週沒有排程。",
+        "note": "行事曆是時間的依據；課堂就緒狀態由課程管理。",
+        "viewCalendar": "查看完整行事曆",
+        "prevWeek": "上一週",
+        "nextWeek": "下一週"
+      },
+      "kind": {
+        "class": "課堂",
+        "generated_release": "發布",
+        "deadline": "截止",
+        "assignment": "作業"
+      },
+      "status": {
+        "draft": "草稿",
+        "setup": "設定中",
+        "published": "已發佈",
+        "archived": "已封存"
+      }
+    },
+    "roster": {
+      "title": "課程",
+      "subtitle": "依下一堂課排序的教學名單。",
+      "create": "建立課程",
+      "search": "搜尋課程",
+      "searchLabel": "搜尋課程",
+      "allTerms": "所有學期",
+      "allStatus": "所有狀態",
+      "termLabel": "學期",
+      "statusLabel": "狀態",
+      "nextToTeach": "下一堂要教",
+      "nextSession": "下一堂課",
+      "notScheduled": "尚未排定",
+      "noUpcoming": "沒有即將到來的課堂",
+      "online": "線上",
+      "verb": {
+        "open": "開啟課程",
+        "continueSetup": "繼續設定",
+        "view": "查看課程"
+      },
+      "status": {
+        "draft": "草稿",
+        "setup": "設定草稿",
+        "published": "已發佈",
+        "archived": "已封存"
+      },
+      "count": "{count, plural, =0 {沒有課程} other {# 門課程}}",
+      "filtered": "{total} 門課程中的 {shown} 門",
+      "empty": {
+        "title": "尚無課程",
+        "reason": "建立第一門課程，開始安排課堂、教材與活動。",
+        "action": "建立課程"
+      },
+      "emptyFiltered": {
+        "title": "沒有符合篩選條件的課程",
+        "reason": "請嘗試其他學期或狀態，或清除搜尋。",
+        "action": "清除篩選"
+      },
+      "more": "{course} 的更多操作",
+      "openSettings": "課程設定",
+      "duplicate": "複製課程",
+      "archive": "封存課程"
     }
   },
   "student": {
@@ -179,6 +428,104 @@
         "comingSoonTitle": "課程預覽",
         "comingSoonReason": "課程預覽與準備度步驟即將推出。",
         "back": "輸入其他代碼"
+      },
+      "recommendation": {
+        "chip": "建議",
+        "boundaryTitle": "決策界線",
+        "boundaryBody": "Meli 建議起始程度，並不會為您註冊。CLE 可檢視佐證並調整級別。",
+        "requestAdvising": "申請諮詢",
+        "previewCourse": "預覽此課程",
+        "confidenceLabel": "建議可信度",
+        "confidence": {
+          "high": "高",
+          "medium": "中",
+          "low": "低"
+        },
+        "confidenceReason": {
+          "high": "各項技能的作答一致。最終分級仍由 CLE 決定。",
+          "medium": "各項技能的作答有差異。最終分級仍由 CLE 決定。",
+          "low": "目前佐證仍不足。最終分級仍由 CLE 決定。"
+        },
+        "evidenceTitle": "建議的佐證",
+        "evidenceReason": "每項技能結果都連結到它所支持的課程成果或支援措施。",
+        "evidenceEmpty": "尚未記錄技能作答，因此暫無佐證可顯示。",
+        "skill": {
+          "listening": "聆聽",
+          "speaking": "口說",
+          "reading": "閱讀",
+          "writing": "書寫"
+        },
+        "state": {
+          "ready": "已就緒",
+          "developing": "發展中",
+          "needs_support": "需要支援"
+        },
+        "informs": {
+          "ready": "直接支持建議的級別。",
+          "developing": "可透過本課程的引導練習提升。",
+          "needs_support": "建議於第 1-2 週安排諮詢與額外練習。"
+        },
+        "supportPlan": "支援計畫"
+      }
+    },
+    "home": {
+      "greeting": "歡迎回來，{name}。",
+      "greetingFallback": "歡迎回來。",
+      "subtitle": "{date} · {count, plural, =0 {目前沒有待辦事項} other {有 # 項學習任務已可開始}}",
+      "leadDueToday": "繼續學習，今天 {time} 截止",
+      "leadDueOn": "繼續學習，{date} {time} 截止",
+      "leadNoDue": "繼續學習",
+      "leadStart": "可以開始了",
+      "savedPercent": "已儲存，完成 {percent}%",
+      "savedState": "已儲存",
+      "notStarted": "尚未開始",
+      "submittedState": "已提交",
+      "reviewedState": "已批閱",
+      "verb": {
+        "resume": "繼續{title}",
+        "start": "開始{title}",
+        "submitted": "已提交",
+        "viewFeedback": "查看回饋",
+        "locked": "已鎖定",
+        "scheduled": "已排定",
+        "closed": "已關閉"
+      },
+      "chip": {
+        "resume": "已儲存",
+        "start": "可開始",
+        "submitted": "已提交",
+        "viewFeedback": "已批閱",
+        "locked": "已鎖定",
+        "scheduled": "已排定",
+        "closed": "已關閉"
+      },
+      "source": "教材 · {name}",
+      "sourceUnknown": "未附教材",
+      "opensOn": "{date} 開放",
+      "closedOn": "{date} 已關閉",
+      "lockedGeneric": "請先完成前一個步驟",
+      "dueAt": "{date} {time} 截止",
+      "noDue": "沒有截止時間",
+      "laterToday": "今天稍後",
+      "laterTodayEmpty": "今天沒有其他待辦事項。",
+      "yourCourses": "我的課程",
+      "yourCoursesEmpty": "您尚未加入任何課程。",
+      "joinCourse": "加入課程",
+      "allClearTitle": "目前沒有待辦",
+      "allClearReason": "目前沒有待辦事項。課程發布新任務時會顯示在這裡。",
+      "railTitle": "行事曆",
+      "railAgenda": "今天課後",
+      "railAgendaEmpty": "今天沒有排程。",
+      "railNote": "行事曆顯示時間；課程路徑說明接下來會解鎖什麼。",
+      "viewCalendar": "查看完整行事曆",
+      "kind": {
+        "checkpoint": "檢核點",
+        "practice": "練習",
+        "quiz": "測驗",
+        "activity": "活動",
+        "material": "教材",
+        "follow_up": "追蹤練習",
+        "report": "報告"
       }
     }
   }

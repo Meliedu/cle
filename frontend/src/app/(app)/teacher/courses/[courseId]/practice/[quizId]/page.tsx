@@ -18,7 +18,7 @@ export default async function PracticeBuilderPage({
 }: PracticeBuilderPageProps) {
   const { courseId, quizId } = await params;
   return (
-    <CourseWorkspaceShell courseId={courseId} activeTab="activities">
+    <CourseWorkspaceShell courseId={courseId} activeTab="practice">
       <AssessmentQuizBuilder
         courseId={courseId}
         quizId={quizId}

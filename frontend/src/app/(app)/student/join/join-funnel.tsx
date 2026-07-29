@@ -241,6 +241,10 @@ export function JoinFunnel({ initialCode }: JoinFunnelProps) {
           code={state.code}
           onContinue={() => goTo("deep_preview")}
           onBack={() => goTo("diagnostic")}
+          // Advising is a separate route out of the funnel, not a step inside
+          // it: the approved placement flow keeps "Request advising" and
+          // course preview as distinct actions so neither implies the other.
+          onRequestAdvising={() => router.push("/student/profile#advising")}
         />
       ) : state.step === "deep_preview" && state.courseId ? (
         <StepDeepPreview

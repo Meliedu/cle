@@ -358,16 +358,16 @@ interface ActivityMonitorMessage {
 const MONITOR_RECONNECT_MS = 2000;
 
 /** Convert the REST base (`http(s)://…/api`) to its `ws(s)://…/api` counterpart. */
-function activityMonitorSocketUrl(activityId: string, token: string): string {
+function activityMonitorSocketUrl(activityId: string): string {
   const wsBase = API_URL.replace(/^http/, "ws");
-  return `${wsBase}/activities/${activityId}/monitor?token=${encodeURIComponent(
-    token
-  )}`;
+  // The JWT is sent in the first WS frame (see onopen), not the URL, so it does
+  // not land in proxy / access logs.
+  return `${wsBase}/activities/${activityId}/monitor`;
 }
 
 /**
  * Teacher live-monitor WS client (backend B10). Connects to
- * `ws(s)://<backend>/api/activities/{id}/monitor?token=<jwt>` and folds the
+ * `ws(s)://<backend>/api/activities/{id}/monitor` (JWT sent in the first frame) and folds the
  * server's `state`/`submission`/`closed` frames into a single reactive
  * snapshot. Read-only (no outbound frames). Auto-reconnects on an unexpected
  * drop until the activity reports `closed` or the hook unmounts. Mirrors
@@ -398,10 +398,13 @@ export function useActivityMonitor(
 
     const connect = () => {
       if (disposed || closedRef.current) return;
-      const ws = new WebSocket(activityMonitorSocketUrl(activityId, token));
+      const ws = new WebSocket(activityMonitorSocketUrl(activityId));
       socket = ws;
 
       ws.onopen = () => {
+        // Authenticate by sending the JWT in the first frame (keeps it out of the
+        // request URL / access logs); the server verifies this frame.
+        ws.send(JSON.stringify({ type: "auth", token }));
         if (!disposed) setState((prev) => ({ ...prev, connected: true }));
       };
 

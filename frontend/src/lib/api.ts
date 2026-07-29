@@ -1,3 +1,5 @@
+import { isUserSafeText } from "@/lib/contracts/user-safe-text";
+
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
@@ -17,6 +19,14 @@ export interface PaginatedEnvelope<T> extends ApiEnvelope<readonly T[]> {
 
 export class ApiError extends Error {
   readonly status: number;
+  /**
+   * The backend's own message, but ONLY when it passes `isUserSafeText`.
+   *
+   * Several components render `error.detail` directly to get a more specific
+   * message than the status fallback. Sanitising here rather than at those call
+   * sites means an unsafe backend string is simply absent instead of being one
+   * forgotten guard away from the screen.
+   */
   readonly detail: string | undefined;
   /**
    * Machine-readable error code lifted from the response body when present.
@@ -36,7 +46,7 @@ export class ApiError extends Error {
     super(userMessage);
     this.name = "ApiError";
     this.status = status;
-    this.detail = detail;
+    this.detail = detail && isUserSafeText(detail) ? detail : undefined;
     this.code = code;
   }
 }
@@ -79,7 +89,27 @@ export function isAuthError(err: unknown): boolean {
   return err instanceof ApiError && (err.status === 401 || err.status === 403);
 }
 
+/**
+ * Turn a status plus an optional backend message into copy safe to render.
+ *
+ * The backend message is only used when it passes `isUserSafeText`. Roughly
+ * thirty components render `ApiError.message` directly, so this boundary is the
+ * only place a guard reliably covers them all: a future handler that does
+ * `raise HTTPException(400, detail=str(exc))` would otherwise put an exception
+ * on screen through every one of them. That is precisely the class of defect
+ * the release contract forbids ("Raw exception, provider operation, object key,
+ * stack name, and request identifier stay in structured server logs").
+ */
 function userFacingMessage(
+  status: number,
+  backendMessage: string | undefined
+): string {
+  const safeMessage =
+    backendMessage && isUserSafeText(backendMessage) ? backendMessage : undefined;
+  return statusMessage(status, safeMessage);
+}
+
+function statusMessage(
   status: number,
   backendMessage: string | undefined
 ): string {

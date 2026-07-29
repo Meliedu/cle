@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useAuth } from "@/hooks/use-auth";
-import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
-import { apiFetch } from "@/lib/api";
+import { useCreateCourse } from "@/hooks/use-courses";
+import { toSafeError } from "@/lib/contracts/safe-error";
 
 interface CreateCourseDialogProps {
   readonly open: boolean;
@@ -78,12 +78,12 @@ export function CreateCourseDialog({
   open,
   onOpenChange,
 }: CreateCourseDialogProps) {
-  const { getToken } = useAuth();
-  const queryClient = useQueryClient();
+  const router = useRouter();
+  const createCourse = useCreateCourse();
   const [form, setForm] = useState<FormState>(initialForm);
   const [errors, setErrors] = useState<FormErrors>({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const isSubmitting = createCourse.isPending;
 
   const updateField = useCallback(
     <K extends keyof FormState>(field: K, value: FormState[K]) => {
@@ -111,37 +111,33 @@ export function CreateCourseDialog({
         return;
       }
 
-      setIsSubmitting(true);
       setSubmitError(null);
 
       try {
-        const token = await getToken({ template: "backend" });
-        if (!token) throw new Error("Not authenticated");
-        await apiFetch<{ success: boolean; data: unknown }>("/courses", {
-          method: "POST",
-          token,
-          body: JSON.stringify({
-            name: form.name.trim(),
-            code: form.code.trim() || null,
-            description: form.description.trim() || null,
-            language: form.language,
-            semester: form.semester.trim() || null,
-            settings: {},
-          }),
+        const course = await createCourse.mutateAsync({
+          name: form.name.trim(),
+          code: form.code.trim() || null,
+          description: form.description.trim() || null,
+          language: form.language,
+          semester: form.semester.trim() || null,
+          settings: {},
         });
-        await queryClient.invalidateQueries({ queryKey: ["courses"] });
+
         onOpenChange(false);
         setForm(initialForm);
         setErrors({});
+
+        // A new course is `draft`, and the one honest next action for a draft
+        // is finishing its setup. Previously this dialog closed and dropped the
+        // instructor back on the roster with no indication of what to do next,
+        // and the created row was discarded rather than used. `useCreateCourse`
+        // returns the persisted course precisely so the caller can route here.
+        router.push(`/teacher/courses/${course.id}/setup`);
       } catch (error: unknown) {
-        const message =
-          error instanceof Error ? error.message : "Failed to create course";
-        setSubmitError(message);
-      } finally {
-        setIsSubmitting(false);
+        setSubmitError(toSafeError(error, { objectName: form.name.trim() }).title);
       }
     },
-    [form, onOpenChange, getToken, queryClient]
+    [form, onOpenChange, createCourse, router]
   );
 
   const handleOpenChange = useCallback(

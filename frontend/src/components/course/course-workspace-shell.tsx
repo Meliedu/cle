@@ -2,15 +2,29 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 
-import { PageHeader, StateBanner } from "@/components/patterns";
-import { Badge } from "@/components/ui/badge";
+import { StateBanner } from "@/components/patterns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useCourse, type CourseResponse } from "@/hooks/use-courses";
+import {
+  courseLifecycle,
+  type CourseLifecycle,
+} from "@/lib/contracts/state";
 
-/** Course-workspace tab ids. P3+ extends the enabled set + adds routes. */
+/**
+ * Course-workspace destination ids.
+ *
+ * These are no longer tabs. The course rail (`SidebarCourseNav`) is the only
+ * course navigation system. The handoff removes the second horizontal tab row
+ * outright (Plate 04 rule 1, removal rule 05) because it duplicated the rail
+ * and widened without bound as tools accumulated.
+ *
+ * The id survives as the shell's way of knowing which destination title to
+ * render, and to keep the 16 existing call sites working unchanged.
+ */
 export type CourseTab =
   | "overview"
   | "schedule"
@@ -19,91 +33,114 @@ export type CourseTab =
   | "setup"
   | "materials"
   | "activities"
+  | "practice"
+  | "students"
   | "insights"
   | "reports"
   | "memory";
 
-interface TabDef {
-  readonly id: CourseTab;
-  /** Path suffix under `/teacher/courses/[courseId]` — `null` = the index. */
-  readonly segment: string | null;
-  /** `false` = a P3+ placeholder rendered disabled (no route yet). */
-  readonly enabled: boolean;
-}
-
 /**
- * Ordered workspace tabs. Overview + schedule (this task) and the existing
- * setup route are live; materials/activities/insights are P3+ placeholders,
- * rendered disabled so the nav shape is visible and a later phase only flips
- * `enabled` and adds the route — no restructuring.
+ * Kept for the many callers that already import it. Delegates to the single
+ * lifecycle derivation so a badge and a roster verb can never disagree.
  */
-const TABS: readonly TabDef[] = [
-  { id: "overview", segment: null, enabled: true },
-  { id: "schedule", segment: "schedule", enabled: true },
-  { id: "sessions", segment: "sessions", enabled: true },
-  { id: "enrollment", segment: "enrollment", enabled: true },
-  { id: "setup", segment: "setup", enabled: true },
-  { id: "materials", segment: "materials", enabled: true },
-  { id: "activities", segment: "activities", enabled: true },
-  { id: "insights", segment: "insights", enabled: true },
-  { id: "reports", segment: "reports", enabled: true },
-  { id: "memory", segment: "memory", enabled: true },
-];
-
 export function isCoursePublished(course: CourseResponse): boolean {
-  return (
-    course.setup_status === "published" && course.context_status === "approved"
-  );
+  return courseLifecycle(course) === "published";
 }
+
+const LIFECYCLE_BADGE: Record<
+  CourseLifecycle,
+  { readonly key: string; readonly className: string }
+> = {
+  draft: {
+    key: "status.draft",
+    className:
+      "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)]",
+  },
+  setup: {
+    key: "status.setup",
+    className:
+      "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-hover)]",
+  },
+  published: {
+    key: "status.published",
+    className:
+      "border-[var(--color-success)]/40 bg-[var(--color-success-light)] text-[var(--color-success)]",
+  },
+  archived: {
+    key: "status.archived",
+    className:
+      "border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text-muted)]",
+  },
+};
 
 interface CourseWorkspaceShellProps {
   readonly courseId: string;
   readonly activeTab: CourseTab;
   readonly children: ReactNode;
+  /**
+   * Optional right-aligned actions for the destination (e.g. "Add session").
+   * The lifecycle badge always renders; these sit beside it.
+   */
+  readonly actions?: ReactNode;
 }
 
 /**
- * Shared chrome for the teacher course-detail workspace: a `PageHeader` with
- * the course name / code / term / language and a draft-vs-published status
- * badge, plus a tab nav. Overview (T029) and schedule (T030) pages render
- * their content as `children`; P3+ tabs slot into `TABS`. This is the first
- * teacher course-detail route — none existed before this task (P1 deferred the
- * workspace). Setup keeps its own full-screen wizard chrome and is only linked
- * from here, so the shell deliberately does not wrap `/setup`.
+ * Chrome for a teacher course destination.
+ *
+ * Composition follows the approved course header: a breadcrumb back to Courses
+ * carrying the course code, the DESTINATION as the heading (course identity
+ * already lives in the rail, so repeating it here would be a third copy), the
+ * course name plus term as supporting text, and quiet lifecycle context on the
+ * right.
+ *
+ * Setup is deliberately absent from every navigation surface here. It is
+ * transient: reachable while the course is incomplete, and replaced by
+ * contextual course settings once published.
  */
 export function CourseWorkspaceShell({
   courseId,
   activeTab,
   children,
+  actions,
 }: CourseWorkspaceShellProps) {
   const t = useTranslations("teacher.course");
+  const searchParams = useSearchParams();
   const { data: course, isLoading } = useCourse(courseId);
-  const base = `/teacher/courses/${courseId}`;
+
+  /**
+   * The roster hands its filter query along as `?from=`. Carrying it back into
+   * the breadcrumb is what makes "preserve filters across course entry and back
+   * navigation" true for the explicit link as well as for browser Back.
+   */
+  const from = searchParams.get("from");
+  const coursesHref = from
+    ? `/teacher/courses?${from}`
+    : "/teacher/courses";
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-6xl space-y-6">
+      <div className="mx-auto max-w-6xl space-y-8 px-6 py-8 md:px-10">
         <div className="space-y-3">
-          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-40" />
           <Skeleton className="h-9 w-72" />
           <Skeleton className="h-4 w-96" />
         </div>
-        <Skeleton className="h-9 w-full max-w-md" />
+        <Skeleton className="h-64 rounded-[var(--radius-2xl)]" />
       </div>
     );
   }
 
   if (!course) {
     return (
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
         <StateBanner
           tone="warning"
           title={t("loadErrorTitle")}
           reason={t("loadError")}
           action={
             <Link
-              href="/teacher/courses"
-              className="text-[13px] font-medium text-[var(--color-primary)] hover:underline"
+              href={coursesHref}
+              className="rounded-[var(--radius-sm)] text-[13px] font-medium text-[var(--color-primary-hover)] underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
             >
               {t("breadcrumb")}
             </Link>
@@ -113,76 +150,61 @@ export function CourseWorkspaceShell({
     );
   }
 
-  const published = isCoursePublished(course);
-  const meta = [course.code, course.semester, course.language]
-    .filter((v): v is string => Boolean(v))
+  const lifecycle = courseLifecycle(course);
+  const badge = LIFECYCLE_BADGE[lifecycle];
+  const supporting = [course.name, course.semester, course.language]
+    .filter((value): value is string => Boolean(value))
     .join(" · ");
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <PageHeader
-        title={course.name}
-        description={meta || undefined}
-        breadcrumb={
-          <Link
-            href="/teacher/courses"
-            className="hover:text-[var(--color-text)]"
-          >
-            {t("breadcrumb")}
-          </Link>
-        }
-        actions={
-          <Badge variant={published ? "secondary" : "outline"}>
-            {published ? t("status.published") : t("status.draft")}
-          </Badge>
-        }
-      />
-
-      <nav
-        aria-label={t("overview.title")}
-        className="flex gap-1 overflow-x-auto border-b border-[var(--color-border)]/70"
-      >
-        {TABS.map((tab) => {
-          const label = t(`tabs.${tab.id}`);
-          const isActive = tab.id === activeTab;
-          const className = cn(
-            "relative -mb-px whitespace-nowrap border-b-2 px-3 py-2 text-[13px] font-medium transition-colors duration-[var(--duration-fast)]",
-            isActive
-              ? "border-[var(--color-primary)] text-[var(--color-text)]"
-              : "border-transparent text-[var(--color-text-muted)]"
-          );
-
-          if (!tab.enabled) {
-            return (
-              <span
-                key={tab.id}
-                aria-disabled="true"
-                className={cn(
-                  className,
-                  "flex cursor-not-allowed items-center gap-1.5 opacity-55"
-                )}
+    <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
+      <header className="mb-8">
+        <nav aria-label="Breadcrumb" className="mb-3">
+          <ol className="flex items-center gap-1.5 text-[13px] text-[var(--color-text-muted)]">
+            <li>
+              <Link
+                href={coursesHref}
+                className="rounded-[var(--radius-sm)] outline-none transition-colors hover:text-[var(--color-text)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none"
               >
-                {label}
-                <Badge variant="outline" className="h-4 px-1 text-[10px]">
-                  {t("tabSoon")}
-                </Badge>
-              </span>
-            );
-          }
+                {t("breadcrumb")}
+              </Link>
+            </li>
+            {course.code ? (
+              <>
+                <li aria-hidden="true">/</li>
+                <li className="font-medium text-[var(--color-text-secondary)]">
+                  {course.code}
+                </li>
+              </>
+            ) : null}
+          </ol>
+        </nav>
 
-          const href = tab.segment ? `${base}/${tab.segment}` : base;
-          return (
-            <Link
-              key={tab.id}
-              href={href}
-              aria-current={isActive ? "page" : undefined}
-              className={cn(className, "hover:text-[var(--color-text)]")}
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.02em] text-[var(--color-text)]">
+              {t(`tabs.${activeTab}`)}
+            </h1>
+            {supporting ? (
+              <p className="mt-1 text-[15px] text-[var(--color-text-secondary)]">
+                {supporting}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-3">
+            {actions}
+            <span
+              className={cn(
+                "inline-flex h-7 items-center rounded-[var(--radius-pill)] border px-3 text-[12px] font-medium",
+                badge.className
+              )}
             >
-              {label}
-            </Link>
-          );
-        })}
-      </nav>
+              {t(badge.key)}
+            </span>
+          </div>
+        </div>
+      </header>
 
       {children}
     </div>

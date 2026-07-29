@@ -28,6 +28,16 @@ export interface SyllabusImport {
   readonly document_id: string | null;
   readonly parsed_payload: Record<string, unknown>;
   readonly status: SyllabusImportStatus;
+  /**
+   * Typed failure code (mirrors the backend `SourceFailureCode`). Render copy
+   * from this via `safeErrorFromCode`.
+   */
+  readonly error_code?: string | null;
+  /**
+   * LEGACY. Historical rows may still hold a raw exception string, which is
+   * how `AttributeError: 'Settings' object has no attribute
+   * 'llm_primary_model'` reached an instructor. Never render this.
+   */
   readonly error_message: string | null;
   readonly applied_at: string | null;
   readonly created_at: string;

@@ -108,7 +108,7 @@ describe("StepRecommendation (S009)", () => {
       } as unknown as ReturnType<typeof useSubmitPhase>["data"],
     });
     renderStep(onContinue);
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview this course" }));
     expect(onContinue).toHaveBeenCalledTimes(1);
   });
 

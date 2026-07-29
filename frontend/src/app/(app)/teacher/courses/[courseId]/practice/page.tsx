@@ -16,7 +16,7 @@ interface PracticePageProps {
 export default async function PracticePage({ params }: PracticePageProps) {
   const { courseId } = await params;
   return (
-    <CourseWorkspaceShell courseId={courseId} activeTab="activities">
+    <CourseWorkspaceShell courseId={courseId} activeTab="practice">
       <AssessmentQuizList courseId={courseId} config={PRACTICE_CONFIG} />
     </CourseWorkspaceShell>
   );

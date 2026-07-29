@@ -1,284 +1,170 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
-import { useAuth } from "@/hooks/use-auth";
-import { ChevronsLeft, ChevronsRight, LogOut, X } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { LogOut, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+
+import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { roleHomePath, useRole } from "@/hooks/use-role";
 import { useCourses } from "@/hooks/use-courses";
-import { navForRole } from "@/components/layout/nav-config";
-import { SidebarSectionNav } from "@/components/layout/sidebar-section-nav";
+import {
+  activeCourseId,
+  globalNavForRole,
+} from "@/components/layout/nav-config";
+import { SidebarCourseNav } from "@/components/layout/sidebar-section-nav";
 
 interface SidebarProps {
   readonly mobileOpen?: boolean;
   readonly onMobileClose?: () => void;
 }
 
-interface RailItem {
-  readonly id: string;
-  readonly label: string;
-  readonly icon: LucideIcon;
-  readonly href?: string;
-  readonly onClick?: () => void;
-}
-
-const RAIL_WIDTH_COLLAPSED = 72;
-const RAIL_WIDTH_EXPANDED = 248;
-// Persisted as the collapsed flag ("true" = collapsed). Default (absent key)
-// is expanded, matching the Figma teacher/student shells (T003/S014).
-const RAIL_COLLAPSED_KEY = "meli.sidebar.collapsed";
-
-function extractCourseId(pathname: string): string | null {
-  const match = pathname.match(/\/courses\/([^/]+)/);
-  return match ? match[1] : null;
-}
-
-function resolveActiveTab(pathname: string, tabParam: string | null): string {
-  const subPageMatch = pathname.match(/\/courses\/[^/]+\/(\w+)/);
-  if (subPageMatch) {
-    const segment = subPageMatch[1];
-    const subPageMap: Record<string, string> = {
-      revision: "revision",
-      pronunciation: "pronunciation",
-      live: "live",
-      quizzes: "quizzes",
-      flashcards: "flashcards",
-    };
-    if (segment in subPageMap) return subPageMap[segment];
-  }
-  return tabParam ?? "overview";
-}
+/**
+ * Fixed desktop rail width from the component contract:
+ *
+ *   GlobalShell | role, locale, activeGlobalRoute | Fixed 224 px desktop rail;
+ *   responsive navigation is automatic, not a saved collapse preference
+ *
+ * There is deliberately no collapse control and no persisted width. Below the
+ * `md` breakpoint the rail becomes an overlay drawer; that is the entire
+ * responsive story (removal rule 03).
+ */
+const RAIL_WIDTH = 224;
 
 export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
+  const t = useTranslations("nav");
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const { signOut } = useAuth();
-  const { role, isInstructor } = useRole();
+  const { role } = useRole();
 
-  const courseId = extractCourseId(pathname);
-  const activeTab = resolveActiveTab(pathname, searchParams.get("tab"));
-
+  const courseId = activeCourseId(pathname);
   const { data: courses } = useCourses();
   const activeCourse = courseId
-    ? courses?.find((c) => c.id === courseId) ?? null
+    ? courses?.find((course) => course.id === courseId) ?? null
     : null;
-
-  // Persist rail expand/collapse between navigations. Initializer runs on the
-  // client (this is a "use client" component that only mounts after the auth
-  // gate, so there's no SSR hydration mismatch for the sidebar itself).
-  // Default is expanded — collapsed only when the flag is explicitly stored.
-  const [expanded, setExpanded] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    return window.localStorage.getItem(RAIL_COLLAPSED_KEY) !== "true";
-  });
-  const toggleExpanded = useCallback(() => {
-    setExpanded((prev) => {
-      const next = !prev;
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(RAIL_COLLAPSED_KEY, String(!next));
-      }
-      return next;
-    });
-  }, []);
 
   const handleSignOut = useCallback(() => {
     void signOut({ redirectUrl: "/sign-in" });
   }, [signOut]);
 
-  // Per-lane primary nav, config-driven from the role (see nav-config.ts).
-  // While the role query is in flight `role` is null — the sidebar only mounts
-  // inside AppShell's loaded gate, but render no items defensively if so.
-  const primaryItems: readonly RailItem[] = role
-    ? navForRole(role).map((item) => ({
-        id: item.href,
-        label: item.label,
-        icon: item.icon,
-        href: item.href,
-      }))
-    : [];
-
-  const bottomItems: readonly RailItem[] = [
-    {
-      id: "logout",
-      label: "Log out",
-      icon: LogOut,
-      onClick: handleSignOut,
-    },
-  ];
-
-  // Exact match, or a subpage of the item (e.g. /teacher/courses/:id
-  // highlights "Courses"). Each nav href is a distinct lane segment, so
-  // startsWith never over-matches a sibling item.
-  const isActive = (item: RailItem): boolean => {
-    if (!item.href) return false;
-    return pathname === item.href || pathname.startsWith(`${item.href}/`);
-  };
-
+  const globalItems = role ? globalNavForRole(role) : [];
   const brandHref = role ? roleHomePath(role) : "/dashboard";
 
-  const buildRail = (forceExpanded = false) => {
-    const isExpanded = forceExpanded || expanded;
-    const width = isExpanded ? RAIL_WIDTH_EXPANDED : RAIL_WIDTH_COLLAPSED;
-    return (
-      <div
-        className="flex h-full flex-col bg-[var(--color-rail)] text-[var(--color-rail-text)] transition-[width] duration-[var(--duration-normal)] ease-[var(--ease-out)]"
-        style={{ width }}
-      >
-        {/* Brand */}
-        <div
-          className={cn(
-            "flex h-16 shrink-0 items-center",
-            isExpanded ? "gap-3 pl-4 pr-3" : "justify-center"
-          )}
+  const isActive = (href: string): boolean =>
+    pathname === href || pathname.startsWith(`${href}/`);
+
+  const rail = (
+    <div
+      className="flex h-full flex-col bg-[var(--color-rail)] text-[var(--color-rail-text)]"
+      style={{ width: RAIL_WIDTH }}
+    >
+      {/* Brand */}
+      <div className="flex h-[68px] shrink-0 items-center gap-3 px-5">
+        <Link
+          href={brandHref}
+          aria-label={t("brandHome")}
+          onClick={onMobileClose}
+          className="group flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-primary)] outline-none transition-transform duration-[var(--duration-normal)] hover:scale-105 focus-visible:ring-2 focus-visible:ring-[var(--color-rail-text)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-rail)] motion-reduce:transition-none motion-reduce:hover:scale-100"
         >
-          <Link
-            href={brandHref}
-            aria-label="Meli home"
-            onClick={onMobileClose}
-            className="group flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-primary)]/90 transition-transform duration-[var(--duration-normal)] hover:scale-105"
-          >
-            <FloralMark className="size-5 text-[var(--color-text-on-primary)]" />
-          </Link>
-          {isExpanded ? (
-            <span className="text-lg font-semibold tracking-tight text-[var(--color-rail-text)]">
-              Meli
-            </span>
-          ) : null}
-        </div>
+          <FloralMark className="size-[18px] text-[var(--color-text-on-primary)]" />
+        </Link>
+        <span className="text-[17px] font-semibold tracking-tight text-[var(--color-rail-text)]">
+          Meli
+        </span>
+      </div>
 
-        {/* Scrollable middle — primary items + (when in a course) section nav */}
-        <div className="scrollbar-warm flex-1 overflow-y-auto pb-3">
-          {/* Primary */}
-          <nav
-            aria-label="Primary"
-            className={cn(
-              "flex flex-col gap-0.5",
-              isExpanded ? "pl-3 pr-1.5" : "items-center px-1.5"
-            )}
-          >
-            {primaryItems.map((item) => (
-              <RailButton
-                key={item.id}
-                item={item}
-                active={isActive(item)}
-                expanded={isExpanded}
-                onClose={onMobileClose}
-              />
-            ))}
-          </nav>
-
-          {/* Course section nav — only when we're inside a course */}
-          {courseId ? (
-            <>
-              <div
-                className={cn(
-                  "my-4",
-                  isExpanded ? "mx-4" : "mx-3",
-                  "border-t border-[var(--color-rail-border)]"
-                )}
-              />
-              {isExpanded && activeCourse ? (
-                <div className="mb-3 pl-4 pr-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-rail-text-muted)]">
-                    Course
-                  </p>
-                  <p
-                    className="mt-1 line-clamp-2 text-[15px] font-semibold leading-snug text-[var(--color-rail-text)]"
-                    title={activeCourse.name}
-                  >
-                    {activeCourse.name}
-                  </p>
-                </div>
-              ) : null}
-              <SidebarSectionNav
-                courseId={courseId}
-                activeTab={activeTab}
-                isInstructor={isInstructor}
-                collapsed={!isExpanded}
-                variant="dark"
-                onMobileClose={onMobileClose}
-              />
-            </>
-          ) : null}
-        </div>
-
-        {/* Bottom actions */}
-        <div
-          className={cn(
-            "flex flex-col gap-0.5 border-t border-[var(--color-rail-border)] py-3",
-            isExpanded ? "pl-3 pr-1.5" : "items-center px-1.5"
-          )}
-        >
-          {bottomItems.map((item) => (
-            <RailButton
-              key={item.id}
-              item={item}
-              active={false}
-              expanded={isExpanded}
+      <div className="scrollbar-warm flex-1 overflow-y-auto pb-3">
+        {/* Global destinations, present on every route */}
+        <nav aria-label={t("mainLabel")} className="flex flex-col gap-0.5 px-3">
+          {globalItems.map((item) => (
+            <RailLink
+              key={item.key}
+              href={item.href}
+              label={t(item.key)}
+              icon={item.icon}
+              active={isActive(item.href)}
               onClose={onMobileClose}
             />
           ))}
+        </nav>
 
-          <button
-            type="button"
-            onClick={toggleExpanded}
-            aria-label={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
-            aria-pressed={isExpanded}
-            className={cn(
-              "mt-1 flex items-center rounded-[var(--radius-lg)] text-[var(--color-rail-text-muted)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-rail-raised)] hover:text-[var(--color-rail-text)]",
-              isExpanded
-                ? "h-10 w-full justify-start gap-3 pl-3 pr-2 text-[14px]"
-                : "size-10 justify-center"
-            )}
-          >
-            {isExpanded ? (
-              <ChevronsLeft className="size-[18px]" strokeWidth={1.75} />
-            ) : (
-              <ChevronsRight className="size-[18px]" strokeWidth={1.75} />
-            )}
-            {isExpanded ? (
-              <span className="text-[13px] font-medium">Collapse</span>
-            ) : null}
-          </button>
-
-          <span
-            className={cn(
-              "mt-3 size-1.5 shrink-0 rounded-full bg-[var(--color-primary)]",
-              isExpanded && "mx-3"
-            )}
-            aria-hidden="true"
-            title={isInstructor ? "Instructor" : "Student"}
-          />
-        </div>
+        {/*
+          Course destinations, rendered only after course entry. Outside a
+          course this whole block is absent, which is what keeps Sessions from
+          existing as a global destination.
+        */}
+        {courseId && role ? (
+          <>
+            <div className="mx-5 my-5 border-t border-[var(--color-rail-border)]" />
+            <div className="mb-3 px-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-rail-text-muted)]">
+                {activeCourse?.code ?? t("courseLabel")}
+              </p>
+              {activeCourse?.name ? (
+                <p
+                  className="mt-1 line-clamp-2 text-[14px] font-medium leading-snug text-[var(--color-rail-text)]"
+                  title={activeCourse.name}
+                >
+                  {activeCourse.name}
+                </p>
+              ) : null}
+            </div>
+            <SidebarCourseNav
+              role={role}
+              courseId={courseId}
+              pathname={pathname}
+              onMobileClose={onMobileClose}
+            />
+          </>
+        ) : null}
       </div>
-    );
-  };
+
+      {/* Bottom actions */}
+      <div className="flex flex-col gap-0.5 border-t border-[var(--color-rail-border)] px-3 py-3">
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="flex h-11 w-full items-center gap-3 rounded-[var(--radius-lg)] px-3 text-[14px] font-medium text-[var(--color-rail-text-muted)] outline-none transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-rail-raised)] hover:text-[var(--color-rail-text)] focus-visible:ring-2 focus-visible:ring-[var(--color-rail-text)] motion-reduce:transition-none"
+        >
+          <LogOut
+            className="size-[18px] shrink-0"
+            strokeWidth={1.85}
+            aria-hidden="true"
+          />
+          <span>{t("logout")}</span>
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <>
-      {/* Desktop */}
-      <aside className="hidden h-full shrink-0 md:block">{buildRail()}</aside>
+      {/* Desktop: fixed rail, always expanded */}
+      <aside className="hidden h-full shrink-0 md:block">{rail}</aside>
 
-      {/* Mobile overlay */}
+      {/* Below md: overlay drawer. Automatic, not a stored preference. */}
       {mobileOpen ? (
         <>
           <div
-            className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm md:hidden"
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
             onClick={onMobileClose}
             aria-hidden="true"
           />
-          <aside className="fixed inset-y-0 left-0 z-50 md:hidden">
+          <aside
+            className="fixed inset-y-0 left-0 z-50 md:hidden"
+            aria-label={t("navigationLabel")}
+          >
             <button
               onClick={onMobileClose}
-              className="absolute right-2 top-3 z-10 rounded-[var(--radius-sm)] p-1 text-[var(--color-rail-text-muted)] hover:bg-[var(--color-rail-raised)] hover:text-[var(--color-rail-text)]"
-              aria-label="Close sidebar"
+              className="absolute right-2 top-3 z-10 flex size-11 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-rail-text-muted)] outline-none hover:bg-[var(--color-rail-raised)] hover:text-[var(--color-rail-text)] focus-visible:ring-2 focus-visible:ring-[var(--color-rail-text)]"
+              aria-label={t("closeNavigation")}
             >
               <X className="size-5" />
             </button>
-            {buildRail(true)}
+            {rail}
           </aside>
         </>
       ) : null}
@@ -286,59 +172,35 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   );
 }
 
-interface RailButtonProps {
-  readonly item: RailItem;
+interface RailLinkProps {
+  readonly href: string;
+  readonly label: string;
+  readonly icon: LucideIcon;
   readonly active: boolean;
-  readonly expanded: boolean;
   readonly onClose?: () => void;
 }
 
-function RailButton({ item, active, expanded, onClose }: RailButtonProps) {
-  const { icon: Icon, label, href, onClick } = item;
-
-  const classes = cn(
-    "flex items-center rounded-[var(--radius-lg)] font-medium transition-all duration-[var(--duration-fast)]",
-    expanded ? "h-11 w-full gap-3 pl-3 pr-2 text-[15px]" : "size-11 justify-center",
-    active
-      ? "bg-[var(--color-rail-raised)] text-[var(--color-primary)]"
-      : "text-[var(--color-rail-text-muted)] hover:bg-[var(--color-rail-raised)] hover:text-[var(--color-rail-text)]"
-  );
-
-  const body = (
-    <>
+function RailLink({ href, label, icon: Icon, active, onClose }: RailLinkProps) {
+  return (
+    <Link
+      href={href}
+      onClick={onClose}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        // h-11 = 44px, meeting the implementation touch-target floor.
+        "flex h-11 items-center gap-3 rounded-[var(--radius-lg)] px-3 text-[14px] font-medium outline-none transition-colors duration-[var(--duration-fast)] focus-visible:ring-2 focus-visible:ring-[var(--color-rail-text)] motion-reduce:transition-none",
+        active
+          ? "bg-[var(--color-rail-raised)] text-[var(--color-primary)]"
+          : "text-[var(--color-rail-text-muted)] hover:bg-[var(--color-rail-raised)] hover:text-[var(--color-rail-text)]"
+      )}
+    >
       <Icon
         className="size-[18px] shrink-0"
-        strokeWidth={active ? 2.25 : 1.85}
+        strokeWidth={active ? 2.2 : 1.85}
+        aria-hidden="true"
       />
-      {expanded ? <span className="truncate">{label}</span> : null}
-      {!expanded ? <span className="sr-only">{label}</span> : null}
-    </>
-  );
-
-  if (href) {
-    return (
-      <Link
-        href={href}
-        onClick={onClose}
-        className={classes}
-        aria-label={label}
-        title={!expanded ? label : undefined}
-      >
-        {body}
-      </Link>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={classes}
-      aria-label={label}
-      title={!expanded ? label : undefined}
-    >
-      {body}
-    </button>
+      <span className="truncate">{label}</span>
+    </Link>
   );
 }
 

@@ -21,7 +21,7 @@ import { createAuthMiddleware, APIError } from "better-auth/api";
 import { dash } from "@better-auth/infra";
 import { Pool } from "pg";
 import bcrypt from "bcrypt";
-import { decodeJwt } from "jose";
+import { createRemoteJWKSet, decodeJwt, jwtVerify } from "jose";
 
 import {
   detectRoleFromEmail,
@@ -33,6 +33,19 @@ import {
   sendResetPasswordEmail,
   sendVerificationEmail,
 } from "@/lib/auth-email";
+
+// The localhost fallback is a convenience for local dev ONLY. In production a
+// missing database URL must fail loudly rather than silently connect to a
+// non-existent local DB with well-known default credentials (CWE-259/CWE-1188).
+if (
+  process.env.NODE_ENV === "production" &&
+  !process.env.BETTER_AUTH_DATABASE_URL &&
+  !process.env.DATABASE_URL
+) {
+  throw new Error(
+    "BETTER_AUTH_DATABASE_URL (or DATABASE_URL) is required in production.",
+  );
+}
 
 const databaseUrl =
   process.env.BETTER_AUTH_DATABASE_URL ??
@@ -48,6 +61,17 @@ const pool = new Pool({
 
 const internalApiUrl =
   process.env.INTERNAL_API_URL ?? "http://localhost:8000/api";
+// The users-link / users-delete calls carry the X-Internal-Auth secret plus PII
+// (email, name) to the backend. In production that hop must be TLS; a plaintext
+// http:// URL would leak both over the network. Fail fast rather than ship it.
+if (
+  process.env.NODE_ENV === "production" &&
+  !internalApiUrl.startsWith("https://")
+) {
+  throw new Error(
+    "INTERNAL_API_URL must use https:// in production (carries the internal secret + PII).",
+  );
+}
 const internalSecret = process.env.BETTER_AUTH_INTERNAL_SECRET ?? "";
 
 // Single source of truth for the app's own origin — used both as Better
@@ -109,6 +133,9 @@ async function linkUserOnBackend(input: {
       full_name: input.fullName,
       avatar_url: input.imageUrl,
     }),
+    // Node's fetch has no default timeout; without this a hung backend would
+    // block the sign-up handler until the platform's function timeout fires.
+    signal: AbortSignal.timeout(5000),
   });
 
   if (!response.ok) {
@@ -132,8 +159,15 @@ async function linkUserOnBackend(input: {
 // `/organizations/` discovery `issuer` is the templated `.../{tenantid}/v2.0`,
 // and Better Auth's RFC 9207 check compares the callback `iss` (the user's REAL
 // tenant) against that template — rejecting every login with `issuer_mismatch`.
-// With no discoveryUrl/issuer set, that check is skipped; the id_token
-// (back-channel over TLS, PKCE) is the trusted profile source.
+// With no discoveryUrl/issuer set, that RFC 9207 check is skipped. Because that
+// leaves Better Auth with NO issuer/signature check on the `/organizations/`
+// (any-tenant) endpoint, `getUserInfo` below re-establishes the trust boundary
+// itself: it verifies the id_token signature against the issuing tenant's JWKS
+// and PINS the tenant to HKUST's own tenants. This is load-bearing security —
+// the back-channel TLS only proves the token came from Microsoft, NOT that it
+// came from an HKUST tenant. Without the tenant pin, a user in ANY Entra tenant
+// could set their `email` claim to `someone@ust.hk` (the `email`/`mail` claim
+// is not domain-verified) and clear the domain gate as a forged instructor.
 //
 // providerId stays bare "hkust" to match the redirect URI HKUST registered
 // (.../api/auth/oauth2/callback/hkust). The provider mounts once clientId +
@@ -144,6 +178,37 @@ const HKUST_AUTHORIZE_URL =
   "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize";
 const HKUST_TOKEN_URL =
   "https://login.microsoftonline.com/organizations/oauth2/v2.0/token";
+
+// The only Microsoft Entra tenants HKUST users legitimately belong to. Values
+// are authoritative, read from Microsoft's tenant discovery documents:
+//   https://login.microsoftonline.com/ust.hk/v2.0/.well-known/openid-configuration
+//   https://login.microsoftonline.com/connect.ust.hk/v2.0/.well-known/openid-configuration
+// Staff/faculty (@ust.hk) and students (@connect.ust.hk) live in DIFFERENT
+// tenants — that is why the multi-tenant `/organizations/` endpoint is used.
+// An id_token whose `tid` is not one of these is rejected outright.
+const HKUST_TENANT_ISSUERS: Record<string, string> = {
+  "c917f3e2-9322-4926-9bb3-daca730413ca":
+    "https://login.microsoftonline.com/c917f3e2-9322-4926-9bb3-daca730413ca/v2.0", // ust.hk (staff/faculty)
+  "6c1d4152-39d0-44ca-88d9-b8d6ddca0708":
+    "https://login.microsoftonline.com/6c1d4152-39d0-44ca-88d9-b8d6ddca0708/v2.0", // connect.ust.hk (students)
+};
+
+// One remote JWK set per tenant, created lazily and cached so `jose` reuses the
+// fetched signing keys across requests (per server process).
+const tenantJwksCache = new Map<
+  string,
+  ReturnType<typeof createRemoteJWKSet>
+>();
+function jwksForTenant(tid: string): ReturnType<typeof createRemoteJWKSet> {
+  let jwks = tenantJwksCache.get(tid);
+  if (!jwks) {
+    jwks = createRemoteJWKSet(
+      new URL(`https://login.microsoftonline.com/${tid}/discovery/v2.0/keys`),
+    );
+    tenantJwksCache.set(tid, jwks);
+  }
+  return jwks;
+}
 
 const hkustOidcProviders = [
   {
@@ -166,23 +231,68 @@ const hkustOidcProviders = [
     authorizationUrlParams: { prompt: "select_account" },
     // Entra frequently omits the `email` claim, so the default getUserInfo
     // (which needs id_token.email) would fall through to a userinfo URL we
-    // don't configure. Decode the id_token ourselves, falling back to
-    // preferred_username, so the email-domain gate always sees an address.
+    // don't configure. We read the id_token ourselves — but only AFTER
+    // cryptographically verifying it and pinning the tenant, because the
+    // `/organizations/` endpoint otherwise leaves the token unauthenticated at
+    // the app boundary. This runs on EVERY sign-in (new and returning users),
+    // so the tenant pin + domain gate are enforced on every authentication,
+    // not just at account creation.
     getUserInfo: async (tokens: { idToken?: string }) => {
       if (!tokens.idToken) return null;
-      // decodeJwt throws (JWTInvalid) on a malformed token; the caller does not
-      // wrap getUserInfo, so returning null here yields a clean error redirect
-      // instead of an unhandled 500.
-      let c: ReturnType<typeof decodeJwt>;
+
+      // Step 1: peek the (still-unverified) `tid` ONLY to select which tenant's
+      // JWKS to verify against. decodeJwt throws (JWTInvalid) on a malformed
+      // token; the caller does not wrap getUserInfo, so returning null yields a
+      // clean error redirect instead of an unhandled 500.
+      let unverifiedTid: string | undefined;
       try {
-        c = decodeJwt(tokens.idToken);
+        unverifiedTid = decodeJwt(tokens.idToken).tid as string | undefined;
       } catch {
         return null;
       }
+      // Reject any token not minted by an HKUST tenant. This is the tenant pin
+      // that replaces the disabled RFC 9207 issuer check.
+      if (!unverifiedTid || !(unverifiedTid in HKUST_TENANT_ISSUERS)) {
+        return null;
+      }
+
+      // Step 2: verify the id_token signature against that tenant's published
+      // keys, pinning issuer + audience + algorithm. A forged `tid` cannot pass
+      // here: the signature would not validate against the claimed tenant's
+      // keys and the pinned `issuer` would not match. Entra v2 id_tokens are
+      // RS256-signed.
+      const clientId =
+        process.env.HKUST_STAFF_MELI_CLIENT_ID ??
+        process.env.HKUST_STAFF_CLIENT_ID ??
+        "";
+      let c: ReturnType<typeof decodeJwt>;
+      try {
+        const { payload } = await jwtVerify(
+          tokens.idToken,
+          jwksForTenant(unverifiedTid),
+          {
+            issuer: HKUST_TENANT_ISSUERS[unverifiedTid],
+            audience: clientId,
+            algorithms: ["RS256"],
+          },
+        );
+        c = payload;
+      } catch {
+        // Bad signature / issuer / audience / expiry — reject.
+        return null;
+      }
+
       if (!c.sub) return null;
+      // With the tenant verified, `preferred_username` is an HKUST-issued UPN,
+      // so gating the domain on it (when `email` is absent) is safe.
       const email = String(
         (c.email as string) ?? (c.preferred_username as string) ?? "",
       ).toLowerCase();
+      // A token with neither `email` nor `preferred_username` yields "" here.
+      // Returning null treats it as an unusable identity (clean auth-failed
+      // redirect) instead of handing "" to the domain gate, which would raise
+      // a misleading "only ust.hk / connect.ust.hk accepted" error.
+      if (!email) return null;
       return {
         id: String(c.sub),
         email,
@@ -281,6 +391,9 @@ export const auth = betterAuth({
             "X-Internal-Auth": internalSecret,
           },
           body: JSON.stringify({ better_auth_id: user.id }),
+          // See linkUserOnBackend: bound the wait so a hung backend can't stall
+          // the account-deletion handler indefinitely.
+          signal: AbortSignal.timeout(5000),
         });
         if (!response.ok) {
           const detail = await response.text().catch(() => "");

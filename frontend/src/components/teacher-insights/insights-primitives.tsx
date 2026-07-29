@@ -96,9 +96,26 @@ interface ProgressBarProps {
   /** Pre-computed CSS width string, e.g. "62%". */
   readonly width: string;
   readonly tone?: "primary" | "success" | "warning" | "accent";
+  /**
+   * What the bar depicts. Used for the title attribute only; the VALUE must be
+   * rendered as text by the caller (see below).
+   */
   readonly label?: string;
 }
 
+/**
+ * A decorative magnitude bar.
+ *
+ * The release contract requires analytics to "expose values, labels, and a
+ * non-color data alternative", so the number this bar depicts is always
+ * rendered as text beside it by the caller. The bar itself is therefore hidden
+ * from assistive technology rather than announced a second time.
+ *
+ * It previously carried `role="presentation"` AND `aria-label`, which is a
+ * contradiction: `presentation` removes the element from the accessibility
+ * tree, so the label was silently discarded and the bar conveyed its value by
+ * width alone. Marking it `aria-hidden` states the intent correctly.
+ */
 export function ProgressBar({ width, tone = "primary", label }: ProgressBarProps) {
   const fill =
     tone === "success"
@@ -111,8 +128,8 @@ export function ProgressBar({ width, tone = "primary", label }: ProgressBarProps
   return (
     <div
       className="h-2 w-full overflow-hidden rounded-full bg-[var(--color-surface-hover)]"
-      role="presentation"
-      aria-label={label}
+      aria-hidden="true"
+      title={label}
     >
       <div className={cn("h-full rounded-full", fill)} style={{ width }} />
     </div>

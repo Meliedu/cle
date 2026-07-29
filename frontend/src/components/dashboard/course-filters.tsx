@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRound, Plus, Search, SlidersHorizontal } from "lucide-react";
+import { KeyRound, Plus, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface LanguageFacet {
@@ -59,7 +59,7 @@ export function CourseFilters({
           <button
             type="button"
             onClick={isInstructor ? onCreate : onJoin}
-            className="inline-flex items-center gap-1.5 rounded-[var(--radius-pill)] bg-[var(--color-primary)] px-3.5 py-2 text-xs font-semibold text-[var(--color-text-on-primary)] shadow-[var(--shadow-sm)] transition-all duration-[var(--duration-fast)] hover:bg-[var(--color-primary-hover)] hover:shadow-[var(--shadow-md)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+            className="inline-flex items-center gap-1.5 rounded-[var(--radius-pill)] bg-[var(--color-primary)] px-3.5 py-2 text-xs font-semibold pointer-coarse:min-h-11 text-[var(--color-text-on-primary)] shadow-[var(--shadow-sm)] transition-all duration-[var(--duration-fast)] hover:bg-[var(--color-primary-hover)] hover:shadow-[var(--shadow-md)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
           >
             {isInstructor ? (
               <>
@@ -101,13 +101,6 @@ export function CourseFilters({
             />
           ))}
 
-          <button
-            type="button"
-            aria-label="More filters"
-            className="ml-auto inline-flex size-9 items-center justify-center rounded-[var(--radius-pill)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] hover:border-[var(--color-border-hover)] hover:text-[var(--color-text)]"
-          >
-            <SlidersHorizontal className="size-4" strokeWidth={1.75} />
-          </button>
         </div>
       ) : null}
     </div>
@@ -129,7 +122,7 @@ function SearchField({
         value={query}
         onChange={(event) => onChange(event.target.value)}
         placeholder="Search courses"
-        className="w-[180px] rounded-[var(--radius-pill)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] transition-all duration-[var(--duration-fast)] focus:w-[220px] focus:border-[var(--color-border-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+        className="h-11 w-[180px] rounded-[var(--radius-pill)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] transition-all duration-[var(--duration-fast)] focus:w-[220px] focus:border-[var(--color-border-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
       />
     </label>
   );
@@ -157,6 +150,7 @@ function LanguageChip({
       aria-pressed={active}
       className={cn(
         "inline-flex items-center gap-2 rounded-[var(--radius-pill)] border px-3 py-1.5 text-xs font-medium transition-all duration-[var(--duration-fast)]",
+        "pointer-coarse:min-h-11",
         active
           ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-hover)]"
           : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)] hover:text-[var(--color-text)]"

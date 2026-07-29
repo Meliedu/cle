@@ -62,11 +62,13 @@ describe("ScoreCategoriesView", () => {
     expect(screen.getByText(/Practice only/i)).toBeTruthy();
   });
 
-  it("links to the setup score-policy step to edit", () => {
+  it("links to the Review stage, which owns score policy", () => {
+    // The wizard reads `?stage=` now that the nine backend steps are projected
+    // onto five user-facing stages; `?step=score_policy` no longer resolves.
     renderView();
     const link = screen.getByRole("link", { name: /Edit in setup/i });
     expect(link.getAttribute("href")).toBe(
-      "/teacher/courses/c1/setup?step=score_policy"
+      "/teacher/courses/c1/setup?stage=review"
     );
   });
 

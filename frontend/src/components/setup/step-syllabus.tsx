@@ -6,6 +6,7 @@ import { FileText, ListChecks, Loader2, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState, StateBanner } from "@/components/patterns";
+import { safeErrorFromCode } from "@/lib/contracts/safe-error";
 import { SyllabusUploadCard } from "@/components/documents/syllabus-upload-card";
 import {
   useApplySyllabusImport,
@@ -13,6 +14,18 @@ import {
   type SyllabusImport,
 } from "@/hooks/use-syllabus";
 import { useSetStep } from "@/hooks/use-setup";
+
+/**
+ * User-safe copy for a failed syllabus import.
+ *
+ * Built from the TYPED code, never from `error_message`: that column is where
+ * `AttributeError: 'Settings' object has no attribute 'llm_primary_model'`
+ * reached an instructor in the live product. A legacy row with no code falls
+ * back to generic recoverable copy rather than to its stored text.
+ */
+function safeFailure(imp: SyllabusImport) {
+  return safeErrorFromCode(imp.error_code, { objectName: null });
+}
 
 interface StepSyllabusProps {
   readonly courseId: string;
@@ -173,7 +186,7 @@ function ImportStatus({ imp, counts, onApply, isApplying, t }: ImportStatusProps
       <StateBanner
         tone="warning"
         title={t("status.failed.title")}
-        reason={imp.error_message ?? t("status.failed.reason")}
+        reason={`${safeFailure(imp).consequence} ${safeFailure(imp).nextAction}`}
       />
     );
   }

@@ -181,63 +181,64 @@ export default function SignInPage() {
         ) : null}
 
         {emailEnabled ? (
-        <form onSubmit={onSubmit} className="space-y-4" noValidate>
-          <TextField
-            ref={emailRef}
-            label="Email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            inputMode="email"
-            required
-            placeholder="you@connect.ust.hk"
-            value={email}
-            onChange={(event) => {
-              setEmail(event.target.value);
-              if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
-            }}
-            error={errors.email ?? null}
-          />
+          <form onSubmit={onSubmit} className="space-y-4" noValidate>
+            <TextField
+              ref={emailRef}
+              label="Email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              inputMode="email"
+              required
+              placeholder="you@connect.ust.hk"
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                if (errors.email)
+                  setErrors((prev) => ({ ...prev, email: undefined }));
+              }}
+              error={errors.email ?? null}
+            />
 
-          <TextField
-            ref={passwordRef}
-            label="Password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            placeholder="••••••••••"
-            value={password}
-            onChange={(event) => {
-              setPassword(event.target.value);
-              if (errors.password)
-                setErrors((prev) => ({ ...prev, password: undefined }));
-            }}
-            error={errors.password ?? null}
-            helperText={
-              <a
-                href="/forgot-password"
-                className="text-[11px] font-medium text-[var(--color-accent-hover)] underline-offset-[3px] hover:underline focus-visible:underline focus-visible:outline-none"
+            <TextField
+              ref={passwordRef}
+              label="Password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              required
+              placeholder="••••••••••"
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                if (errors.password)
+                  setErrors((prev) => ({ ...prev, password: undefined }));
+              }}
+              error={errors.password ?? null}
+              helperText={
+                <a
+                  href="/forgot-password"
+                  className="text-[11px] font-medium text-[var(--color-accent-hover)] underline-offset-[3px] hover:underline focus-visible:underline focus-visible:outline-none"
+                >
+                  Forgot password?
+                </a>
+              }
+            />
+
+            {errors.form ? (
+              <p
+                role="alert"
+                aria-live="polite"
+                className="rounded-[var(--radius-md)] border border-[var(--color-error)]/40 bg-[var(--color-error-light)] px-3 py-2 text-[13px] leading-snug text-[var(--color-error)]"
               >
-                Forgot password?
-              </a>
-            }
-          />
+                {errors.form}
+              </p>
+            ) : null}
 
-          {errors.form ? (
-            <p
-              role="alert"
-              aria-live="polite"
-              className="rounded-[var(--radius-md)] border border-[var(--color-error)]/40 bg-[var(--color-error-light)] px-3 py-2 text-[13px] leading-snug text-[var(--color-error)]"
-            >
-              {errors.form}
-            </p>
-          ) : null}
-
-          <PrimaryButton type="submit" loading={busy}>
-            Sign in
-          </PrimaryButton>
-        </form>
+            <PrimaryButton type="submit" loading={busy}>
+              Sign in
+            </PrimaryButton>
+          </form>
         ) : null}
       </AuthCard>
     </AuthShell>

@@ -14,7 +14,29 @@
     "flashcards": "Flashcards",
     "pronunciation": "Pronunciation",
     "liveQuiz": "Live Quiz",
-    "signOut": "Sign Out"
+    "signOut": "Sign Out",
+    "home": "Home",
+    "calendar": "Calendar",
+    "insights": "Insights",
+    "myProgress": "My progress",
+    "logout": "Log out",
+    "mainLabel": "Main",
+    "courseLabel": "Course",
+    "navigationLabel": "Navigation",
+    "closeNavigation": "Close navigation",
+    "brandHome": "Meli home",
+    "openNavigation": "Open navigation",
+    "course": {
+      "overview": "Overview",
+      "sessions": "Sessions",
+      "materials": "Materials",
+      "activities": "Activities",
+      "practice": "Practice",
+      "students": "Students",
+      "insights": "Insights",
+      "progress": "Progress"
+    },
+    "wordmark": "Meli / Course Studio"
   },
   "dashboard": {
     "welcome": "Welcome back",
@@ -66,7 +88,7 @@
     },
     "calendar": {
       "title": "Calendar",
-      "subtitle": "Classes, checkpoints, and activities from your courses.",
+      "subtitle": "Course sessions and generated activities appear automatically.",
       "today": "Today",
       "prev": "Previous period",
       "next": "Next period",
@@ -123,7 +145,19 @@
         "required": "Required",
         "optional": "Optional",
         "status": "Your status"
-      }
+      },
+      "addEvent": "Add event",
+      "periodLabel": "Shown period",
+      "daySelected": "{date} selected",
+      "provenance": "Auto-added from course setup",
+      "canvasProvenance": "Synced from Canvas",
+      "filterHint": "Showing {shown} of {total} courses",
+      "showAll": "Show all courses",
+      "dayEmptyReason": "Classes, generated releases, and deadlines for this day appear here.",
+      "monthEmpty": "Nothing scheduled this month.",
+      "weekEmpty": "Nothing scheduled this week.",
+      "viewWeek": "View week",
+      "venueOnline": "Online"
     }
   },
   "teacher": {
@@ -686,7 +720,58 @@
         "FINAL_CARD_FIXED": "The final comments card cannot be removed.",
         "REVIEW_REQUIRED": "This checkpoint can only be edited while it is a draft.",
         "REMOVE_REASON_REQUIRED": "Choose a reason before removing this card."
-      }
+      },
+      "stages": {
+        "basics": "Basics",
+        "sources": "Sources",
+        "schedule": "Schedule",
+        "review": "Review",
+        "publish": "Publish"
+      },
+      "stageProgress": "{done} of {total} done",
+      "stepperLabel": "Course setup stages",
+      "stageLocked": "{stage} opens after the earlier stages are complete",
+      "savedJustNow": "Saved just now",
+      "savedAt": "Saved {when}",
+      "saving": "Saving",
+      "saveAndLeave": "Save and leave",
+      "exitConfirm": "Your work is saved. You can come back to this course setup at any time.",
+      "processingContinues": "Processing continues safely if you leave this page.",
+      "backToCourses": "Courses",
+      "setupBreadcrumb": "Course setup",
+      "provenanceTitle": "Source provenance",
+      "provenanceReason": "What Meli is using for this step",
+      "provenanceEmpty": "No sources added yet.",
+      "grounded": "Grounded",
+      "processing": "Processing",
+      "failed": "Needs attention",
+      "queued": "Queued",
+      "safeToLeaveTitle": "Safe to leave",
+      "safeProcessing": "{count, plural, =1 {1 source processing} other {# sources processing}}",
+      "safeAttention": "{count, plural, =1 {1 source needs attention} other {# sources need attention}}",
+      "safeAllReady": "{count, plural, =1 {1 source ready} other {# sources ready}}",
+      "lastChecked": "Last checked · {when}",
+      "stateOk": "Ready",
+      "stateWarning": "Warning",
+      "stateWorking": "Working",
+      "retryParsing": "Retry parsing",
+      "replaceFile": "Replace file",
+      "removeSource": "Remove source",
+      "filesSaved": "Your files are saved",
+      "sourcesTitle": "Course sources",
+      "sourcesReason": "Meli reads these to draft your outcomes, schedule, and checkpoints.",
+      "readingSources": "Reading course sources",
+      "stageTitle": {
+        "basics": "Course basics",
+        "sources": "Course sources",
+        "schedule": "Schedule and sessions",
+        "review": "Review course context",
+        "publish": "Review and publish"
+      },
+      "continueTo": "Continue to {stage}",
+      "blockedReason": "Finish this stage before continuing.",
+      "jumpToSource": "Go to the source that needs attention",
+      "saved": "Saved"
     },
     "course": {
       "breadcrumb": "Courses",
@@ -695,19 +780,23 @@
       "loadError": "Refresh the page or return to your courses.",
       "status": {
         "draft": "Draft",
-        "published": "Published"
+        "published": "Published",
+        "setup": "In setup",
+        "archived": "Archived"
       },
       "tabs": {
         "overview": "Overview",
         "schedule": "Schedule",
-        "sessions": "Checkpoints",
-        "enrollment": "Enrollment",
+        "sessions": "Sessions",
+        "enrollment": "Students",
         "setup": "Setup",
         "materials": "Materials",
         "activities": "Activities",
         "insights": "Insights",
         "reports": "Reports",
-        "memory": "Memory"
+        "memory": "Memory",
+        "practice": "Practice",
+        "students": "Students"
       },
       "tabSoon": "Soon",
       "overview": {
@@ -739,7 +828,38 @@
           "title": "Quick links",
           "schedule": "View schedule",
           "setup": "Open setup"
-        }
+        },
+        "nextTeachingToday": "Next teaching today at {time}",
+        "nextTeachingOn": "Next teaching {date} at {time}",
+        "teachingNow": "Teaching now",
+        "openSession": "Open {title}",
+        "editSession": "Edit session",
+        "enrolled": "{count} enrolled",
+        "minutes": "{count} minutes",
+        "sourcesReady": "{ready} of {total} sources ready",
+        "sourcesNone": "No sources added yet",
+        "noSessionTitle": "No class scheduled yet",
+        "noSessionReason": "Add a schedule so the next class you teach appears here with its readiness.",
+        "noSessionAction": "Open schedule",
+        "setupTitle": "Finish setting up this course",
+        "setupReason": "Students cannot join until Basics, Sources, Schedule, and Review are complete and the course is published.",
+        "setupAction": "Continue setup",
+        "thisWeek": "This week",
+        "thisWeekReason": "One ordered sequence; each release inherits the same sources.",
+        "thisWeekEmpty": "Nothing scheduled in the next seven days.",
+        "readinessLabel": "Course readiness",
+        "readyTitle": "Ready for the next class",
+        "notReadyTitle": "Needs attention before the next class",
+        "noClassTitle": "No class to prepare for",
+        "readinessReason": "Readiness for the next class, grounded in course activity.",
+        "learnersEnrolled": "learners enrolled",
+        "sessionsScheduled": "sessions scheduled",
+        "sourcesReadyShort": "sources ready",
+        "accessNote": "Course access is managed under Students, not Overview.",
+        "openStudents": "Manage students",
+        "settingsTitle": "Course settings",
+        "settingsReason": "Change basics, sources, or the schedule for this published course.",
+        "openSettings": "Open course settings"
       },
       "schedule": {
         "title": "Course schedule",
@@ -2130,6 +2250,111 @@
         "rosterEmpty": "Nothing marked to carry forward yet.",
         "rosterMore": "+{count} more"
       }
+    },
+    "home": {
+      "greeting": "Welcome back, {name}.",
+      "greetingFallback": "Welcome back.",
+      "subtitle": "{date} · {count, plural, =0 {No courses on your teaching roster} =1 {1 course on your teaching roster} other {# courses on your teaching roster}}",
+      "lead": {
+        "inProgress": "Teaching now",
+        "inMinutes": "Next teaching in {minutes, plural, =0 {less than a minute} =1 {1 minute} other {# minutes}}",
+        "todayAt": "Next teaching today at {time}",
+        "onDay": "Next teaching {date} at {time}"
+      },
+      "hero": {
+        "openSession": "Open {title}",
+        "editSession": "Edit session",
+        "students": "{count, plural, =1 {1 student} other {# students}}",
+        "minutes": "{count} minutes",
+        "sourceReadiness": "Source readiness",
+        "sourcesReady": "{ready} / {total} ready",
+        "sourcesNone": "No sources yet",
+        "sourcesProcessing": "{count, plural, =1 {1 source still processing} other {# sources still processing}}",
+        "sourcesAttention": "{count, plural, =1 {1 source needs attention} other {# sources need attention}}",
+        "sourcesAllReady": "Every source is ready for this class.",
+        "readyChip": "Ready",
+        "attentionChip": "Needs attention",
+        "processingChip": "Processing"
+      },
+      "empty": {
+        "title": "No class scheduled ahead",
+        "reason": "Once a course has a schedule, the next class you teach appears here with its readiness and a single way in.",
+        "action": "Go to Courses"
+      },
+      "laterToday": {
+        "title": "Later today",
+        "empty": "Nothing else scheduled today."
+      },
+      "roster": {
+        "title": "Teaching roster",
+        "empty": "No courses yet.",
+        "viewAll": "View all courses",
+        "updated": "Updated {when}"
+      },
+      "rail": {
+        "agendaTitle": "After this session",
+        "agendaTitleNoClass": "Coming up",
+        "agendaEmpty": "Nothing scheduled in the next three weeks.",
+        "note": "Calendar remains the source of time; session readiness stays with the course.",
+        "viewCalendar": "View full calendar",
+        "prevWeek": "Previous week",
+        "nextWeek": "Next week"
+      },
+      "kind": {
+        "class": "Class",
+        "generated_release": "Release",
+        "deadline": "Due",
+        "assignment": "Assignment"
+      },
+      "status": {
+        "draft": "Draft",
+        "setup": "In setup",
+        "published": "Published",
+        "archived": "Archived"
+      }
+    },
+    "roster": {
+      "title": "Courses",
+      "subtitle": "Teaching roster ordered by your next class.",
+      "create": "Create course",
+      "search": "Search courses",
+      "searchLabel": "Search courses",
+      "allTerms": "All terms",
+      "allStatus": "All status",
+      "termLabel": "Term",
+      "statusLabel": "Status",
+      "nextToTeach": "Next to teach",
+      "nextSession": "Next session",
+      "notScheduled": "Not scheduled yet",
+      "noUpcoming": "No upcoming sessions",
+      "online": "Online",
+      "verb": {
+        "open": "Open course",
+        "continueSetup": "Continue setup",
+        "view": "View course"
+      },
+      "status": {
+        "draft": "Draft",
+        "setup": "Draft setup",
+        "published": "Published",
+        "archived": "Archived"
+      },
+      "count": "{count, plural, =0 {No courses} =1 {1 course} other {# courses}}",
+      "filtered": "{shown} of {total} courses",
+      "empty": {
+        "title": "No courses yet",
+        "reason": "Create your first course to start building sessions, materials, and activities.",
+        "action": "Create course"
+      },
+      "emptyFiltered": {
+        "title": "No courses match these filters",
+        "reason": "Try a different term or status, or clear the search.",
+        "action": "Clear filters"
+      },
+      "more": "More actions for {course}",
+      "openSettings": "Course settings",
+      "duplicate": "Duplicate course",
+      "archive": "Archive course"
     }
   },
   "student": {
@@ -2565,7 +2790,11 @@
       "recommendation": {
         "eyebrow": "Your recommendation",
         "body": "Based on your ready check, here's a suggested starting point.",
-        "confidence": "Average confidence: {value}",
+        "confidence": {
+          "high": "High",
+          "medium": "Medium",
+          "low": "Low"
+        },
         "levels": {
           "foundation": "Foundation level",
           "intermediate": "Intermediate level",
@@ -2579,7 +2808,38 @@
         "errorReason": "Something went wrong computing your recommendation. Please try again.",
         "retry": "Try again",
         "back": "Back",
-        "continue": "Continue"
+        "continue": "Continue",
+        "chip": "Recommendation",
+        "boundaryTitle": "Decision boundary",
+        "boundaryBody": "Meli recommends a starting point; it does not enrol you. CLE can review the evidence and change the level.",
+        "requestAdvising": "Request advising",
+        "previewCourse": "Preview this course",
+        "confidenceLabel": "Recommendation confidence",
+        "confidenceReason": {
+          "high": "Your answers agree across skills. CLE retains final placement authority.",
+          "medium": "Your answers vary across skills. CLE retains final placement authority.",
+          "low": "There is not enough consistent evidence yet. CLE retains final placement authority."
+        },
+        "evidenceTitle": "Evidence behind the recommendation",
+        "evidenceReason": "Every skill result connects to the course outcome or support response it informs.",
+        "evidenceEmpty": "No skill answers were recorded, so there is no evidence to show yet.",
+        "skill": {
+          "listening": "Listening",
+          "speaking": "Speaking",
+          "reading": "Reading",
+          "writing": "Writing"
+        },
+        "state": {
+          "ready": "Ready",
+          "developing": "Developing",
+          "needs_support": "Needs support"
+        },
+        "informs": {
+          "ready": "Supports the recommended level directly.",
+          "developing": "Can be built with guided practice in this course.",
+          "needs_support": "Advising and extra practice are suggested in weeks 1-2."
+        },
+        "supportPlan": "Support plan"
       },
       "deepPreview": {
         "eyebrow": "What's inside",
@@ -2964,6 +3224,66 @@
         "nextActions": "Your next steps",
         "completedWork": "{count, plural, =0 {No work completed this period} one {piece of work completed} other {pieces of work completed}}",
         "mastery": "{pct}% mastery"
+      }
+    },
+    "home": {
+      "greeting": "Welcome back, {name}.",
+      "greetingFallback": "Welcome back.",
+      "subtitle": "{date} · {count, plural, =0 {Nothing is waiting for you} =1 {One learning action is ready now} other {# learning actions are ready now}}",
+      "leadDueToday": "Continue learning, due today at {time}",
+      "leadDueOn": "Continue learning, due {date} at {time}",
+      "leadNoDue": "Continue learning",
+      "leadStart": "Ready to start",
+      "savedPercent": "Saved, {percent}% complete",
+      "savedState": "Saved",
+      "notStarted": "Not started",
+      "submittedState": "Submitted",
+      "reviewedState": "Reviewed",
+      "verb": {
+        "resume": "Resume {title}",
+        "start": "Start {title}",
+        "submitted": "Submitted",
+        "viewFeedback": "View feedback",
+        "locked": "Locked",
+        "scheduled": "Scheduled",
+        "closed": "Closed"
+      },
+      "chip": {
+        "resume": "Saved",
+        "start": "Ready",
+        "submitted": "Submitted",
+        "viewFeedback": "Reviewed",
+        "locked": "Locked",
+        "scheduled": "Scheduled",
+        "closed": "Closed"
+      },
+      "source": "Source · {name}",
+      "sourceUnknown": "No source attached",
+      "opensOn": "Opens {date}",
+      "closedOn": "Closed {date}",
+      "lockedGeneric": "Complete the earlier step",
+      "dueAt": "Due {date} · {time}",
+      "noDue": "No deadline",
+      "laterToday": "Later today",
+      "laterTodayEmpty": "Nothing else is waiting today.",
+      "yourCourses": "Your courses",
+      "yourCoursesEmpty": "You are not enrolled in a course yet.",
+      "joinCourse": "Join a course",
+      "allClearTitle": "You are all caught up",
+      "allClearReason": "Nothing is waiting for you right now. New work appears here as your courses release it.",
+      "railTitle": "Calendar",
+      "railAgenda": "Today after class",
+      "railAgendaEmpty": "Nothing scheduled today.",
+      "railNote": "Calendar shows when. The course path explains what unlocks next.",
+      "viewCalendar": "View full calendar",
+      "kind": {
+        "checkpoint": "Checkpoint",
+        "practice": "Practice",
+        "quiz": "Quiz",
+        "activity": "Activity",
+        "material": "Material",
+        "follow_up": "Follow-up",
+        "report": "Report"
       }
     }
   }

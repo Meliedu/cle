@@ -1,13 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { CalendarX2, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/patterns";
+import { useUrlState } from "@/hooks/use-url-state";
 
 import type {
   CalendarLegendCourse,
@@ -24,7 +23,6 @@ import {
   addMonths,
   addWeeks,
   buildWeekDays,
-  isSameDay,
   monthRange,
   startOfDay,
   toIsoDate,
@@ -32,22 +30,51 @@ import {
 } from "./calendar-date-math";
 
 /**
- * The full-calendar surface shared by both role lanes. Owns the view mode
- * (month/week), the visible period anchor, the selected day, and the open event.
- * Fans the merged feed (meetings + assignments + work_items, Decision 5) across
- * every course via `useCalendarEvents`, lets the user toggle courses on/off in
- * the legend, and drives the month/week grids + day agenda + event drawer.
+ * The single temporal authority (Plate 03).
+ *
+ * Three things the handoff requires, and where they live:
+ *
+ *   1. "Navigation and view mode sit in the calendar header with course legend
+ *      directly above the grid." Period nav, Today, and Month/Week are inside
+ *      the grid card's own header; the legend sits between the page header and
+ *      the card.
+ *   2. "Use one calendar state owner for date, view, and filters; do not mirror
+ *      independent copies on Dashboard." Date, view, selection, and hidden
+ *      courses all live in the URL (`useUrlState`), so this component is the
+ *      only writer and the dashboard is a read-only consumer of the same feed.
+ *   3. "Render an intentional empty state." A month with no events still
+ *      renders its month. Only the agenda says the day is clear; the grid
+ *      never disappears, because a calendar that vanishes when empty stops
+ *      being an authority over time.
  */
-export function CalendarShell() {
+
+/**
+ * URL keys this surface owns, including the open-event key. Listing every
+ * key it writes is what lets a future reset clear the view completely rather
+ * than leaving a stale `event` behind.
+ */
+export const CALENDAR_URL_KEYS = ["view", "date", "day", "hide", "event"] as const;
+
+interface CalendarShellProps {
+  /** Right-aligned action for the page header (e.g. "Add event"). */
+  readonly actions?: React.ReactNode;
+}
+
+export function CalendarShell({ actions }: CalendarShellProps) {
   const t = useTranslations("patterns.calendar");
   const locale = useLocale();
+  const url = useUrlState();
 
   const today = useMemo(() => startOfDay(new Date()), []);
-  const [view, setView] = useState<CalendarViewMode>("month");
-  const [anchor, setAnchor] = useState<Date>(today);
-  const [selected, setSelected] = useState<Date>(today);
-  const [openEvent, setOpenEvent] = useState<CourseCalendarEvent | null>(null);
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+
+  // ---- state, owned entirely by the URL -----------------------------------
+  const view: CalendarViewMode = url.get("view") === "week" ? "week" : "month";
+  const anchor = parseDate(url.get("date"), today);
+  const selected = parseDate(url.get("day"), today);
+  const hidden = useMemo<ReadonlySet<string>>(() => {
+    const raw = url.get("hide");
+    return new Set(raw ? raw.split(",").filter(Boolean) : []);
+  }, [url]);
 
   const { from, to } = useMemo(
     () => (view === "month" ? monthRange(anchor) : weekRange(anchor)),
@@ -74,25 +101,47 @@ export function CalendarShell() {
 
   const selectedDayEvents = eventsByDay.get(toIsoDate(selected)) ?? [];
 
-  function shift(direction: -1 | 1): void {
-    setAnchor((prev) =>
-      view === "month" ? addMonths(prev, direction) : addWeeks(prev, direction)
-    );
-  }
+  // ---- writers -------------------------------------------------------------
+  const shift = useCallback(
+    (direction: -1 | 1) => {
+      const next =
+        view === "month"
+          ? addMonths(anchor, direction)
+          : addWeeks(anchor, direction);
+      url.set("date", toIsoDate(next));
+    },
+    [anchor, url, view]
+  );
 
-  function goToday(): void {
-    setAnchor(today);
-    setSelected(today);
-  }
+  const goToday = useCallback(() => {
+    url.setMany({ date: null, day: null });
+  }, [url]);
 
-  function toggleCourse(courseId: string): void {
-    setHidden((prev) => {
-      const next = new Set(prev);
+  const setView = useCallback(
+    (mode: CalendarViewMode) => {
+      url.set("view", mode === "month" ? null : mode);
+    },
+    [url]
+  );
+
+  const selectDate = useCallback(
+    (date: Date) => {
+      url.set("day", toIsoDate(date));
+    },
+    [url]
+  );
+
+  const toggleCourse = useCallback(
+    (courseId: string) => {
+      const next = new Set(hidden);
       if (next.has(courseId)) next.delete(courseId);
       else next.add(courseId);
-      return next;
-    });
-  }
+      url.set("hide", next.size ? Array.from(next).join(",") : null);
+    },
+    [hidden, url]
+  );
+
+  const showAllCourses = useCallback(() => url.set("hide", null), [url]);
 
   const periodLabel =
     view === "month"
@@ -100,65 +149,218 @@ export function CalendarShell() {
       : formatWeekLabel(anchor, locale);
 
   return (
-    <div className="flex flex-col gap-4">
-      <Toolbar
-        periodLabel={periodLabel}
-        view={view}
-        onPrev={() => shift(-1)}
-        onNext={() => shift(1)}
-        onToday={goToday}
-        onView={setView}
-        t={t}
-      />
+    <div className="flex flex-col gap-5">
+      {actions ? (
+        <div className="flex justify-end lg:hidden">{actions}</div>
+      ) : null}
 
+      {/* Legend sits directly above the grid, not scattered in a toolbar. */}
       {courses.length > 1 ? (
         <CourseLegend
           courses={courses}
           hidden={hidden}
           onToggle={toggleCourse}
-          t={t}
+          onShowAll={showAllCourses}
         />
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <div className="min-w-0">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <section className="min-w-0 overflow-hidden rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+          {/* Navigation + view mode, inside the calendar header. */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
+            <div className="flex items-center gap-1">
+              <NavButton label={t("prev")} onClick={() => shift(-1)}>
+                <ChevronLeft aria-hidden="true" className="size-4" />
+              </NavButton>
+              <button
+                type="button"
+                onClick={goToday}
+                className="h-11 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-[13px] font-medium text-[var(--color-text)] outline-none transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-hover)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none"
+              >
+                {t("today")}
+              </button>
+              <NavButton label={t("next")} onClick={() => shift(1)}>
+                <ChevronRight aria-hidden="true" className="size-4" />
+              </NavButton>
+            </div>
+
+            <h2
+              aria-live="polite"
+              className="order-last w-full text-center text-[17px] font-semibold tracking-tight text-[var(--color-text)] sm:order-none sm:w-auto"
+            >
+              {periodLabel}
+            </h2>
+
+            <div
+              role="tablist"
+              aria-label={t("viewLabel")}
+              className="inline-flex items-center gap-1 rounded-[var(--radius-lg)] border border-[var(--color-border)] p-1"
+            >
+              {(["month", "week"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === mode}
+                  onClick={() => setView(mode)}
+                  className={cn(
+                    "h-11 rounded-[var(--radius-md)] px-4 text-[13px] font-medium outline-none transition-colors duration-[var(--duration-fast)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none",
+                    view === mode
+                      ? "bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"
+                      : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
+                  )}
+                >
+                  {t(`view.${mode}`)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/*
+            The grid always renders. An empty month is a real month, and hiding
+            it would break the calendar's job as the authority over time.
+          */}
           {isLoading ? (
-            <Skeleton className="h-[520px] rounded-[var(--radius-2xl)]" />
-          ) : events.length === 0 ? (
-            <EmptyState
-              icon={CalendarX2}
-              title={t("empty.title")}
-              reason={t("empty.reason")}
-              className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)]"
-            />
+            <Skeleton className="m-4 h-[520px] rounded-[var(--radius-xl)]" />
           ) : view === "month" ? (
             <MonthGrid
               anchor={anchor}
               today={today}
               selected={selected}
               eventsByDay={eventsByDay}
-              onSelectDate={setSelected}
+              onSelectDate={selectDate}
             />
           ) : (
             <WeekGrid
               anchor={anchor}
               today={today}
               eventsByDay={eventsByDay}
-              onOpenEvent={setOpenEvent}
+              onOpenEvent={(item) => selectDate(new Date(item.event.at))}
             />
           )}
-        </div>
+
+          {!isLoading && visibleEvents.length === 0 ? (
+            <p className="border-t border-[var(--color-border)] px-4 py-3 text-[13px] text-[var(--color-text-muted)]">
+              {view === "month" ? t("monthEmpty") : t("weekEmpty")}
+            </p>
+          ) : null}
+        </section>
 
         <CalendarDaySidebar
           selected={selected}
           events={selectedDayEvents}
-          onOpenEvent={setOpenEvent}
+          onOpenEvent={(item) => url.set("event", item.event.id)}
         />
       </div>
 
-      <EventDetailDrawer selected={openEvent} onClose={() => setOpenEvent(null)} />
+      <EventDetailDrawer
+        selected={
+          visibleEvents.find((item) => item.event.id === url.get("event")) ??
+          null
+        }
+        onClose={() => url.set("event", null)}
+      />
     </div>
   );
+}
+
+interface NavButtonProps {
+  readonly label: string;
+  readonly onClick: () => void;
+  readonly children: React.ReactNode;
+}
+
+function NavButton({ label, onClick, children }: NavButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="flex size-11 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] text-[var(--color-text-secondary)] outline-none transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none"
+    >
+      {children}
+    </button>
+  );
+}
+
+interface CourseLegendProps {
+  readonly courses: readonly CalendarLegendCourse[];
+  readonly hidden: ReadonlySet<string>;
+  readonly onToggle: (courseId: string) => void;
+  readonly onShowAll: () => void;
+}
+
+/**
+ * Course legend.
+ *
+ * Color here is supplementary (Plate 03, rule 2): the course code is always
+ * spelled out, and a hidden course is struck through as well as dimmed, so the
+ * filter state does not depend on perceiving the swatch.
+ */
+function CourseLegend({
+  courses,
+  hidden,
+  onToggle,
+  onShowAll,
+}: CourseLegendProps) {
+  const t = useTranslations("patterns.calendar");
+  const shown = courses.length - hidden.size;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
+        {t("legend.label")}
+      </span>
+      {courses.map((course) => {
+        const isHidden = hidden.has(course.courseId);
+        return (
+          <button
+            key={course.courseId}
+            type="button"
+            aria-pressed={!isHidden}
+            onClick={() => onToggle(course.courseId)}
+            className={cn(
+              "inline-flex h-11 items-center gap-1.5 rounded-[var(--radius-pill)] px-3.5 text-[13px] font-medium outline-none transition-colors duration-[var(--duration-fast)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none",
+              isHidden
+                ? "text-[var(--color-text-muted)] line-through hover:bg-[var(--color-surface-hover)]"
+                : "text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]"
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-2 shrink-0 rounded-full",
+                paletteSlot(course.colorIndex).swatch,
+                isHidden && "opacity-30"
+              )}
+            />
+            {course.courseCode}
+          </button>
+        );
+      })}
+      {hidden.size > 0 ? (
+        <button
+          type="button"
+          onClick={onShowAll}
+          className="ml-1 inline-flex h-11 items-center rounded-[var(--radius-md)] px-2 text-[13px] font-medium text-[var(--color-primary-hover)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+        >
+          {t("showAll")}
+          <span className="sr-only">
+            {" "}
+            {t("filterHint", { shown, total: courses.length })}
+          </span>
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Parse a `YYYY-MM-DD` URL value, falling back when absent or malformed. */
+function parseDate(value: string, fallback: Date): Date {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return fallback;
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(year, month - 1, day);
+  return Number.isNaN(parsed.getTime()) ? fallback : startOfDay(parsed);
 }
 
 /** "22 – 28 June 2026" style label for the visible week. */
@@ -176,111 +378,4 @@ function formatWeekLabel(anchor: Date, locale: string): string {
   return sameMonth
     ? `${dayFmt.format(first)} – ${fullFmt.format(last)}`
     : `${fullFmt.format(first)} – ${fullFmt.format(last)}`;
-}
-
-interface ToolbarProps {
-  readonly periodLabel: string;
-  readonly view: CalendarViewMode;
-  readonly onPrev: () => void;
-  readonly onNext: () => void;
-  readonly onToday: () => void;
-  readonly onView: (view: CalendarViewMode) => void;
-  readonly t: ReturnType<typeof useTranslations>;
-}
-
-function Toolbar({
-  periodLabel,
-  view,
-  onPrev,
-  onNext,
-  onToday,
-  onView,
-  t,
-}: ToolbarProps) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <Button size="icon-sm" variant="outline" onClick={onPrev} aria-label={t("prev")}>
-          <ChevronLeft />
-        </Button>
-        <Button size="icon-sm" variant="outline" onClick={onNext} aria-label={t("next")}>
-          <ChevronRight />
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onToday}>
-          {t("today")}
-        </Button>
-        <span className="ml-1 text-[15px] font-semibold tracking-tight text-[var(--color-text)]">
-          {periodLabel}
-        </span>
-      </div>
-
-      <div
-        role="tablist"
-        aria-label={t("viewLabel")}
-        className="inline-flex items-center gap-1 rounded-[var(--radius-pill)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1"
-      >
-        {(["month", "week"] as const).map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            role="tab"
-            aria-selected={view === mode}
-            onClick={() => onView(mode)}
-            className={cn(
-              "rounded-[var(--radius-pill)] px-3 py-1 text-[12px] font-semibold transition-colors duration-[var(--duration-fast)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none",
-              view === mode
-                ? "bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"
-                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
-            )}
-          >
-            {t(`view.${mode}`)}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-interface CourseLegendProps {
-  readonly courses: readonly CalendarLegendCourse[];
-  readonly hidden: ReadonlySet<string>;
-  readonly onToggle: (courseId: string) => void;
-  readonly t: ReturnType<typeof useTranslations>;
-}
-
-function CourseLegend({ courses, hidden, onToggle, t }: CourseLegendProps) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-        {t("legend.label")}
-      </span>
-      {courses.map((course) => {
-        const isHidden = hidden.has(course.courseId);
-        return (
-          <button
-            key={course.courseId}
-            type="button"
-            aria-pressed={!isHidden}
-            onClick={() => onToggle(course.courseId)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-[var(--radius-pill)] border px-2.5 py-1 text-[12px] font-medium transition-colors duration-[var(--duration-fast)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none",
-              isHidden
-                ? "border-[var(--color-border)] bg-transparent text-[var(--color-text-muted)] line-through"
-                : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
-            )}
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "size-2 rounded-full",
-                paletteSlot(course.colorIndex).swatch,
-                isHidden && "opacity-40"
-              )}
-            />
-            {course.courseCode}
-          </button>
-        );
-      })}
-    </div>
-  );
 }

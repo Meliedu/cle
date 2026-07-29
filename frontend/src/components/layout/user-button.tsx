@@ -53,7 +53,10 @@ export function UserButton() {
         type="button"
         onClick={() => setOpen((value) => !value)}
         className={cn(
-          "flex size-8 items-center justify-center overflow-hidden rounded-full",
+          // The avatar stays 32px visually; the button is 44px so the hit area
+          // meets the touch floor without inflating the chrome.
+          "flex size-11 items-center justify-center rounded-full",
+          "[&>img]:size-8 [&>img]:rounded-full [&>img]:object-cover",
           "bg-[var(--color-surface-hover)] text-xs font-semibold text-[var(--color-text)]",
           "outline-none ring-offset-2 ring-offset-[var(--color-surface)]",
           "transition-[box-shadow,transform] duration-[var(--duration-fast)]",

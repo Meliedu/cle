@@ -28,18 +28,34 @@ const buttonVariants = cva(
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
       },
+      // Every size carries a `pointer-coarse:min-h-11` floor.
+      //
+      // The release contract requires 44x44 for "high-frequency controls and
+      // touch actions", verified "at desktop and mobile viewports". A 28 px
+      // secondary button is perfectly usable with a mouse and unusable with a
+      // thumb, so the floor is applied by INPUT TYPE rather than by width:
+      // pointer-coarse targets real touch devices, leaving desktop density
+      // exactly as designed while making every consumer touch-compliant at
+      // once. Fixing this per-component would have missed the next one added.
       size: {
         default:
-          "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        icon: "size-8",
+          "h-8 gap-1.5 px-2.5 pointer-coarse:min-h-11 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
+        xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs pointer-coarse:min-h-11 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
+        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] pointer-coarse:min-h-11 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
+        lg: "h-9 gap-1.5 px-2.5 pointer-coarse:min-h-11 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
+        // Release acceptance: "High-frequency controls and touch actions meet
+        // 44x44 CSS px implementation targets." Use this for the one dominant
+        // action on a page (the hero CTA, a publish button). The sizes above
+        // top out at 36px, which is below that floor.
+        xl: "h-11 gap-2 rounded-[var(--radius-lg)] px-5 text-[15px] has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4",
+        icon: "size-8 pointer-coarse:size-11",
         "icon-xs":
-          "size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
+          "size-6 pointer-coarse:size-11 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
         "icon-sm":
-          "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
-        "icon-lg": "size-9",
+          "size-7 pointer-coarse:size-11 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
+        "icon-lg": "size-9 pointer-coarse:size-11",
+        /** 44x44 icon-only control, for the same reason as `xl`. */
+        "icon-xl": "size-11 rounded-[var(--radius-lg)]",
       },
     },
     defaultVariants: {
@@ -60,8 +76,8 @@ function Button({
   const classes = cn(buttonVariants({ variant, size, className }))
 
   // When `render` is a navigation element (e.g. Next's <Link>, or a plain <a>),
-  // render it directly as a real link — keeping role="link" and native href
-  // navigation — with button styling applied. Routing it through Base UI's
+  // render it directly as a real link, keeping role="link" and native href
+  // navigation, with button styling applied. Routing it through Base UI's
   // Button instead would coerce it into button semantics (role="button") and
   // log a dev warning about a non-native-button render target.
   if (isValidElement(render) && render.type !== "button") {

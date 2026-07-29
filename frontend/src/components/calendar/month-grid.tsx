@@ -104,12 +104,14 @@ export function MonthGrid({
     }
   }
 
+  // Tight mobile padding is load-bearing: at 390px the seven columns have to
+  // clear the 44px touch floor, and p-3 + gap-1 left each day at 41px.
   return (
-    <div className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:p-4">
+    <div className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 sm:p-4">
       <div
         role="grid"
         aria-label={t("monthGridLabel")}
-        className="grid grid-cols-7 gap-1"
+        className="grid grid-cols-7 gap-0.5 sm:gap-1"
       >
         {weekdayLabels.map((label) => (
           <div

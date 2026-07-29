@@ -114,6 +114,8 @@ function FolderButton({
         aria-current={active ? "true" : undefined}
         className={cn(
           "flex w-full items-center gap-2 rounded-[var(--radius-md)] px-2 py-2 text-left transition-colors duration-[var(--duration-fast)]",
+          // Raw <button>, so it does not inherit the shared Button touch floor.
+          "pointer-coarse:min-h-11",
           active
             ? "bg-[var(--color-primary-light)] text-[var(--color-text)]"
             : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"

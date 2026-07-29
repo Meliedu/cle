@@ -441,8 +441,9 @@ async function advanceToSummary() {
   // diagnostic → recommendation
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("Intermediate level");
-  // recommendation → deep preview
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  // recommendation → deep preview. The approved placement result labels this
+  // action "Preview this course", kept separate from "Request advising".
+  fireEvent.click(screen.getByRole("button", { name: "Preview this course" }));
   await screen.findByText("What's inside");
   // deep preview → summary
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
@@ -590,7 +591,15 @@ describe("JoinFunnel — end-to-end happy path (S003 → S013)", () => {
     await screen.findByText("Intermediate level");
     const recBanner = screen.getByText(CLAIM_LIMIT).closest("[data-tone]");
     expect(recBanner?.getAttribute("data-tone")).toBe("info");
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    // The decision boundary is stated alongside the claim limit, and advising
+    // stays a separate action from previewing the course.
+    expect(
+      screen.getByText(
+        "Meli recommends a starting point; it does not enrol you. CLE can review the evidence and change the level."
+      )
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Request advising" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Preview this course" }));
 
     // S009 → S010 deep preview.
     await screen.findByText("What's inside");

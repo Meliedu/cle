@@ -21,6 +21,15 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Pin the Turbopack project root to this frontend package. Next infers the
+  // root from the nearest lockfile, but the surrounding git repo (backend +
+  // frontend monorepo) makes it resolve `globals.css`'s `@import
+  // "../styles/tokens.css"` against the repo root — outside the inferred root,
+  // which Turbopack refuses to resolve, 500-ing every page in local dev. On
+  // Vercel this dir is already the root, so pinning it is a no-op there.
+  turbopack: {
+    root: __dirname,
+  },
   async headers() {
     return [
       {

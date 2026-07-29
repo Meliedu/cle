@@ -11,6 +11,13 @@ export interface DocumentResponse {
   readonly file_type: string;
   readonly file_size: number | null;
   readonly status: string;
+  /**
+   * Typed failure code when `status === "failed"` (mirrors the backend
+   * `SourceFailureCode`). The UI maps this to user-safe copy; it never renders
+   * a backend message, because that is how raw exception text reached an
+   * instructor in the live product.
+   */
+  readonly error_code?: string | null;
   readonly page_count: number | null;
   readonly word_count: number | null;
   /** The `course_meetings` session this material is assigned to, or `null` (P4 B8). */
@@ -61,6 +68,36 @@ export function useDeleteDocument(courseId: string) {
         method: "DELETE",
         token,
       });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["documents", courseId] });
+    },
+  });
+}
+
+/**
+ * POST `/courses/{id}/documents/{documentId}/reprocess`: re-run the parsing
+ * pipeline for a source that failed.
+ *
+ * This is the "Retry parsing" action the approved setup design requires next to
+ * a failed source. It re-processes the STORED file: nothing is deleted and no
+ * re-upload is needed, which is what makes the recovery contract true ("Files
+ * are preserved"; "Autosave accepted work and never discard completed setup
+ * stages on retry").
+ */
+export function useReprocessDocument(courseId: string) {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (documentId: string) => {
+      const token = await getToken({ template: "backend" });
+      if (!token) throw new Error("Not authenticated");
+      const response = await apiFetch<ApiEnvelope<DocumentResponse>>(
+        `/courses/${courseId}/documents/${documentId}/reprocess`,
+        { method: "POST", token }
+      );
+      return response.data;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["documents", courseId] });

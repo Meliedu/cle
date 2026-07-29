@@ -32,7 +32,9 @@ function weightLabel(t: Translate, weight: number | null): string {
 export function ScoreCategoriesView({ courseId }: ScoreCategoriesViewProps) {
   const t = useTranslations("teacher.enrollment.scoreCategories");
   const { data, isLoading, isError } = useScoreCategories(courseId);
-  const editHref = `/teacher/courses/${courseId}/setup?step=score_policy`;
+  // Score policy is a sub-step of the Review stage; the wizard reads
+  // `?stage=`, not the retired `?step=` param.
+  const editHref = `/teacher/courses/${courseId}/setup?stage=review`;
 
   const categories: readonly ScoreCategory[] = data
     ? [...data].sort((a, b) => a.sort - b.sort)
@@ -51,7 +53,7 @@ export function ScoreCategoriesView({ courseId }: ScoreCategoriesViewProps) {
         </div>
         <Link
           href={editHref}
-          className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-primary)] hover:underline"
+          className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-primary)] hover:underline pointer-coarse:min-h-11"
         >
           <SlidersHorizontal aria-hidden="true" className="size-3.5" />
           {t("edit")}
