@@ -21,12 +21,16 @@ async def course_with_flashcards(db_session: AsyncSession, test_instructor, test
     course = Course(
         code="TEST101",
         name="Test Course",
-        created_by=test_instructor.id,
+        language="english",
+        instructor_id=test_instructor.id,
+        enroll_code="SCHED101",
     )
     db_session.add(course)
     await db_session.flush()
 
-    enrollment = Enrollment(user_id=test_student.id, course_id=course.id)
+    enrollment = Enrollment(
+        user_id=test_student.id, course_id=course.id, role="student"
+    )
     db_session.add(enrollment)
 
     fc_set = FlashcardSet(

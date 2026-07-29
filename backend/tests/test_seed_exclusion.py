@@ -12,7 +12,6 @@ seed (``frontend/scripts/seed-auth.mjs``) is gated symmetrically on
 ``NODE_ENV=production``; we assert its guard statically.
 """
 
-import asyncio
 from pathlib import Path
 
 import pytest
@@ -35,7 +34,14 @@ def _db_tripwire(*args, **kwargs):
 # --- Runtime fail-closed behaviour (the load-bearing protection) --------------
 
 
-def test_seed_refuses_in_production(monkeypatch):
+# These await the seed coroutine on the suite's own event loop rather than
+# calling ``asyncio.run``. ``asyncio.run`` closes the loop it creates and then
+# sets the thread's current loop to None, which would strand pytest-asyncio's
+# session-scoped loop and break every async test collected after this module.
+
+
+@pytest.mark.asyncio
+async def test_seed_refuses_in_production(monkeypatch):
     import seed
 
     monkeypatch.setattr(settings, "environment", "production")
@@ -43,20 +49,22 @@ def test_seed_refuses_in_production(monkeypatch):
     monkeypatch.setattr(seed, "async_session_factory", _db_tripwire)
 
     with pytest.raises(SystemExit):
-        asyncio.run(seed.seed())
+        await seed.seed()
 
 
-def test_seed_demo_refuses_in_production(monkeypatch):
+@pytest.mark.asyncio
+async def test_seed_demo_refuses_in_production(monkeypatch):
     import seed_demo
 
     monkeypatch.setattr(settings, "environment", "production")
     monkeypatch.setattr(seed_demo, "async_session_factory", _db_tripwire)
 
     with pytest.raises(SystemExit):
-        asyncio.run(seed_demo.seed())
+        await seed_demo.seed()
 
 
-def test_seed_is_not_gated_outside_production(monkeypatch):
+@pytest.mark.asyncio
+async def test_seed_is_not_gated_outside_production(monkeypatch):
     """The guard must fire ONLY in production — a development run proceeds past
     the guard toward the DB (here intercepted by the tripwire)."""
     import seed
@@ -66,7 +74,7 @@ def test_seed_is_not_gated_outside_production(monkeypatch):
 
     # Passing the guard means we reach the DB call → the tripwire fires.
     with pytest.raises(AssertionError):
-        asyncio.run(seed.seed())
+        await seed.seed()
 
 
 # --- Static guard presence (belt-and-suspenders across all seed entrypoints) --

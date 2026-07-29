@@ -44,6 +44,45 @@ def event_loop_policy():
     return asyncio.get_event_loop_policy()
 
 
+def _installed_loop(policy) -> asyncio.AbstractEventLoop | None:
+    """The thread's current event loop, observed WITHOUT installing one.
+
+    ``policy.get_event_loop()`` is not usable here: when no loop is set it
+    creates one as a side effect, which would leak an unclosed loop and flip
+    the policy's ``_set_called`` flag on the first sync test of the session.
+    We read the same slot that ``get_event_loop`` reads. If a future Python
+    reshapes that internal, this degrades to None and the guard below becomes
+    an inert no-op rather than an error.
+    """
+    local = getattr(policy, "_local", None)
+    return getattr(local, "_loop", None) if local is not None else None
+
+
+@pytest.fixture(autouse=True)
+def _preserve_current_event_loop():
+    """Restore the thread's current event loop if a test detaches it.
+
+    pytest-asyncio installs its session-scoped loop exactly once, so anything
+    that calls ``asyncio.run`` (or ``asyncio.set_event_loop(None)``) leaves
+    ``_local._loop is None`` with ``_set_called`` already True. From that point
+    ``asyncio.get_event_loop()`` raises ``RuntimeError: There is no current
+    event loop``, and pytest-asyncio fails EVERY async test collected after the
+    offender rather than just the offending one. Re-installing the loop we
+    entered the test with keeps one bad test from cascading into the suite.
+
+    See tests/test_event_loop_guard.py for the regression this pins.
+    """
+    policy = asyncio.get_event_loop_policy()
+    entry_loop = _installed_loop(policy)
+
+    yield
+
+    if entry_loop is None or entry_loop.is_closed():
+        return
+    if _installed_loop(policy) is not entry_loop:
+        policy.set_event_loop(entry_loop)
+
+
 @pytest_asyncio.fixture
 async def async_engine():
     from app.database import engine

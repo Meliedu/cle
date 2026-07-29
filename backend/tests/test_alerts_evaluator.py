@@ -226,7 +226,6 @@ async def test_student_falling_behind_alert(
         language="en",
         instructor_id=test_instructor.id,
         enroll_code="ALR-FB",
-        adaptive_engine_mode="on",
     )
     db_session.add(course)
     await db_session.flush()
@@ -286,7 +285,6 @@ async def test_missed_deadline_cohort_alert(
         language="en",
         instructor_id=test_instructor.id,
         enroll_code="ALR-MD",
-        adaptive_engine_mode="on",
     )
     db_session.add(course)
     await db_session.flush()
@@ -345,7 +343,6 @@ async def test_student_disengaging_alert(
         language="en",
         instructor_id=test_instructor.id,
         enroll_code="ALR-DG",
-        adaptive_engine_mode="on",
     )
     db_session.add(course)
     await db_session.flush()
@@ -407,7 +404,6 @@ async def test_low_quiz_participation_alert(
         language="en",
         instructor_id=test_instructor.id,
         enroll_code="ALR-LP",
-        adaptive_engine_mode="on",
     )
     db_session.add(course)
     await db_session.flush()
@@ -472,7 +468,6 @@ async def test_prereq_gap_for_upcoming_meeting_alert(
         language="en",
         instructor_id=test_instructor.id,
         enroll_code="ALR-PG",
-        adaptive_engine_mode="on",
     )
     db_session.add(course)
     await db_session.flush()

@@ -165,13 +165,27 @@ class TestSessionState:
     def test_get_leaderboard_sorted(self):
         state = SessionState(session_id="test", total_questions=5, time_limit=30)
         state.player_scores = {"u1": 300, "u2": 900, "u3": 600}
-        leaderboard = state.get_leaderboard()
+        # Ordering is asserted on the host-only view, the one caller allowed to
+        # correlate rows back to users.
+        leaderboard = state.get_leaderboard(include_user_ids=True)
         assert leaderboard[0]["user_id"] == "u2"
         assert leaderboard[0]["score"] == 900
         assert leaderboard[0]["rank"] == 1
         assert leaderboard[0]["display_name"] == "Player u2"[:11]  # stub fallback
         assert leaderboard[1]["user_id"] == "u3"
         assert leaderboard[2]["user_id"] == "u1"
+
+    def test_get_leaderboard_omits_user_ids_by_default(self):
+        """Broadcast leaderboards reach every connected client, so the default
+        must not carry raw user ids to peers who shouldn't have them."""
+        state = SessionState(session_id="test", total_questions=5, time_limit=30)
+        state.player_scores = {"u1": 300, "u2": 900}
+        leaderboard = state.get_leaderboard()
+        assert leaderboard, "expected a populated leaderboard"
+        assert all("user_id" not in entry for entry in leaderboard)
+        # Ranking still works without the ids.
+        assert [e["rank"] for e in leaderboard] == [1, 2]
+        assert leaderboard[0]["score"] == 900
 
     def test_get_leaderboard_uses_name_lookup(self):
         state = SessionState(session_id="test", total_questions=5, time_limit=30)

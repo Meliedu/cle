@@ -378,35 +378,52 @@ async def test_sync_logs_error_when_file_scan_fails(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_due_integrations_filters_by_last_sync(db_session):
+async def test_claim_due_integration_filters_by_last_sync(db_session):
     _, _, integration = await _seed_active_integration(db_session)
 
     # No last_roster_sync_at → due.
-    due = await canvas_sync._due_integrations(db_session)
-    assert any(i.id == integration.id for i in due)
+    claimed = await canvas_sync._claim_due_integration(db_session)
+    assert claimed is not None and claimed.id == integration.id
 
     # Mark as just-synced → no longer due.
     integration.last_roster_sync_at = datetime.now(timezone.utc)
     await db_session.commit()
-    due = await canvas_sync._due_integrations(db_session)
-    assert not any(i.id == integration.id for i in due)
+    assert await canvas_sync._claim_due_integration(db_session) is None
 
     # Disconnected integrations are excluded regardless of sync recency.
     integration.sync_status = "disconnected"
     integration.last_roster_sync_at = None
     await db_session.commit()
-    due = await canvas_sync._due_integrations(db_session)
-    assert not any(i.id == integration.id for i in due)
+    assert await canvas_sync._claim_due_integration(db_session) is None
+
+
+@pytest.mark.asyncio
+async def test_claim_due_integration_honours_exclude_set(db_session):
+    """A caller's per-pass ``exclude`` set must hide already-processed rows.
+
+    This is what stops a sync that errored (and therefore never advanced
+    ``last_roster_sync_at``) from being re-claimed in a tight loop within the
+    same scheduler pass.
+    """
+    _, _, integration = await _seed_active_integration(db_session)
+
+    claimed = await canvas_sync._claim_due_integration(db_session)
+    assert claimed is not None and claimed.id == integration.id
+
+    again = await canvas_sync._claim_due_integration(
+        db_session, exclude={integration.id}
+    )
+    assert again is None
 
 
 @pytest.mark.asyncio
 async def test_run_scheduler_exits_on_shutdown_event(monkeypatch):
     """run_scheduler must return cleanly when the shutdown event is set."""
-    # Short-circuit: no due integrations so the inner loop is effectively a no-op.
-    async def no_due(session):
-        return []
+    # Short-circuit: nothing claimable so the inner loop is effectively a no-op.
+    async def nothing_due(session, exclude=None):
+        return None
 
-    monkeypatch.setattr(canvas_sync, "_due_integrations", no_due)
+    monkeypatch.setattr(canvas_sync, "_claim_due_integration", nothing_due)
     # Collapse the poll interval so the wait_for returns immediately.
     monkeypatch.setattr(canvas_sync, "SCHEDULER_POLL_SECONDS", 0.01)
 
