@@ -146,7 +146,7 @@ function RosterRow({ item }: { readonly item: MemoryItemResponse }) {
     <li className="flex items-start gap-2">
       <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-[var(--color-accent)]" />
       <p className="truncate text-[13px] text-[var(--color-text-secondary)]">
-        {text ?? "—"}
+        {text ?? "Not set"}
       </p>
     </li>
   );

@@ -159,7 +159,7 @@ function BasicsForm({ courseId, course, onComplete }: BasicsFormProps) {
               {form.name || t("preview.untitledName")}
             </span>
             <span className="block truncate text-[12px] text-[var(--color-text-muted)]">
-              {[form.language, form.semester].filter(Boolean).join(" · ") || "—"}
+              {[form.language, form.semester].filter(Boolean).join(" · ") || "Not set"}
             </span>
           </div>
         </div>

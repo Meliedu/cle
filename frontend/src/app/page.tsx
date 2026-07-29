@@ -30,7 +30,7 @@ const LOOP = [
   {
     icon: QrCode,
     title: "Student action",
-    body: "Students scan in, answer review-point cards and report confidence — action-first, from checklist or QR.",
+    body: "Students scan in, answer review-point cards and report confidence, action-first, from checklist or QR.",
   },
   {
     icon: MessageSquareText,
@@ -40,7 +40,7 @@ const LOOP = [
   {
     icon: ListChecks,
     title: "Follow-up",
-    body: "Weak points become revisit work in the student's checklist — support, never punishment.",
+    body: "Weak points become revisit work in the student's checklist: support, never punishment.",
   },
   {
     icon: Archive,
@@ -63,7 +63,7 @@ const PRINCIPLES = [
   {
     icon: GraduationCap,
     title: "Course-scoped, not surveillance",
-    body: "Meli describes participation and learning patterns for the course — no time-tracking, no identity claims.",
+    body: "Meli describes participation and learning patterns for the course, with no time-tracking and no identity claims.",
   },
 ] as const;
 
@@ -116,7 +116,7 @@ export default function HomePage() {
             <p className="mt-6 max-w-xl text-[var(--text-lg)] leading-relaxed text-[var(--color-text-secondary)]">
               Meli is a checkpoint-centred course loop for HKUST CLE Chinese
               courses. Teachers review and publish; students get a clear next
-              action every session — from a checklist, a calendar, or a QR scan
+              action every session, from a checklist, a calendar, or a QR scan
               in class.
             </p>
 
@@ -191,7 +191,7 @@ export default function HomePage() {
               tag="For students"
               title="A clear next action, never a dashboard"
               points={[
-                "Checklist and calendar first — what's due, what's optional, what affects your standing.",
+                "Checklist and calendar first: what's due, what's optional, what affects your standing.",
                 "Scan into class, answer review-point cards, report how confident you feel from −2 to +2.",
                 "Follow-up work appears as support when a concept needs another look.",
               ]}
@@ -200,7 +200,7 @@ export default function HomePage() {
               tag="For teachers"
               title="A review and publish cockpit"
               points={[
-                "Generated checkpoints arrive as drafts — edit, remove with a reason, time, and publish.",
+                "Generated checkpoints arrive as drafts: edit, remove with a reason, time, and publish.",
                 "Review source-linked evidence and decide what students receive.",
                 "Keep what worked as course memory and carry it forward next term.",
               ]}

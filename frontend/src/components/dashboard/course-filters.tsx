@@ -76,7 +76,7 @@ export function CourseFilters({
         </div>
       </div>
 
-      {/* Language facets — only render when there's something to filter by */}
+      {/* Language facets: only render when there's something to filter by */}
       {languages.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">
           <LanguageChip

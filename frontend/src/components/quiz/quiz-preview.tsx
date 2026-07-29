@@ -139,7 +139,7 @@ export function QuizPreview({ quizId, courseId }: QuizPreviewProps) {
 
   const sessionActive = activeSession?.active === true;
   const lockTooltip = sessionActive
-    ? "A live session is in progress — end it before editing questions."
+    ? "A live session is in progress. End it before editing questions."
     : undefined;
 
   const publishMutation = useMutation({

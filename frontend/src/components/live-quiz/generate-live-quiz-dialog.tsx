@@ -141,8 +141,8 @@ export function GenerateLiveQuizDialog({
         <DialogHeader>
           <DialogTitle>Generate Live Quiz</DialogTitle>
           <DialogDescription>
-            Generate questions sized for live play. You pick the mix — multiple
-            choice, true/false, or both — along with difficulty and option count.
+            Generate questions sized for live play. You pick the mix: multiple
+            choice, true/false, or both, along with difficulty and option count.
           </DialogDescription>
         </DialogHeader>
 

@@ -208,7 +208,7 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
         </div>
       </section>
 
-      {/* Tab content — navigation is in the sidebar */}
+      {/* Tab content: navigation is in the sidebar */}
       {activeTab === "overview" && (
         <div className="space-y-6">
           {/* Stats cards */}
@@ -256,7 +256,7 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
             canEdit={isInstructor}
           />
 
-          {/* Enrollment code — instructors only */}
+          {/* Enrollment code: instructors only */}
           {isInstructor && <EnrollCodeCard enrollCode={course.enroll_code} />}
 
           {/* AI Summary */}

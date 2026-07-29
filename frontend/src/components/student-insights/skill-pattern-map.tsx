@@ -58,7 +58,7 @@ export function SkillPatternMap({ courseId }: SkillPatternMapProps) {
         </p>
       </header>
 
-      {/* Decision 5 — one honest reason for the whole grid's no-evidence state. */}
+      {/* Decision 5: one honest reason for the whole grid's no-evidence state. */}
       <StateBanner tone="waiting" title={t("noEvidence")} reason={t("reason")} />
 
       {/* The banner above states the no-evidence reason once; the tiles then

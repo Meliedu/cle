@@ -557,6 +557,26 @@
         "report": "報告",
         "other": "任務"
       }
+    },
+    "progress": {
+      "title": "我的學習進度",
+      "subtitle": "查看你在所有已修課程中的進度。",
+      "loading": "正在載入你的進度",
+      "empty": "你尚未加入任何課程。",
+      "emptyAction": "加入課程",
+      "errorTitle": "Meli 無法載入你的進度",
+      "errorReason": "你的作業已保存，沒有任何遺失。",
+      "retry": "重試",
+      "done": "已完成 {done} / {total}",
+      "noWork": "尚未指派任何作業",
+      "openCourse": "開啟課程",
+      "viewInsights": "查看課程分析",
+      "state": {
+        "not_started": "未開始",
+        "in_progress": "進行中",
+        "submitted": "已提交",
+        "reviewed": "已批改"
+      }
     }
   },
   "safeError": {

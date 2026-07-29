@@ -69,7 +69,7 @@ export function isPendingReview(status: string): boolean {
  * there is no evidence (`null`) — never a fabricated `0%`.
  */
 export function formatFraction(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return "Not set";
   return `${Math.round(value * 100)}%`;
 }
 

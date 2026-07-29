@@ -103,7 +103,7 @@ export function CourseAnalytics({ courseId }: CourseAnalyticsProps) {
                         </Badge>
                       </td>
                       <td className="py-2.5 pr-4 text-right text-[var(--color-text-secondary)]">
-                        {quiz.avg_score != null ? `${quiz.avg_score}%` : "—"}
+                        {quiz.avg_score != null ? `${quiz.avg_score}%` : "Not set"}
                       </td>
                       <td className="py-2.5 text-right text-[var(--color-text-secondary)]">
                         {quiz.attempt_count}
@@ -155,7 +155,7 @@ export function CourseAnalytics({ courseId }: CourseAnalyticsProps) {
                       <td className="py-2.5 pr-4">
                         <div>
                           <p className="font-medium text-[var(--color-text)]">
-                            {student.full_name ?? "—"}
+                            {student.full_name ?? "Not set"}
                           </p>
                         </div>
                       </td>
@@ -168,7 +168,7 @@ export function CourseAnalytics({ courseId }: CourseAnalyticsProps) {
                       <td className="py-2.5 pr-4 text-right text-[var(--color-text-secondary)]">
                         {student.avg_quiz_score != null
                           ? `${student.avg_quiz_score}%`
-                          : "—"}
+                          : "Not set"}
                       </td>
                       <td className="py-2.5 pr-4 text-right text-[var(--color-text-secondary)]">
                         {student.flashcards_reviewed}
@@ -211,7 +211,7 @@ function StatCard({
             <Skeleton className="h-7 w-10" />
           ) : (
             <p className="text-xl font-bold text-[var(--color-text)]">
-              {value ?? "—"}
+              {value ?? "Not set"}
             </p>
           )}
         </div>

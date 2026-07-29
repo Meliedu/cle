@@ -27,7 +27,7 @@ export default function VerifyEmailPage() {
         <ol className="space-y-3 text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
           <li className="flex gap-3">
             <Step n={1} />
-            <span>Open the email we just sent — check spam if it&apos;s missing.</span>
+            <span>Open the email we just sent. Check spam if it&apos;s missing.</span>
           </li>
           <li className="flex gap-3">
             <Step n={2} />

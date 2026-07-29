@@ -139,7 +139,7 @@ export function PlayerView({
               <>
                 <XCircle className="size-10 text-[var(--color-error)]" />
                 <p className="text-sm font-medium text-[var(--color-error)]">
-                  Not quite — the correct answer was {correctAnswer}.
+                  Not quite. The correct answer was {correctAnswer}.
                 </p>
               </>
             ) : (

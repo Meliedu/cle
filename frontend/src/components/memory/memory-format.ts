@@ -187,7 +187,7 @@ export function historyEntry(raw: Record<string, unknown>): MemoryHistoryEntry {
     }
   }
 
-  return { label: label ?? summaryText(raw) ?? "—", at };
+  return { label: label ?? summaryText(raw) ?? "Not set", at };
 }
 
 /** Provenance label helper — "CODE · Name" or just "Name" when code is absent. */

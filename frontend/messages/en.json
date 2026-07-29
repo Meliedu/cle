@@ -244,7 +244,7 @@
         "statusLabel": "Syllabus import status",
         "loading": "Loading syllabus imports…",
         "continue": "Continue",
-        "skip": "Skip for now — add a syllabus before publishing",
+        "skip": "Skip for now, but add a syllabus before publishing",
         "continueError": "We couldn't save this step. Please try again.",
         "applyError": "We couldn't apply this syllabus. Please try again.",
         "empty": {
@@ -263,7 +263,7 @@
             "reason": "This runs in the background. It'll be ready for review shortly."
           },
           "parsed": {
-            "title": "Syllabus parsed — review and apply",
+            "title": "Syllabus parsed: review and apply",
             "reason": "Applying writes the detected schedule and outcomes into your course.",
             "apply": "Apply syllabus"
           },
@@ -298,7 +298,7 @@
         "statusLabel": "Document processing status",
         "loading": "Loading documents…",
         "continue": "Continue",
-        "skip": "Skip for now — add materials before publishing",
+        "skip": "Skip for now, but add materials before publishing",
         "continueError": "We couldn't save this step. Please try again.",
         "processed": "{ready} of {total} ready",
         "processing": "{count} processing",
@@ -621,7 +621,7 @@
       },
       "memoryImport": {
         "title": "Previous course memory",
-        "subtitle": "Reuse carry-forward notes from an earlier offering of this course. Optional — it never blocks publishing.",
+        "subtitle": "Reuse carry-forward notes from an earlier offering of this course. Optional, and it never blocks publishing.",
         "skip": "Skip for now",
         "loadErrorTitle": "We couldn't load prior-term memory",
         "loadErrorReason": "You can skip this step and import it later from the course memory tab.",
@@ -629,7 +629,7 @@
           "title": "No prior-term memory to import",
           "reason": "When you carry items forward from a previous offering of this course, they'll appear here to import. This step is optional and never blocks publishing."
         },
-        "recommendedBody": "Imported summaries ground this term's checkpoint generation. No student identities cross terms — only your reviewed notes.",
+        "recommendedBody": "Imported summaries ground this term's checkpoint generation. No student identities cross terms, only your reviewed notes.",
         "selectedCount": "{count, plural, =0 {None selected} one {# selected} other {# selected}}",
         "selectAll": "Select all",
         "clear": "Clear",
@@ -696,7 +696,7 @@
         "showCodeHint": "Share the code with students.",
         "viewCalendar": "View calendar",
         "viewCalendarHint": "See upcoming sessions.",
-        "footnote": "Reopening setup later keeps enrolled students in — it only re-flags artifacts whose sources changed."
+        "footnote": "Reopening setup later keeps enrolled students in. It only re-flags artifacts whose sources changed."
       },
       "missingSource": {
         "title": "Finish setup before publishing",
@@ -879,7 +879,7 @@
           "completed": "Completed",
           "archived": "Archived"
         },
-        "placeholder": "—",
+        "placeholder": "Not set",
         "empty": {
           "title": "No sessions yet",
           "reason": "Add sessions in the course setup schedule step."
@@ -895,7 +895,7 @@
         "title": "Attendance"
       },
       "untitled": "Untitled session",
-      "placeholder": "—",
+      "placeholder": "Not set",
       "sessionLabel": "Session {index}",
       "backToList": "Back to sessions",
       "noCheckpoint": "No checkpoint",
@@ -1026,9 +1026,9 @@
         "final_comments": "Final comments"
       },
       "removed": {
-        "not_needed": "Removed — not needed",
-        "duplicate": "Removed — duplicate",
-        "not_covered": "Removed — not covered",
+        "not_needed": "Removed: not needed",
+        "duplicate": "Removed: duplicate",
+        "not_covered": "Removed: not covered",
         "other": "Removed"
       },
       "edit": "Edit",
@@ -1150,7 +1150,7 @@
         "title": "No attendance yet",
         "reason": "Once you launch a check-in and students scan the QR, their attendance appears here."
       },
-      "overriddenNote": "Overridden — {reason}",
+      "overriddenNote": "Overridden: {reason}",
       "cannotOverride": "No scan on record to override.",
       "override": {
         "trigger": "Override",
@@ -1320,7 +1320,7 @@
         "edit": "Edit in setup",
         "ungraded": "Practice",
         "weightValue": "{weight}%",
-        "noPoints": "—",
+        "noPoints": "No points",
         "columns": {
           "category": "Category",
           "weight": "Weight",
@@ -1392,7 +1392,7 @@
       },
       "publish": {
         "title": "Ready to publish",
-        "subtitle": "Practice publishes straight to students — no scoring setup required.",
+        "subtitle": "Practice publishes straight to students, with no scoring setup required.",
         "checklist": {
           "questions": "{count, plural, =0 {No questions yet} one {# question ready} other {# questions ready}}",
           "noScore": "Practice doesn't need a score category or a due date. It appears on the checklist as optional and is never marked missed."
@@ -1714,7 +1714,7 @@
         "title": "Results & evidence",
         "description": "Every submitted response, joined to the live distribution.",
         "submissionCount": "{count} responses",
-        "anonymousNote": "Responses are anonymous — identities are hidden.",
+        "anonymousNote": "Responses are anonymous. Identities are hidden.",
         "columns": {
           "student": "Student",
           "response": "Response",
@@ -1934,7 +1934,7 @@
     },
     "insights": {
       "title": "Course insights",
-      "subtitle": "What your class's evidence shows — reviewed by you before anything reaches a student.",
+      "subtitle": "What your class's evidence shows, reviewed by you before anything reaches a student.",
       "loadErrorTitle": "We couldn't load these insights",
       "loadErrorReason": "Please check your connection and try again.",
       "picker": {
@@ -1944,11 +1944,11 @@
       },
       "empty": {
         "title": "No evidence yet",
-        "reason": "Insights appear here once students start completing checkpoints and practice. Their responses build a source-linked picture of what your class has understood — reviewed by you before anything reaches a student."
+        "reason": "Insights appear here once students start completing checkpoints and practice. Their responses build a source-linked picture of what your class has understood, reviewed by you before anything reaches a student."
       },
       "mastery": {
         "title": "Cohort mastery",
-        "subtitle": "Aggregated from your students' practice — a snapshot, not a grade.",
+        "subtitle": "Aggregated from your students' practice: a snapshot, not a grade.",
         "conceptsCovered": "Concepts with evidence",
         "conceptsCoveredValue": "{withEvidence} of {total}",
         "avgMastery": "Average mastery",
@@ -2108,7 +2108,7 @@
         "empty": {
           "summary": "No summary yet.",
           "observations": "No observations recorded for this period.",
-          "weakPoints": "No weak points flagged — every tracked concept is on track.",
+          "weakPoints": "No weak points flagged. Every tracked concept is on track.",
           "nextActions": "No next actions suggested yet."
         },
         "noBodyTitle": "This report is still being drafted",
@@ -2142,7 +2142,7 @@
         "approveConfirmBody": "Approving marks the report reviewed and records you as the reviewer. You can still export or send it afterwards, but a reviewed report can no longer be edited.",
         "approveConfirm": "Approve report",
         "approving": "Approving…",
-        "approveInvalidReason": "This report can't be approved from its current state — only a draft can be approved.",
+        "approveInvalidReason": "This report can't be approved from its current state. Only a draft can be approved.",
         "sendConfirmTitle": "Send this report to the student?",
         "sendConfirmBody": "The student will see this report in their archive. This can't be undone.",
         "sendConfirm": "Send report",
@@ -2491,7 +2491,7 @@
     "schedule": {
       "title": "Class schedule",
       "subtitle": "Every session for this course, from your instructor's setup.",
-      "placeholder": "—",
+      "placeholder": "Not set",
       "columns": {
         "session": "Session",
         "date": "Date",
@@ -2544,7 +2544,7 @@
       },
       "checkIn": {
         "title": "Class check-in",
-        "reason": "Check-ins run live in class — scan the QR your instructor shows. Review your past check-ins any time.",
+        "reason": "Check-ins run live in class, so scan the QR your instructor shows. Review your past check-ins any time.",
         "view": "My check-ins"
       },
       "locked": {
@@ -2636,7 +2636,7 @@
       },
       "waiting": {
         "title": "Waiting for your instructor to start",
-        "reason": "This activity isn't open yet. It'll come to life here the moment your instructor starts it — keep this screen open."
+        "reason": "This activity isn't open yet. It'll come to life here the moment your instructor starts it, so keep this screen open."
       },
       "swipe": {
         "progress": "Card {current} of {total}",
@@ -2695,7 +2695,7 @@
       },
       "intro": {
         "eyebrow": "Practice set",
-        "subtitle": "Low-stakes practice — nothing here counts toward your grade.",
+        "subtitle": "Low-stakes practice: nothing here counts toward your grade.",
         "questionCount": "{count, plural, =0 {No questions yet} one {# question} other {# questions}}",
         "start": "Start practice",
         "emptyTitle": "No questions yet",
@@ -2913,7 +2913,7 @@
       },
       "notOpen": {
         "title": "Course not open yet",
-        "reason": "{course} isn't ready for student access yet. You'll be able to join once your instructor publishes it — check back when access opens.",
+        "reason": "{course} isn't ready for student access yet. You'll be able to join once your instructor publishes it, so check back when access opens.",
         "tryAgain": "Try code again",
         "backToCourses": "Back to courses"
       },
@@ -2972,7 +2972,7 @@
         "title": "Any questions or comments?",
         "helper": "Leave anything you want your instructor to know about today's class.",
         "placeholder": "Type a question or comment…",
-        "optional": "Optional — you can submit without writing.",
+        "optional": "Optional: you can submit without writing.",
         "attendanceNote": "Attendance is recorded after submission.",
         "back": "Back",
         "submit": "Submit checkpoint",
@@ -2995,7 +2995,7 @@
         "title": "Checkpoint closed",
         "reason": "The check-in window for this checkpoint has ended.",
         "attendanceNot": "Attendance was not recorded",
-        "attendanceLate": "Attendance recorded — submitted late",
+        "attendanceLate": "Attendance recorded, submitted late",
         "submitted": "{count} of {total} cards submitted",
         "closedAt": "Closed {time}",
         "backToSession": "Back to session",
@@ -3035,7 +3035,7 @@
         "viewHistory": "Back to history",
         "footer": "Working on this now helps you feel more confident next time.",
         "emptyTitle": "You're on track",
-        "emptyReason": "Nothing was flagged from your last checkpoint — no revisit needed right now.",
+        "emptyReason": "Nothing was flagged from your last checkpoint, so no revisit is needed right now.",
         "loadErrorTitle": "We couldn't load your follow-up",
         "loadErrorReason": "Please check your connection and try again."
       },
@@ -3047,7 +3047,7 @@
         "loadErrorTitle": "We couldn't load this follow-up",
         "loadErrorReason": "This follow-up isn't available right now. Please try again later.",
         "doneTitle": "Follow-up complete",
-        "improved": "Nice — your confidence went up by {delta}.",
+        "improved": "Nice work. Your confidence went up by {delta}.",
         "same": "Thanks for revisiting this.",
         "backToHistory": "Back to history"
       },
@@ -3069,7 +3069,7 @@
     },
     "profile": {
       "title": "Your learning profile",
-      "subtitle": "A source-linked picture of what you have been building — reviewed before it reaches you.",
+      "subtitle": "A source-linked picture of what you have been building, reviewed before it reaches you.",
       "back": "Back to course",
       "viewInsights": "View insights",
       "collapse": "Collapse",
@@ -3092,13 +3092,13 @@
         "confidence": "Confidence",
         "attempts": "Attempts",
         "lastSeen": "Last seen",
-        "never": "—",
+        "never": "Never",
         "note": "Based on your reviewed attempts so far. This is an estimate, not a grade."
       }
     },
     "insights": {
       "title": "Your insights",
-      "subtitle": "How your work maps to the course objectives — reviewed evidence only.",
+      "subtitle": "How your work maps to the course objectives, using reviewed evidence only.",
       "back": "Back to course",
       "viewProfile": "View profile",
       "ilo": {
@@ -3157,7 +3157,7 @@
       },
       "waiting": {
         "title": "Your instructor is reviewing this",
-        "reason": "This follow-up is still being reviewed. It will appear here once your instructor has checked it — you never see an unreviewed draft."
+        "reason": "This follow-up is still being reviewed. It will appear here once your instructor has checked it, so you never see an unreviewed draft."
       },
       "error": {
         "title": "We couldn't load this follow-up",
@@ -3189,7 +3189,7 @@
       },
       "empty": {
         "title": "No reports yet",
-        "reason": "Your instructor hasn't sent a report yet. When a weekly or end-of-term report is sent, it appears here and in your HKUST email — you never see an unsent draft."
+        "reason": "Your instructor hasn't sent a report yet. When a weekly or end-of-term report is sent, it appears here and in your HKUST email. You never see an unsent draft."
       },
       "filter": {
         "label": "Filter reports by type",
@@ -3314,6 +3314,26 @@
         "follow_up": "Follow-up",
         "report": "Report",
         "other": "Task"
+      }
+    },
+    "progress": {
+      "title": "My progress",
+      "subtitle": "Where you stand across every course you are enrolled in.",
+      "loading": "Loading your progress",
+      "empty": "You are not enrolled in a course yet.",
+      "emptyAction": "Join a course",
+      "errorTitle": "Meli could not load your progress",
+      "errorReason": "Your work is saved. Nothing was lost.",
+      "retry": "Try again",
+      "done": "{done} of {total} done",
+      "noWork": "Nothing assigned yet",
+      "openCourse": "Open course",
+      "viewInsights": "View course insights",
+      "state": {
+        "not_started": "Not started",
+        "in_progress": "In progress",
+        "submitted": "Submitted",
+        "reviewed": "Reviewed"
       }
     }
   },

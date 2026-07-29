@@ -60,7 +60,7 @@ export default function PronunciationPage({ params }: PronunciationPageProps) {
                 style={{ color: "var(--color-text-muted)" }}
               >
                 <Languages className="size-3.5" />
-                {course.name} — {course.language}
+                {course.name} ({course.language})
               </p>
             )}
           </div>

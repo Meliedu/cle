@@ -202,7 +202,7 @@ function SyncEventRow({ event }: { event: CanvasSyncEvent }) {
         <p className="text-sm text-[var(--color-text)]">
           <span className="font-medium">{event.event_type}</span>
           {event.summary ? (
-            <span className="text-[var(--color-text-muted)]"> — {event.summary}</span>
+            <span className="text-[var(--color-text-muted)]">: {event.summary}</span>
           ) : null}
         </p>
         <p className="text-xs text-[var(--color-text-muted)]">

@@ -151,7 +151,7 @@ export function ImportFromQuizDialog({
                   id="import-title"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Week 4 — Live"
+                  placeholder="e.g. Week 4 Live"
                 />
               </div>
 

@@ -135,7 +135,7 @@ export function Lobby({
         </CardContent>
       </Card>
 
-      {/* Student anonymity opt-in — hide name from the leaderboard. */}
+      {/* Student anonymity opt-in: hide name from the leaderboard. */}
       {!isHost && onAnonymityChange && (
         <label className="flex w-full cursor-pointer items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
           <input

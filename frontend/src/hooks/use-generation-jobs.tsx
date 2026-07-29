@@ -68,7 +68,7 @@ const POLL_INTERVAL_MS = 2000;
 /** Shown when a background job fails with no user-safe explanation. */
 const GENERIC_JOB_ERROR = "Generation failed. Try again.";
 
-const MAX_POLL_MS = 5 * 60 * 1000; // 5 minutes — hard ceiling
+const MAX_POLL_MS = 5 * 60 * 1000; // 5 minutes, hard ceiling
 const KIND_LABEL: Record<GenerationJobKind, string> = {
   generate_quiz: "Quiz",
   generate_flashcards: "Flashcards",

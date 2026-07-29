@@ -141,7 +141,7 @@ function DrawerBody({ signalId }: { readonly signalId: string }) {
       ) : (
         <div className="space-y-4">
           <DetailBlock icon={Eye} label={t("drawer.observed")}>
-            {signal.observed_signal ?? "—"}
+            {signal.observed_signal ?? "Not set"}
           </DetailBlock>
           {signal.draft_interpretation ? (
             <DetailBlock icon={Lightbulb} label={t("drawer.interpretation")}>

@@ -95,7 +95,7 @@ export default function ResetPasswordPage() {
         subtitle={
           linkInvalid
             ? "Reset links are good for one hour. Request a fresh one and we'll send it right over."
-            : `Pick something memorable but uncommon — at least ${MIN_PASSWORD} characters.`
+            : `Pick something memorable but uncommon, at least ${MIN_PASSWORD} characters.`
         }
         footer={
           <AuthLinkRow

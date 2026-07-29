@@ -145,7 +145,7 @@ function Field({
 
 /** Render a JSON scalar readably; objects/arrays collapse to a short string. */
 function formatValue(val: unknown): string {
-  if (val === null || val === undefined) return "—";
+  if (val === null || val === undefined) return "Not set";
   if (typeof val === "boolean") return val ? "true" : "false";
   if (typeof val === "number") return String(val);
   if (typeof val === "string") return val;

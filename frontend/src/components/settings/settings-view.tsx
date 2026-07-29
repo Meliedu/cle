@@ -147,7 +147,7 @@ function ProfileSection() {
         />
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <ReadOnlyField label="Email" value={user?.primaryEmailAddress?.emailAddress ?? "—"} />
+          <ReadOnlyField label="Email" value={user?.primaryEmailAddress?.emailAddress ?? "Not set"} />
           <ReadOnlyField label="Role" value={<RoleBadge />} />
         </div>
 
@@ -191,7 +191,7 @@ function RoleBadge() {
   // domain ↔ role mapping has drifted.
   const { isInstructor, isStudent, isLoaded } = useRole();
   const label = !isLoaded
-    ? "—"
+    ? "Not set"
     : isInstructor
       ? "Instructor"
       : isStudent

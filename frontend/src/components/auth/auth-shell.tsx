@@ -22,7 +22,7 @@ export function AuthShell({ children, tagline }: AuthShellProps) {
   return (
     <div className="min-h-dvh bg-[var(--color-bg)]">
       <div className="grid min-h-dvh grid-cols-1 lg:grid-cols-12">
-        {/* Brand pane — desktop only */}
+        {/* Brand pane, desktop only */}
         <aside
           aria-hidden="true"
           className="relative hidden flex-col justify-between overflow-hidden bg-[var(--color-bg)] px-12 pb-12 pt-14 lg:col-span-7 lg:flex xl:px-20"

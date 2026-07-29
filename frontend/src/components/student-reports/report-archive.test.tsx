@@ -60,7 +60,7 @@ describe("ReportArchive — S066 / S069 delivery-state modeling", () => {
 
     expect(screen.getByText("No reports yet")).toBeTruthy();
     expect(
-      screen.getByText(/you never see an unsent draft/)
+      screen.getByText(/you never see an unsent draft/i)
     ).toBeTruthy();
   });
 

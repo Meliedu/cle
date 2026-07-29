@@ -218,8 +218,8 @@ function sum(values: readonly (number | null)[]): number {
 
 /** Format a nullable number for display (drops trailing zeros; `—` for null). */
 function fmt(value: number | null): string {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return "Not scored";
   const n = Number(value);
-  if (!Number.isFinite(n)) return "—";
+  if (!Number.isFinite(n)) return "Not scored";
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }

@@ -156,7 +156,7 @@ export function CoursesView() {
                 href={
                   isInstructor
                     ? `/teacher/courses/${course.id}`
-                    : undefined
+                    : `/student/courses/${course.id}`
                 }
               />
             </li>

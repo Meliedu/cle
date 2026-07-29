@@ -171,7 +171,7 @@ export function GenerateQuizDialog({
           <DialogTitle>Generate Quiz</DialogTitle>
           <DialogDescription>
             Create a quiz from your course materials using AI. Pick question
-            types, difficulty, and MCQ option count — we&apos;ll notify you when
+            types, difficulty, and MCQ option count. We&apos;ll notify you when
             it&apos;s ready.
           </DialogDescription>
         </DialogHeader>

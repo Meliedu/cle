@@ -34,10 +34,13 @@ function makeCourse(overrides: Partial<CourseResponse> = {}): CourseResponse {
 afterEach(cleanup);
 
 describe("CourseRowCard", () => {
-  it("links to the legacy dashboard workspace by default (student lane)", () => {
+  it("defaults to the student course route, not the retired dashboard tree", () => {
+    // Both trees render, so this is invisible at runtime: the student roster
+    // was quietly linking out of the student lane into /dashboard/*.
     render(<CourseRowCard course={makeCourse()} />);
     const link = screen.getByRole("link");
-    expect(link.getAttribute("href")).toBe("/dashboard/courses/c1?tab=overview");
+    expect(link.getAttribute("href")).toBe("/student/courses/c1");
+    expect(link.getAttribute("href")).not.toContain("/dashboard/");
   });
 
   it("links to the new teacher course route when an href is supplied", () => {

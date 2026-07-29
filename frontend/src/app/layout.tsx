@@ -29,7 +29,7 @@ const display = Fraunces({
 export const metadata: Metadata = {
   title: "Meli · Checkpoint-centred course loop for HKUST CLE",
   description:
-    "Meli turns course materials into active learning habits for students and low-friction teaching support for teachers — a reviewed checkpoint loop for HKUST Centre for Language Education.",
+    "Meli turns course materials into active learning habits for students and low-friction teaching support for teachers, through a reviewed checkpoint loop for HKUST Centre for Language Education.",
 };
 
 export default async function RootLayout({

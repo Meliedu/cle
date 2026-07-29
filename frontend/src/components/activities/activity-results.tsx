@@ -111,12 +111,12 @@ function formatResponse(
     return swipeLabel(direction);
   }
   if (format === "vote") {
-    return typeof payload.choice === "string" ? payload.choice : "—";
+    return typeof payload.choice === "string" ? payload.choice : "Not recorded";
   }
   if (format === "comment_reaction") {
-    return typeof payload.reaction === "string" ? payload.reaction : "—";
+    return typeof payload.reaction === "string" ? payload.reaction : "Not recorded";
   }
-  return "—";
+  return "Not recorded";
 }
 
 function formatTimestamp(iso: string): string {
