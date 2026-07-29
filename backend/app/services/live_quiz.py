@@ -180,8 +180,14 @@ class ConnectionManager:
             self._locks[session_id] = lock
         return lock
 
-    async def connect(self, session_id: str, websocket: WebSocket) -> None:
-        await websocket.accept()
+    async def connect(
+        self, session_id: str, websocket: WebSocket, *, accept: bool = True
+    ) -> None:
+        # ``accept=False`` when the caller already accepted the socket (the
+        # first-message auth path in app.api.ws_auth accepts before reading the
+        # auth frame, so re-accepting here would raise).
+        if accept:
+            await websocket.accept()
         if session_id not in self.connections:
             self.connections[session_id] = []
         self.connections[session_id].append(websocket)

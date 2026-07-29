@@ -176,6 +176,11 @@ class SyllabusImport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     raw_text: Mapped[str] = mapped_column(String, nullable=False)
     parsed_payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Typed, user-safe failure code (``SourceFailureCode``). The UI renders copy
+    # from this; it never renders raw exception text. ``error_message`` is
+    # retained for historical rows but is no longer written on failure, because
+    # it previously carried the exception class name straight to the instructor.
+    error_code: Mapped[str | None] = mapped_column(String(40))
     error_message: Mapped[str | None] = mapped_column(String)
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     applied_by: Mapped[uuid.UUID | None] = mapped_column(

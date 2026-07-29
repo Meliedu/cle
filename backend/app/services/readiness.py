@@ -132,11 +132,68 @@ def _recommendation_result(prior_answers: dict[str, dict]) -> dict[str, Any]:
         level_hint = "intermediate"
     else:
         level_hint = "advanced"
+
     return {
         "level_hint": level_hint,
         "confidence_average": avg,
+        "confidence_band": _confidence_band(scores),
+        # Per-skill evidence, derived from the answers the learner actually
+        # gave. The approved placement result requires every skill result to
+        # connect to the recommendation it informs, so the UI can show WHY a
+        # level was suggested rather than asserting it. Nothing here is
+        # inferred beyond the recorded answers.
+        "evidence": _skill_evidence(ready),
         "claim_limit": claim_limit,
     }
+
+
+#: How consistently the ready-check answers agree. A recommendation drawn from
+#: answers that disagree with each other is less trustworthy than one drawn
+#: from answers that align, and the UI must be able to say so.
+def _confidence_band(scores: list[float]) -> str:
+    if len(scores) < 2:
+        return "low"
+    mean = sum(scores) / len(scores)
+    variance = sum((value - mean) ** 2 for value in scores) / len(scores)
+    if variance <= 0.5:
+        return "high"
+    if variance <= 1.5:
+        return "medium"
+    return "low"
+
+
+#: `ready_check` question id -> the skill it evidences. Kept here rather than in
+#: the pilot profile because it is a property of the recommendation, not of the
+#: survey: a pilot may rename prompts without changing what they evidence.
+_SKILL_BY_QUESTION: dict[str, str] = {
+    "conf_listening": "listening",
+    "conf_speaking": "speaking",
+    "conf_reading": "reading",
+    "conf_writing": "writing",
+}
+
+
+def _skill_evidence(ready: dict[str, Any]) -> list[dict[str, Any]]:
+    """One evidence row per answered skill question.
+
+    ``state`` is a coarse, user-safe band the UI renders as words ("Ready",
+    "Developing", "Needs support"), never as a score the learner could mistake
+    for a grade. Unanswered questions are omitted rather than defaulted, so an
+    incomplete survey does not manufacture evidence it does not have.
+    """
+    rows: list[dict[str, Any]] = []
+    for question_id, skill in _SKILL_BY_QUESTION.items():
+        value = ready.get(question_id)
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            continue
+        if value >= 1.0:
+            state = "ready"
+        elif value >= -0.5:
+            state = "developing"
+        else:
+            state = "needs_support"
+        rows.append({"skill": skill, "state": state, "score": float(value)})
+    return rows
 
 
 async def _existing_answers(

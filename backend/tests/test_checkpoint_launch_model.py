@@ -147,10 +147,17 @@ async def test_two_closed_launches_same_checkpoint_allowed(
     await db_session.commit()  # partial index only covers active rows
 
 
-def test_checkpoint_token_secret_config_defaults_none():
+def test_checkpoint_token_secret_config_defaults_none(monkeypatch):
     """T4 only adds the field (defaults None so dev/test stay bootable). The
-    ≥32-byte length check lives in the T9 launch service, not at startup."""
+    ≥32-byte length check lives in the T9 launch service, not at startup.
+
+    The DEFAULT is what is under test, so the developer's `.env` and any
+    ambient environment variable are both excluded. Reading them made this
+    assertion depend on local machine config: it failed for anyone who had
+    CHECKPOINT_TOKEN_SECRET set, which is exactly what a deployed env does.
+    """
     from app.config import Settings
 
-    s = Settings()
+    monkeypatch.delenv("CHECKPOINT_TOKEN_SECRET", raising=False)
+    s = Settings(_env_file=None)
     assert s.checkpoint_token_secret is None

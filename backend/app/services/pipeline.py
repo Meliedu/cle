@@ -19,12 +19,19 @@ logger = logging.getLogger(__name__)
 
 
 async def _set_document_status(
-    session: AsyncSession, document: Document, status: str
+    session: AsyncSession, document: Document, status: str, error_code: str | None = None
 ) -> None:
     """Persist a document status transition; isolate failures so the caller's
-    original error is not masked by a commit/rollback failure here."""
+    original error is not masked by a commit/rollback failure here.
+
+    error_code is the typed, user-safe failure classification recorded when
+    transitioning to failed. It is cleared on any other transition so a
+    retried document does not keep showing recovery copy for a failure that no
+    longer applies.
+    """
     try:
         document.status = status
+        document.error_code = error_code
         await session.commit()
     except Exception:  # noqa: BLE001
         logger.exception(
@@ -120,6 +127,17 @@ async def process_document_pipeline(
         logger.info(f"Document {document_id} processed: {len(chunks)} chunks stored")
         return True
 
-    except Exception:
-        await _set_document_status(session, document, "failed")
+    except Exception as exc:
+        # Classify before persisting so the instructor sees actionable copy
+        # rather than an exception, and the raw detail goes to the structured
+        # log where triage needs it (safe failure contract, rules 01 and 02).
+        from app.services.failures import classify_and_log
+
+        code = classify_and_log(
+            exc,
+            context="process_document_pipeline",
+            document_id=document_id,
+            course_id=document.course_id,
+        )
+        await _set_document_status(session, document, "failed", code.value)
         raise

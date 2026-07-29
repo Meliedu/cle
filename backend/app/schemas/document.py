@@ -12,6 +12,9 @@ class DocumentResponse(BaseModel):
     file_type: str
     file_size: int | None
     status: str
+    #: Typed failure code when status == "failed"; the UI renders safe copy
+    #: from this and never a backend message.
+    error_code: str | None = None
     page_count: int | None
     word_count: int | None
     meeting_id: uuid.UUID | None = None

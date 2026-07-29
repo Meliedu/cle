@@ -24,7 +24,6 @@ from fastapi import (
     Query,
     WebSocket,
     WebSocketDisconnect,
-    WebSocketException,
     status,
 )
 from sqlalchemy import select
@@ -37,6 +36,7 @@ from app.api.deps import (
     require_instructor,
     require_student,
 )
+from app.api.ws_auth import authenticate_ws, reject_ws
 from app.database import async_session_factory, get_db
 from app.models.checkpoint import (
     Checkpoint,
@@ -68,7 +68,6 @@ from app.schemas.checkpoint import (
     CheckpointWithCardsResponse,
 )
 from app.schemas.common import APIResponse
-from app.services.auth import verify_jwt
 from app.services.checkpoint_monitor import (
     broadcast_closed,
     compute_monitor_state,
@@ -1162,7 +1161,6 @@ async def revisit_response(
 async def websocket_monitor(
     websocket: WebSocket,
     checkpoint_id: str,
-    token: str = "",
 ):
     """Teacher live-monitor stream for one checkpoint.
 
@@ -1170,22 +1168,18 @@ async def websocket_monitor(
     confidence_distribution}``; thereafter the hub pushes ``submission`` (a
     student response landed) and ``closed`` (the checkpoint closed) broadcasts.
     """
-    if not token:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
-    try:
-        verified = verify_jwt(token)
-    except Exception as exc:  # noqa: BLE001 — any verify failure is a policy reject
-        logger.warning("Monitor WS auth failed for checkpoint %s: %s", checkpoint_id, exc)
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
-
-    auth_user_id = verified.claims.get("sub")
-    if not auth_user_id:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+    # Auth: the JWT is carried in the first WS frame ({"type":"auth","token":...}),
+    # never the URL. See app.api.ws_auth.
+    verified = await authenticate_ws(websocket)
+    if verified is None:
+        return
+    auth_user_id = verified.claims["sub"]
 
     try:
         cp_uuid = uuid.UUID(checkpoint_id)
     except ValueError:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+        await reject_ws(websocket)
+        return
 
     # Resolve user + OWNER-guard the checkpoint, then snapshot the initial state
     # — all in one short-lived session that is released before the read-loop.
@@ -1196,23 +1190,26 @@ async def websocket_monitor(
             )
         ).scalar_one_or_none()
         if user is None:
-            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+            await reject_ws(websocket)
+            return
 
         cp = await db.get(Checkpoint, cp_uuid)
         if cp is None or cp.deleted_at is not None:
-            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+            await reject_ws(websocket)
+            return
         course = await db.get(Course, cp.course_id)
         if (
             course is None
             or course.deleted_at is not None
             or course.instructor_id != user.id
         ):
-            # Owner-only: a non-owner (or student) is rejected before accept.
-            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+            # Owner-only: a non-owner (or student) is rejected.
+            await reject_ws(websocket)
+            return
 
         initial_state = await compute_monitor_state(db, cp_uuid)
 
-    await monitor_manager.connect(checkpoint_id, websocket)
+    await monitor_manager.connect(checkpoint_id, websocket, accept=False)
     try:
         await websocket.send_json({"type": "state", **initial_state})
         # Read-only monitor: drain (and ignore) inbound frames until disconnect.

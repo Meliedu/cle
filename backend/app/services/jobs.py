@@ -488,15 +488,21 @@ async def run_parse_syllabus(
         )
     ).scalar_one_or_none()
     if doc is None or doc.kind != "syllabus":
+        from app.services.failures import SourceFailureCode
+
         imp.status = "failed"
-        imp.error_message = "syllabus document missing or kind changed"
+        # Not a parse failure: the document row vanished or changed kind under
+        # us. Typed so the UI can say "not found" rather than guess.
+        imp.error_code = SourceFailureCode.NOT_FOUND.value
+        imp.error_message = None
         await session.commit()
         return {"status": "failed"}
 
     # Fix 13: defense-in-depth cross-course check
     if doc.course_id != imp.course_id:
         imp.status = "failed"
-        imp.error_message = "document course mismatch"
+        imp.error_code = SourceFailureCode.NOT_FOUND.value
+        imp.error_message = None
         await session.commit()
         return {"status": "failed"}
 
@@ -511,24 +517,33 @@ async def run_parse_syllabus(
         await session.commit()
         return {"status": "parsed", "syllabus_import_id": str(imp.id)}
     except Exception as exc:
-        # Fix 3: on any error, mark the import as failed so the UI can re-trigger
-        logger.exception(
-            "run_parse_syllabus failed for import_id=%s: %s", import_id, exc
+        # On any error, mark the import failed so the UI can offer recovery.
+        #
+        # The stored value is a TYPED CODE, never the exception. Redacting the
+        # exception string was not enough: it still carried the class name and
+        # internal attribute names straight to the instructor (the live product
+        # showed "AttributeError: 'Settings' object has no attribute
+        # 'llm_primary_model'"). `classify_and_log` puts the raw detail in the
+        # structured log, where triage needs it, and returns only the code.
+        from app.services.failures import classify_and_log
+
+        code = classify_and_log(
+            exc,
+            context="run_parse_syllabus",
+            import_id=import_id,
+            document_id=document_id,
+            course_id=imp.course_id,
         )
         try:
             imp.status = "failed"
-            # Reuse the worker's URL-redacting sanitiser so transient errors
-            # that surface a Cloudflare R2 signed URL or asyncpg
-            # ``postgres://user:pass@host`` connection string don't land in
-            # an instructor-visible state field.
-            from app.services.worker import _sanitize_error_message
-            imp.error_message = _sanitize_error_message(exc)
+            imp.error_code = code.value
+            imp.error_message = None
             await session.commit()
         except Exception:
             logger.exception(
                 "Failed to persist failure status for import_id=%s", import_id
             )
-        return {"status": "failed"}
+        return {"status": "failed", "error_code": code.value}
 
 
 _HANDLERS = {

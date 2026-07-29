@@ -336,7 +336,17 @@ async def enroll_by_code(
     new_status = "pending" if course.join_mode == "code_plus_approval" else "active"
     db.add(
         Enrollment(
-            course_id=course.id, user_id=user.id, role=user.role, status=new_status
+            course_id=course.id,
+            user_id=user.id,
+            # ALWAYS student. This is the code-join path, and an enroll code is
+            # shared with a whole class, so it is not a secret from other staff.
+            # Copying the caller's GLOBAL role let any `@ust.hk` account (whose
+            # domain rule makes them role="instructor") mint an instructor-role
+            # enrollment in any course whose code they knew, and thereby reach
+            # that course's instructor-only surfaces. Co-instructors and TAs are
+            # granted through an explicit invite, never through a join code.
+            role="student",
+            status=new_status,
         )
     )
     try:
@@ -420,30 +430,15 @@ async def deactivate_enroll_code(
     return APIResponse(success=True, data=CourseResponse.model_validate(course))
 
 
-@router.post("/{course_id}/enroll", response_model=APIResponse[None], status_code=201)
-async def enroll_in_course(
-    course_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    result = await db.execute(
-        select(Course).where(Course.id == course_id, Course.deleted_at.is_(None))
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
-
-    existing = await db.execute(
-        select(Enrollment).where(
-            Enrollment.course_id == course_id, Enrollment.user_id == user.id
-        )
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already enrolled")
-
-    enrollment = Enrollment(course_id=course_id, user_id=user.id, role=user.role)
-    db.add(enrollment)
-    await db.commit()
-    return APIResponse(success=True, data=None)
+# NOTE: A direct `POST /{course_id}/enroll` self-enroll endpoint was removed as
+# a security fix. It let any authenticated user create an *active* enrollment on
+# any course by UUID (Enrollment.status defaults to "active"), bypassing the
+# enroll-code, `enroll_code_active`, `assert_course_open` setup gate, and the
+# `join_mode` approval flow, and, because it copied `role=user.role`, let any
+# @ust.hk user self-enroll as `role="instructor"` and reach another course's
+# instructor surface (roster, analytics, question bank). All legitimate joins go
+# through `enroll-by-code` (student) or Canvas roster sync; do not reintroduce a
+# gate-free enroll path.
 
 
 def _join_request_out(enrollment: Enrollment, user: User) -> JoinRequestOut:

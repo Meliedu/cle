@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import app.api.checkpoints as checkpoints_api
 from app.models import Course, User
 from app.models.checkpoint import Checkpoint, CheckpointCard, CheckpointResponse
+from app.api import ws_auth
 from app.services.auth import VerifiedToken
 from app.services.checkpoint_monitor import (
     broadcast_closed,
@@ -49,15 +50,28 @@ class FakeWebSocket:
 
     ``receive_text`` raises ``WebSocketDisconnect`` once the scripted incoming
     queue drains so the handler's read-loop exits cleanly.
+
+    ``receive_json`` serves the scripted queue, which is how a test supplies the
+    first-frame auth token the handler now requires
+    (``{"type": "auth", "token": ...}``) instead of a ``?token=`` query param.
+    ``close`` records the code so a rejection can be asserted: the handler
+    ACCEPTS the socket before authenticating, then closes it with 1008, so a
+    rejected connection is a closed one, not an unaccepted one.
     """
 
     def __init__(self, incoming: list | None = None):
         self.accepted = False
+        self.closed = False
+        self.close_code: int | None = None
         self.sent: list[dict] = []
         self._incoming = list(incoming or [])
 
     async def accept(self):
         self.accepted = True
+
+    async def close(self, code: int | None = None):
+        self.closed = True
+        self.close_code = code
 
     async def send_json(self, data):
         self.sent.append(data)
@@ -107,8 +121,11 @@ def _patch_ws_deps(monkeypatch, *, sub: str, session: AsyncSession):
     monkeypatch.setattr(
         checkpoints_api, "async_session_factory", lambda: _SessionCtx(session)
     )
+    # The JWT is now verified inside `app.api.ws_auth.authenticate_ws`, not in
+    # the endpoint module, so that is where the stub belongs. Patching the old
+    # location silently did nothing and the real verifier ran.
     monkeypatch.setattr(
-        checkpoints_api,
+        ws_auth,
         "verify_jwt",
         lambda token: VerifiedToken("better_auth", {"sub": sub}),
     )
@@ -223,10 +240,10 @@ async def test_compute_monitor_state(db_session: AsyncSession, seeded):
 @pytest.mark.asyncio
 async def test_monitor_connect_sends_state(db_session, seeded, monkeypatch, logged_in_user):
     _patch_ws_deps(monkeypatch, sub=logged_in_user.better_auth_id, session=db_session)
-    ws = FakeWebSocket()
+    ws = FakeWebSocket([{"type": "auth", "token": "x"}])
 
     await checkpoints_api.websocket_monitor(
-        ws, checkpoint_id=str(seeded["cp"].id), token="x"
+        ws, checkpoint_id=str(seeded["cp"].id)
     )
 
     assert ws.accepted is True
@@ -244,23 +261,29 @@ async def test_monitor_rejects_non_owner(db_session, seeded, monkeypatch):
     other = await _make_instructor(db_session, "outsider")
     await db_session.commit()
     _patch_ws_deps(monkeypatch, sub=other.better_auth_id, session=db_session)
-    ws = FakeWebSocket()
+    ws = FakeWebSocket([{"type": "auth", "token": "x"}])
 
-    with pytest.raises(WebSocketException):
-        await checkpoints_api.websocket_monitor(
-            ws, checkpoint_id=str(seeded["cp"].id), token="x"
+    await checkpoints_api.websocket_monitor(
+            ws, checkpoint_id=str(seeded["cp"].id)
         )
-    assert ws.accepted is False
+    # The handler accepts before authenticating, then closes with a
+    # policy-violation code. A rejected socket is a CLOSED one.
+    assert ws.closed is True
+    assert ws.close_code == 1008
+    assert not ws.sent
 
 
 @pytest.mark.asyncio
 async def test_monitor_rejects_missing_token(seeded):
-    ws = FakeWebSocket()
-    with pytest.raises(WebSocketException):
-        await checkpoints_api.websocket_monitor(
-            ws, checkpoint_id=str(seeded["cp"].id), token=""
+    ws = FakeWebSocket([{"type": "auth", "token": "x"}])
+    await checkpoints_api.websocket_monitor(
+            ws, checkpoint_id=str(seeded["cp"].id)
         )
-    assert ws.accepted is False
+    # The handler accepts before authenticating, then closes with a
+    # policy-violation code. A rejected socket is a CLOSED one.
+    assert ws.closed is True
+    assert ws.close_code == 1008
+    assert not ws.sent
 
 
 # --------------------------------------------------------------------------- #
@@ -274,7 +297,7 @@ async def test_submission_broadcasts_to_monitor(db_session, seeded):
     connected monitor (the T7 evidence seam is now wired)."""
     cp = seeded["cp"]
     review = seeded["review"]
-    ws = FakeWebSocket()
+    ws = FakeWebSocket([{"type": "auth", "token": "x"}])
     await monitor_manager.connect(str(cp.id), ws)
 
     student = User(
@@ -304,7 +327,7 @@ async def test_submission_broadcasts_to_monitor(db_session, seeded):
 @pytest.mark.asyncio
 async def test_broadcast_closed_reaches_monitor(db_session, seeded):
     cp = seeded["cp"]
-    ws = FakeWebSocket()
+    ws = FakeWebSocket([{"type": "auth", "token": "x"}])
     await monitor_manager.connect(str(cp.id), ws)
 
     await broadcast_closed(db_session, cp.id)
@@ -321,7 +344,7 @@ async def test_close_endpoint_broadcasts_closed(async_client, db_session, logged
     cp, _review, _final = await _make_checkpoint(db_session, course, status="published")
     await db_session.commit()
 
-    ws = FakeWebSocket()
+    ws = FakeWebSocket([{"type": "auth", "token": "x"}])
     await monitor_manager.connect(str(cp.id), ws)
 
     r = await async_client.post(f"/api/checkpoints/{cp.id}/close")

@@ -1,16 +1,16 @@
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api._helpers import verify_enrollment
+from app.api._helpers import verify_enrollment, verify_instructor_enrollment
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.config import settings
-from app.models.course import Enrollment
+from app.models.course import Course, Enrollment
 from app.models.curriculum import CourseMeeting
 from app.models.document import Document
 from app.models.task import Task
@@ -31,6 +31,7 @@ from app.services.storage import (
     sanitize_filename,
     upload_file,
 )
+from app.services.failures import SourceFailureCode
 from app.services.work_items import remove_work_item, upsert_work_item
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,11 @@ router = APIRouter(prefix="/courses/{course_id}/documents", tags=["documents"])
 # Second router for the grouped materials library, mounted OUTSIDE the
 # ``/documents`` prefix (spec §4.6 / Decision 6: ``GET /courses/{id}/materials``).
 materials_router = APIRouter(prefix="/courses/{course_id}", tags=["documents"])
+
+# Minimum gap between retries of the same source. Each retry re-runs parsing
+# and billed embedding calls, and this route sits outside the `/api/rag/*`
+# rate limiter, so the floor lives here.
+REPROCESS_COOLDOWN = timedelta(seconds=30)
 
 # Short-lived signed preview URL — never stream raw bytes through the API.
 PREVIEW_TTL_SECONDS = 300
@@ -80,15 +86,17 @@ def _matches_magic(content_type: str, file_data: bytes) -> bool:
 async def _require_course_instructor(
     db: AsyncSession, course_id: uuid.UUID, user: User
 ) -> None:
-    result = await db.execute(
-        select(Enrollment).where(
-            Enrollment.course_id == course_id,
-            Enrollment.user_id == user.id,
-            Enrollment.role == "instructor",
-        )
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not course instructor")
+    """Require an ACTIVE instructor enrollment in a live course.
+
+    Delegates to the shared helper rather than keeping a second copy of the
+    query. The local copy checked only ``role == "instructor"``: it omitted
+    ``status == "active"`` and the ``Course.deleted_at`` join, so an enrollment
+    left ``pending`` (or ``rejected``) by a ``code_plus_approval`` course still
+    cleared the gate. That is the same defect already fixed in
+    ``analytics.py``; every write and signed-preview route in this module was
+    gated on the weaker check.
+    """
+    await verify_instructor_enrollment(db, course_id, user.id)
 
 
 @router.post("/upload", response_model=APIResponse[DocumentResponse], status_code=201)
@@ -171,6 +179,9 @@ async def upload_document(
     except Exception:
         # R2 failed — tombstone the DB row so it doesn't sit forever
         document.status = "failed"
+        # Typed so the setup UI can say "Meli could not open <file>. Retry in a
+        # moment." instead of surfacing a storage exception.
+        document.error_code = SourceFailureCode.STORAGE_UNAVAILABLE.value
         await db.commit()
         logger.exception("R2 upload failed for document %s", document_id)
         raise HTTPException(
@@ -237,6 +248,100 @@ async def delete_document(
     return APIResponse(success=True, data=None)
 
 
+@router.post(
+    "/{document_id}/reprocess",
+    response_model=APIResponse[DocumentResponse],
+)
+async def reprocess_document(
+    course_id: uuid.UUID,
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    """Re-run the processing pipeline for a source that failed.
+
+    This is the server side of the "Retry parsing" action the approved course
+    setup requires beside a failed source:
+
+        Files are preserved; the failed source is named with Retry parsing and
+        Replace file actions.
+
+    The stored R2 object is reused, so nothing is re-uploaded and no accepted
+    work is discarded. The typed failure code is cleared as the document
+    returns to ``pending`` so the UI stops showing stale recovery copy while
+    the retry is in flight.
+
+    Only a ``failed`` document may be retried. Re-queuing a document that is
+    already ``pending``/``processing`` would create a second pipeline task for
+    the same file, and re-queuing a ``completed`` one would discard good
+    output; both are conflicts rather than no-ops, so they answer 409.
+    """
+    await _require_course_instructor(db, course_id, user)
+
+    # Existence and ownership first, so a document in another course answers
+    # 404 rather than revealing itself through a different status code.
+    doc = (
+        await db.execute(
+            select(Document).where(
+                Document.id == document_id,
+                Document.course_id == course_id,
+                Document.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
+        )
+
+    # Cooldown. Each retry re-runs parsing and billed embedding calls, and this
+    # route is outside the `/api/rag/*` rate limiter, so without a floor a
+    # scripted client could loop fail -> retry indefinitely at our cost.
+    # `updated_at` moves on every status transition, which is exactly the
+    # "when did we last attempt this" signal we need.
+    if doc.status == "failed" and doc.updated_at is not None:
+        since = datetime.now(timezone.utc) - doc.updated_at
+        if since < REPROCESS_COOLDOWN:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "code": "rate_limited",
+                    "message": "This source was retried a moment ago.",
+                },
+            )
+
+    # Atomic claim: flip failed -> pending in ONE statement and enqueue only if
+    # this request is the one that won. A read-then-write would let two
+    # concurrent retries both observe `failed` and both enqueue, producing
+    # duplicate chunks and double embedding spend for the same file.
+    claimed = await db.execute(
+        update(Document)
+        .where(
+            Document.id == document_id,
+            Document.course_id == course_id,
+            Document.deleted_at.is_(None),
+            Document.status == "failed",
+        )
+        .values(status="pending", error_code=None)
+        .returning(Document.id)
+    )
+    if claimed.scalar_one_or_none() is None:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "not_retryable",
+                "message": "This source is not in a failed state.",
+            },
+        )
+
+    db.add(Task(task_type="process_document", payload={"document_id": str(document_id)}))
+    await db.commit()
+    await db.refresh(doc)
+
+    return APIResponse(success=True, data=DocumentResponse.model_validate(doc))
+
+
 # ---------------------------------------------------------------------------
 # Materials library (P4 B8): assign-to-session, session folders, signed preview
 # ---------------------------------------------------------------------------
@@ -253,12 +358,21 @@ async def _is_course_instructor(
     is therefore treated as course staff for the document surface. This is
     deliberate and pinned by ``tests/test_is_course_instructor.py`` — narrowing
     it to owner-only would be a conscious, tested behaviour change.
+
+    Course staff still means an ACTIVE enrollment in a live course: a pending
+    or rejected instructor-role row is not staff. This mirrors
+    ``verify_instructor_enrollment``; the boolean form exists because callers
+    branch on it rather than raising.
     """
     result = await db.execute(
-        select(Enrollment.id).where(
+        select(Enrollment.id)
+        .join(Course, Course.id == Enrollment.course_id)
+        .where(
             Enrollment.course_id == course_id,
             Enrollment.user_id == user_id,
             Enrollment.role == "instructor",
+            Enrollment.status == "active",
+            Course.deleted_at.is_(None),
         )
     )
     return result.scalar_one_or_none() is not None

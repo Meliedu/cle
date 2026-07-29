@@ -62,6 +62,10 @@ async def verify_instructor_enrollment(
             Enrollment.course_id == course_id,
             Enrollment.user_id == user_id,
             Enrollment.role == "instructor",
+            # Load-bearing: a code+approval course can leave an instructor-role
+            # enrollment in `pending`/`rejected`; without this an un-admitted
+            # instructor would clear the gate. Mirrors verify_enrollment.
+            Enrollment.status == "active",
             Course.deleted_at.is_(None),
         )
     )

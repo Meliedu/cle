@@ -28,7 +28,6 @@ from fastapi import (
     HTTPException,
     WebSocket,
     WebSocketDisconnect,
-    WebSocketException,
     status,
 )
 from sqlalchemy import select
@@ -41,6 +40,7 @@ from app.api.deps import (
     get_owned_course,
     require_instructor,
 )
+from app.api.ws_auth import authenticate_ws, reject_ws
 from app.database import async_session_factory
 from app.models.activity import Activity, ActivityResponse
 from app.models.course import Course
@@ -65,7 +65,6 @@ from app.services.activity_responses import (
     OPEN_STATUSES,
     submit_activity_response,
 )
-from app.services.auth import verify_jwt
 from app.services.score_policy import assert_score_policy_complete
 from app.services.work_items import upsert_work_item
 
@@ -580,7 +579,6 @@ async def get_activity_results(
 async def websocket_monitor(
     websocket: WebSocket,
     activity_id: str,
-    token: str = "",
 ):
     """Teacher live-monitor stream for one activity.
 
@@ -588,22 +586,18 @@ async def websocket_monitor(
     distribution}``; thereafter the hub pushes ``submission`` (a student response
     landed) and ``closed`` (the activity closed) broadcasts.
     """
-    if not token:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
-    try:
-        verified = verify_jwt(token)
-    except Exception as exc:  # noqa: BLE001 — any verify failure is a policy reject
-        logger.warning("Monitor WS auth failed for activity %s: %s", activity_id, exc)
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
-
-    auth_user_id = verified.claims.get("sub")
-    if not auth_user_id:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+    # Auth: the JWT is carried in the first WS frame ({"type":"auth","token":...}),
+    # never the URL. See app.api.ws_auth.
+    verified = await authenticate_ws(websocket)
+    if verified is None:
+        return
+    auth_user_id = verified.claims["sub"]
 
     try:
         act_uuid = uuid.UUID(activity_id)
     except ValueError:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+        await reject_ws(websocket)
+        return
 
     # Resolve user + OWNER-guard the activity, then snapshot the initial state —
     # all in one short-lived session that is released before the read-loop.
@@ -614,23 +608,26 @@ async def websocket_monitor(
             )
         ).scalar_one_or_none()
         if user is None:
-            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+            await reject_ws(websocket)
+            return
 
         act = await db.get(Activity, act_uuid)
         if act is None or act.deleted_at is not None:
-            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+            await reject_ws(websocket)
+            return
         course = await db.get(Course, act.course_id)
         if (
             course is None
             or course.deleted_at is not None
             or course.instructor_id != user.id
         ):
-            # Owner-only: a non-owner (or student) is rejected before accept.
-            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+            # Owner-only: a non-owner (or student) is rejected.
+            await reject_ws(websocket)
+            return
 
         initial_state = await compute_activity_monitor_state(db, act_uuid)
 
-    await monitor_manager.connect(activity_id, websocket)
+    await monitor_manager.connect(activity_id, websocket, accept=False)
     try:
         await websocket.send_json({"type": "state", **initial_state})
         # Read-only monitor: drain (and ignore) inbound frames until disconnect.

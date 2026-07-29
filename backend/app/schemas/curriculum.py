@@ -226,6 +226,11 @@ class SyllabusImportResponse(BaseModel):
     document_id: uuid.UUID | None
     parsed_payload: dict[str, Any]
     status: SyllabusImportStatus
+    # Typed failure code (SourceFailureCode) the UI maps to user-safe copy.
+    # error_message is legacy: it is no longer written on failure because it
+    # carried raw exception text to the instructor. Historical rows may still
+    # have a value, so the UI must never render it directly.
+    error_code: str | None = None
     error_message: str | None
     applied_at: datetime | None
     applied_by: uuid.UUID | None

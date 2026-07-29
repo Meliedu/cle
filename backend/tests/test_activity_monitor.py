@@ -34,6 +34,7 @@ from app.services.activity_monitor import (
     monitor_manager,
 )
 from app.services.activity_responses import submit_activity_response
+from app.api import ws_auth
 from app.services.auth import VerifiedToken
 from app.services.live_quiz import ConnectionManager
 from app.services.live_quiz import manager as live_manager
@@ -49,11 +50,17 @@ class FakeWebSocket:
 
     def __init__(self, incoming: list | None = None):
         self.accepted = False
+        self.closed = False
+        self.close_code: int | None = None
         self.sent: list[dict] = []
         self._incoming = list(incoming or [])
 
     async def accept(self):
         self.accepted = True
+
+    async def close(self, code: int | None = None):
+        self.closed = True
+        self.close_code = code
 
     async def send_json(self, data):
         self.sent.append(data)
@@ -103,8 +110,11 @@ def _patch_ws_deps(monkeypatch, *, sub: str, session: AsyncSession):
     monkeypatch.setattr(
         activities_api, "async_session_factory", lambda: _SessionCtx(session)
     )
+    # The JWT is now verified inside `app.api.ws_auth.authenticate_ws`, not in
+    # the endpoint module, so that is where the stub belongs. Patching the old
+    # location silently did nothing and the real verifier ran.
     monkeypatch.setattr(
-        activities_api,
+        ws_auth,
         "verify_jwt",
         lambda token: VerifiedToken("better_auth", {"sub": sub}),
     )
@@ -315,10 +325,10 @@ async def test_monitor_connect_sends_state(
     db_session, seeded_vote, monkeypatch, logged_in_user
 ):
     _patch_ws_deps(monkeypatch, sub=logged_in_user.better_auth_id, session=db_session)
-    ws = FakeWebSocket()
+    ws = FakeWebSocket([{"type": "auth", "token": "x"}])
 
     await activities_api.websocket_monitor(
-        ws, activity_id=str(seeded_vote["act"].id), token="x"
+        ws, activity_id=str(seeded_vote["act"].id)
     )
 
     assert ws.accepted is True
@@ -336,23 +346,29 @@ async def test_monitor_rejects_non_owner(db_session, seeded_vote, monkeypatch):
     other = await _make_instructor(db_session, "outsider")
     await db_session.commit()
     _patch_ws_deps(monkeypatch, sub=other.better_auth_id, session=db_session)
-    ws = FakeWebSocket()
+    ws = FakeWebSocket([{"type": "auth", "token": "x"}])
 
-    with pytest.raises(WebSocketException):
-        await activities_api.websocket_monitor(
-            ws, activity_id=str(seeded_vote["act"].id), token="x"
+    await activities_api.websocket_monitor(
+            ws, activity_id=str(seeded_vote["act"].id)
         )
-    assert ws.accepted is False
+    # The handler accepts before authenticating, then closes with a
+    # policy-violation code. A rejected socket is a CLOSED one.
+    assert ws.closed is True
+    assert ws.close_code == 1008
+    assert not ws.sent
 
 
 @pytest.mark.asyncio
 async def test_monitor_rejects_missing_token(seeded_vote):
-    ws = FakeWebSocket()
-    with pytest.raises(WebSocketException):
-        await activities_api.websocket_monitor(
-            ws, activity_id=str(seeded_vote["act"].id), token=""
+    ws = FakeWebSocket([{"type": "auth", "token": "x"}])
+    await activities_api.websocket_monitor(
+            ws, activity_id=str(seeded_vote["act"].id)
         )
-    assert ws.accepted is False
+    # The handler accepts before authenticating, then closes with a
+    # policy-violation code. A rejected socket is a CLOSED one.
+    assert ws.closed is True
+    assert ws.close_code == 1008
+    assert not ws.sent
 
 
 # --------------------------------------------------------------------------- #
@@ -365,7 +381,7 @@ async def test_submission_broadcasts_to_monitor(db_session, seeded_vote):
     """Committing a student response fires a ``submission`` broadcast to a
     connected monitor (B9's ``_notify_monitor`` seam is now wired)."""
     act = seeded_vote["act"]
-    ws = FakeWebSocket()
+    ws = FakeWebSocket([{"type": "auth", "token": "x"}])
     await monitor_manager.connect(str(act.id), ws)
 
     student = await _make_student(db_session, "ws_new")
@@ -389,7 +405,7 @@ async def test_submission_broadcasts_to_monitor(db_session, seeded_vote):
 @pytest.mark.asyncio
 async def test_broadcast_closed_reaches_monitor(db_session, seeded_vote):
     act = seeded_vote["act"]
-    ws = FakeWebSocket()
+    ws = FakeWebSocket([{"type": "auth", "token": "x"}])
     await monitor_manager.connect(str(act.id), ws)
 
     await broadcast_closed(db_session, act.id)

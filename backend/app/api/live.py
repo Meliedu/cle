@@ -9,7 +9,6 @@ from fastapi import (
     HTTPException,
     WebSocket,
     WebSocketDisconnect,
-    WebSocketException,
     status,
 )
 from pydantic import BaseModel
@@ -20,6 +19,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api._helpers import verify_enrollment
 from app.api.deps import get_current_user, get_db, require_instructor
+from app.api.ws_auth import authenticate_ws, reject_ws
 from app.database import async_session_factory
 from app.models.course import Enrollment
 from app.models.quiz import Question, Quiz, QuizAttempt
@@ -27,7 +27,6 @@ from app.models.session import LiveSession
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.schemas.live import CreateLiveSessionRequest, LiveSessionResponse
-from app.services.auth import verify_jwt
 from app.services.gamification import award_xp
 from app.services.live_quiz import (
     SessionState,
@@ -756,7 +755,6 @@ async def _is_enrolled(
 async def websocket_live(
     websocket: WebSocket,
     session_id: str,
-    token: str = "",
 ):
     """WebSocket handler for live quiz sessions.
 
@@ -764,31 +762,32 @@ async def websocket_live(
     cutover window, Better Auth post-cutover). The authenticated user is
     resolved server-side — messages can never spoof user_id or is_correct.
     """
-    logger.info("WS connect attempt for session %s, token length=%d", session_id, len(token))
-    if not token:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
-    try:
-        verified = verify_jwt(token)
-    except Exception as e:
-        logger.warning("WS auth failed for session %s: %s", session_id, e)
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
-
-    auth_user_id = verified.claims.get("sub")
-    if not auth_user_id:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+    # Auth: the JWT is carried in the first WS frame ({"type":"auth","token":...}),
+    # never the URL. See app.api.ws_auth.
+    logger.info("WS connect attempt for session %s", session_id)
+    verified = await authenticate_ws(websocket)
+    if verified is None:
+        return
+    auth_user_id = verified.claims["sub"]
 
     async with async_session_factory() as db:
         user = await _resolve_ws_user(db, auth_user_id)
         if user is None:
-            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+            await reject_ws(websocket)
+            return
 
-        session = await _get_session_or_404(db, session_id)
+        try:
+            session = await _get_session_or_404(db, session_id)
+        except HTTPException:
+            await reject_ws(websocket)
+            return
         if not await _is_enrolled(db, session.course_id, user.id):
-            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+            await reject_ws(websocket)
+            return
 
     is_host = session.host_id == user.id
 
-    await manager.connect(session_id, websocket)
+    await manager.connect(session_id, websocket, accept=False)
     try:
         while True:
             data = await websocket.receive_json()
