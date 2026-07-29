@@ -29,8 +29,16 @@ async def reject_ws(websocket: WebSocket) -> None:
 
     Used by endpoints for their own post-auth rejections (unknown user, ownership
     or enrollment failure) so the close bookkeeping stays in one place.
+
+    Closing is best-effort. The most common reason we get here is that the client
+    disconnected mid-handshake, and closing a socket the peer already abandoned
+    raises. Letting that escape would turn a routine disconnect into an unhandled
+    exception in an endpoint that has no handler for it.
     """
-    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+    try:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+    except Exception:  # noqa: BLE001, the peer is already gone; nothing to do
+        logger.debug("WS close failed (peer likely already disconnected)", exc_info=True)
 
 
 async def authenticate_ws(websocket: WebSocket) -> VerifiedToken | None:

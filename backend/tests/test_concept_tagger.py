@@ -22,7 +22,7 @@ async def test_inherit_tags_from_chunk_scales_weight(db_session):
     await db_session.commit()
     doc = Document(
         course_id=course.id, filename="x.pdf", file_type="pdf",
-        r2_key="k", status="completed", uploaded_by=user.id,
+        r2_key="k", status="ready", uploaded_by=user.id,
     )
     db_session.add(doc)
     await db_session.commit()
@@ -80,7 +80,7 @@ async def test_tag_chunk_via_llm_drops_tiny_weights(db_session, monkeypatch):
     await db_session.commit()
     doc = Document(
         course_id=course.id, filename="x.pdf", file_type="pdf",
-        r2_key="k2", status="completed", uploaded_by=user.id,
+        r2_key="k2", status="ready", uploaded_by=user.id,
     )
     db_session.add(doc)
     await db_session.commit()

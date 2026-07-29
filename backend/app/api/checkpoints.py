@@ -1151,7 +1151,7 @@ async def revisit_response(
 #
 # Reuses the live-quiz ``ConnectionManager`` class via ``monitor_manager`` — no
 # new WS framework. Auth preamble is copied from ``api/live.py``'s
-# ``websocket_live`` (``?token=`` → ``verify_jwt`` → resolve user), but the
+# ``websocket_live`` (first-frame auth → ``verify_jwt`` → resolve user), but the
 # enrollment check is swapped for an OWNER check: only the checkpoint's course
 # instructor may monitor. The monitor is read-only — inbound frames are drained
 # and ignored; the server only ever pushes ``state``/``submission``/``closed``.

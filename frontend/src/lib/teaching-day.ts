@@ -200,9 +200,11 @@ export function resolveTeachingDay(
 
   return {
     next,
-    laterToday: rest.filter((entry) =>
-      sameCalendarDay(new Date(entry.at), new Date(nextEntry.at))
-    ),
+    // Anchored to TODAY, not to the next class. Anchoring to the next entry
+    // meant that when the next class was Monday and today was Friday, the
+    // section headed "Later today" listed Monday's items. The heading is a
+    // claim about the teacher's current day, so the filter has to be too.
+    laterToday: rest.filter((entry) => sameCalendarDay(new Date(entry.at), now)),
     afterThis: rest.slice(0, afterLimit),
   };
 }

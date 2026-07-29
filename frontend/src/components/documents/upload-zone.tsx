@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, X, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { API_URL } from "@/lib/api";
+import { API_URL, safeBackendMessage } from "@/lib/api";
 
 const ACCEPTED_TYPES = [
   "application/pdf",
@@ -90,16 +90,16 @@ export function UploadZone({ courseId, onUploadComplete }: UploadZoneProps) {
           });
           onUploadComplete?.();
         } else {
+          // Raw XHR, so the apiFetch boundary does not apply here. Route the
+          // body through the same allowlist rather than rendering it directly.
           let errorMessage = `Upload failed (${xhr.status})`;
           try {
-            const response = JSON.parse(xhr.responseText);
-            if (response.error?.message) {
-              errorMessage = response.error.message;
-            } else if (response.detail) {
-              errorMessage = response.detail;
-            }
+            errorMessage = safeBackendMessage(
+              JSON.parse(xhr.responseText),
+              errorMessage
+            );
           } catch {
-            // Use the default error message
+            // Unparseable body: keep the status fallback.
           }
           setFiles((prev) =>
             prev.map((f) =>

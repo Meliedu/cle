@@ -27,7 +27,7 @@ async def test_list_tags_for_target_returns_tagged_concept(
         filename="x.pdf",
         file_type="pdf",
         r2_key="k",
-        status="completed",
+        status="ready",
         uploaded_by=test_instructor.id,
     )
     db_session.add(doc)
@@ -137,7 +137,7 @@ async def test_list_tags_returns_404_for_unenrolled_user(
     await db_session.commit()
     doc = Document(
         course_id=course.id, filename="x.pdf", file_type="pdf",
-        r2_key="k", status="completed", uploaded_by=other.id,
+        r2_key="k", status="ready", uploaded_by=other.id,
     )
     db_session.add(doc)
     await db_session.commit()
@@ -184,7 +184,7 @@ async def test_list_tags_returns_data_for_owner(client, db_session, test_instruc
     await db_session.commit()
     doc = Document(
         course_id=course.id, filename="x.pdf", file_type="pdf",
-        r2_key="k", status="completed", uploaded_by=test_instructor.id,
+        r2_key="k", status="ready", uploaded_by=test_instructor.id,
     )
     db_session.add(doc)
     await db_session.commit()

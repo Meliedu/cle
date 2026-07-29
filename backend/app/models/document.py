@@ -10,16 +10,18 @@ from app.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDPrimaryKe
 class Document(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "documents"
     __table_args__ = (
-        # The DEPLOYED constraint is
-        #   pending | processing | ready | failed
-        # and `pipeline.py` writes 'ready' on success. This model previously
-        # listed 'completed' instead, so `Base.metadata.create_all` built a test
-        # database that rejected the value production actually stores, and
-        # accepted one production cannot. Both are allowed here: 'ready' so the
-        # test schema matches production, 'completed' so the existing fixtures
-        # that use it keep working. New code should write 'ready'.
+        # Must match the DEPLOYED constraint exactly (migration
+        # e9a7c1f2b834): pending | processing | ready | failed. `pipeline.py`
+        # writes 'ready' on success.
+        #
+        # This model once listed 'completed' instead, so
+        # `Base.metadata.create_all` built a test database that rejected the
+        # value production stores and accepted one it cannot. Widening the ORM
+        # to allow both would keep that divergence alive in the permissive
+        # direction, letting a test pass on a value that fails in production.
+        # Keep the two identical.
         CheckConstraint(
-            "status IN ('pending', 'processing', 'ready', 'completed', 'failed')",
+            "status IN ('pending', 'processing', 'ready', 'failed')",
             name="ck_documents_status_valid",
         ),
         CheckConstraint(

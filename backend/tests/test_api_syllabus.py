@@ -39,7 +39,7 @@ async def syllabus_doc(
         file_size=1,
         r2_key="x",
         r2_url="x",
-        status="completed",
+        status="ready",
         kind="syllabus",
     )
     db_session.add(d)

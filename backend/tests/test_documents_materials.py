@@ -67,7 +67,7 @@ async def _make_document(
         course_id=course.id, uploaded_by=uploader.id, filename=filename,
         file_type="pdf", file_size=1024,
         r2_key=f"courses/{course.id}/documents/{uuid.uuid4()}/{filename}",
-        status="completed", kind="lecture", meeting_id=meeting_id,
+        status="ready", kind="lecture", meeting_id=meeting_id,
     )
     db_session.add(doc)
     await db_session.commit()

@@ -1,5 +1,6 @@
 "use client";
 
+import { courseLifecycle } from "@/lib/contracts/state";
 import { useCallback, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Check, CircleAlert, Loader2, Rocket, Sparkles } from "lucide-react";
@@ -52,8 +53,7 @@ export function StepReview({ courseId, onNavigate }: StepReviewProps) {
   // without waiting for the setup-state cache to repopulate; a course that was
   // already published (revisit) is detected from the server state.
   const published =
-    justPublished ||
-    (state?.setup_status === "published" && state?.context_status === "approved");
+    justPublished || (state ? courseLifecycle(state) === "published" : false);
 
   const showCode = useCallback(() => onNavigate?.("class_code"), [onNavigate]);
 

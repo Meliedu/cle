@@ -569,7 +569,7 @@ async def get_activity_results(
 #
 # Reuses the live-quiz ``ConnectionManager`` class via ``monitor_manager`` — no
 # new WS framework. Auth preamble is copied from ``checkpoints.py``'s
-# ``websocket_monitor`` (``?token=`` → ``verify_jwt`` → resolve user), keeping the
+# ``websocket_monitor`` (first-frame auth → ``verify_jwt`` → resolve user), keeping the
 # OWNER check: only the activity's course instructor may monitor. The monitor is
 # read-only — inbound frames are drained and ignored; the server only ever pushes
 # ``state``/``submission``/``closed``.

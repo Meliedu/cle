@@ -21,7 +21,7 @@ async def test_list_files_splits_available_and_imported(
             file_type="pdf",
             file_size=1000,
             r2_key=f"courses/{course.id}/documents/existing/existing.pdf",
-            status="completed",
+            status="ready",
             canvas_file_id="999",
             canvas_file_etag="etag999",
         )
@@ -140,7 +140,7 @@ async def test_import_skips_already_imported(
             file_type="pdf",
             file_size=1,
             r2_key=f"courses/{course.id}/documents/old/old.pdf",
-            status="completed",
+            status="ready",
             canvas_file_id="999",
         )
     )

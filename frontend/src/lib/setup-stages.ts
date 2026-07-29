@@ -15,6 +15,7 @@
  * or recovery behavior").
  */
 
+import { courseLifecycle } from "@/lib/contracts/state";
 import type { SetupState, SetupStepKey } from "@/hooks/use-setup";
 
 export type SetupStage =
@@ -77,9 +78,9 @@ export function stageProgress(
 }
 
 function isPublished(state: SetupState | undefined): boolean {
-  return (
-    state?.setup_status === "published" && state?.context_status === "approved"
-  );
+  // Delegate rather than restate the rule. courseLifecycle is the one place
+  // lifecycle is derived; a second copy here is how the two drift apart.
+  return state ? courseLifecycle(state) === "published" : false;
 }
 
 /**

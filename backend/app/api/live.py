@@ -758,9 +758,11 @@ async def websocket_live(
 ):
     """WebSocket handler for live quiz sessions.
 
-    Auth: pass the bearer JWT as ?token= query param (Clerk during the
-    cutover window, Better Auth post-cutover). The authenticated user is
-    resolved server-side — messages can never spoof user_id or is_correct.
+    Auth: the Better Auth JWT arrives in the FIRST WS frame
+    (``{"type": "auth", "token": ...}``), never in the URL, so it cannot land
+    in proxy or access logs (CWE-598). See ``app.api.ws_auth``. The
+    authenticated user is resolved server-side, so messages can never spoof
+    user_id or is_correct.
     """
     # Auth: the JWT is carried in the first WS frame ({"type":"auth","token":...}),
     # never the URL. See app.api.ws_auth.

@@ -249,3 +249,36 @@ describe("documentReadiness", () => {
     expect(rollup.filter((r) => r === "idle")).toHaveLength(0);
   });
 });
+
+
+describe("laterToday is anchored to today, not to the next class", () => {
+  it("stays empty when the next class is on a future day", () => {
+    // NOW is the 26th at 10:12. The next class is the 29th. Anything on the
+    // 29th belongs under that class, NOT under a heading that says
+    // "Later today", which is a claim about the teacher's current day.
+    const day = resolveTeachingDay(
+      [
+        meeting("m-future", localAt(29, 9)),
+        meeting("m-same-future-day", localAt(29, 14)),
+      ],
+      NOW
+    );
+
+    expect(day.next?.entry.id).toContain("m-future");
+    expect(day.next?.isToday).toBe(false);
+    expect(day.laterToday).toHaveLength(0);
+    // The items are still reachable, just under the honest heading.
+    expect(day.afterThis.map((e) => e.id).join(",")).toContain("m-same-future-day");
+  });
+
+  it("still lists today's remaining items when the next class is today", () => {
+    const day = resolveTeachingDay(
+      [meeting("m-soon", localAt(26, 11)), meeting("m-later", localAt(26, 16))],
+      NOW
+    );
+
+    expect(day.next?.isToday).toBe(true);
+    expect(day.laterToday).toHaveLength(1);
+    expect(day.laterToday[0].id).toContain("m-later");
+  });
+});

@@ -4,7 +4,7 @@ import asyncio
 import logging
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chunk import Chunk
@@ -86,6 +86,17 @@ async def process_document_pipeline(
         embeddings = await embed_texts([c.content for c in chunks])
 
         # 5. Store chunks + final metadata in a single transaction.
+        #
+        # Clear any chunks already stored for this document first. A previous
+        # run can have committed a full chunk set at the commit below and then
+        # failed in step 6, which flips the row to "failed" with its chunks
+        # intact. Both the reprocess endpoint and the worker's stuck-task
+        # requeue then re-enter here, and without this delete each attempt
+        # appends a second full set: duplicate retrieval hits, and a second
+        # embedding bill. Same transaction as the insert, so a crash between
+        # the two cannot leave the document with no chunks at all.
+        await session.execute(delete(Chunk).where(Chunk.document_id == document.id))
+
         created_chunks: list[Chunk] = []
         for chunk_data, embedding in zip(chunks, embeddings):
             chunk = Chunk(

@@ -183,7 +183,7 @@ class TestReprocessStateMachine:
         owner = await _mk_user(db_session, "owner@ust.hk", "instructor")
         course = await _mk_course(db_session, owner)
         await _enroll(db_session, course, owner, "instructor", "active")
-        document = await _mk_document(db_session, course, owner, "completed")
+        document = await _mk_document(db_session, course, owner, "ready")
         await db_session.commit()
 
         async with client_for(owner) as client:

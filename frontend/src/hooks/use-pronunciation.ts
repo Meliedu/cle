@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { apiFetch, isAuthError } from "@/lib/api";
+import { apiFetch, isAuthError, safeBackendMessage } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
@@ -79,11 +79,11 @@ export function usePronunciationGrade() {
       });
 
       if (!response.ok) {
-        const error = await response
-          .json()
-          .catch(() => ({ error: { message: "Grading failed" } }));
+        // Rendered directly by pronunciation-player, so it must not carry
+        // untyped backend text.
+        const payload = await response.json().catch(() => null);
         throw new Error(
-          error.error?.message || `HTTP ${response.status}`
+          safeBackendMessage(payload, "Grading failed. Please try again.")
         );
       }
 

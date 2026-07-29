@@ -108,7 +108,11 @@ export function SetupWizard({ courseId }: SetupWizardProps) {
         id: document.id,
         name: document.filename,
         readiness: documentReadiness(document.status),
-        progress: document.status === "processing" ? 62 : null,
+        // No progress number. The backend reports a status, not a percentage,
+        // so any figure here is invented: every processing source claimed
+        // exactly 62%, including one stuck for ten minutes. The readiness word
+        // carries the meaning; the bar renders indeterminate.
+        progress: null,
         // The backend serves a typed code; a legacy row without one falls back
         // to generic safe copy rather than to any stored message.
         errorCode: document.error_code ?? null,

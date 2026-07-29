@@ -99,6 +99,21 @@ export function isAuthError(err: unknown): boolean {
 }
 
 /**
+ * Safe message for callers that cannot go through `apiFetch`.
+ *
+ * A few paths need the raw `fetch`/`XMLHttpRequest` object: upload progress
+ * events, multipart bodies. They still parse an error body, so without this
+ * they would read `error.message` or `detail` straight onto the screen and
+ * bypass the boundary every other caller gets for free. Same rule as
+ * `apiFetch`: the backend's text is used only when it also typed the failure
+ * with a `code`, otherwise the caller's own fallback copy is shown.
+ */
+export function safeBackendMessage(payload: unknown, fallback: string): string {
+  const { code, message } = extractError(payload);
+  return message && code && isUserSafeText(message) ? message : fallback;
+}
+
+/**
  * Turn a status plus an optional backend message into copy safe to render.
  *
  * Roughly thirty components render `ApiError.message` directly, so this

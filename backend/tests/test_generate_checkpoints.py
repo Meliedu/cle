@@ -63,7 +63,7 @@ async def seed_chunk(db_session, seed_course, test_instructor):
         file_type="pdf",
         r2_key=f"docs/{uuid.uuid4()}",
         file_size=1024,
-        status="completed",
+        status="ready",
     )
     db_session.add(doc)
     await db_session.flush()

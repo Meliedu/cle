@@ -251,7 +251,7 @@ async def course_with_chunk(db_session, instructor_and_course):
         file_type="pdf",
         r2_key=f"docs/{uuid.uuid4()}",
         file_size=1024,
-        status="completed",
+        status="ready",
     )
     db_session.add(doc)
     await db_session.flush()

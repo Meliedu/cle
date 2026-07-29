@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { useTriggerSyllabusImport } from "@/hooks/use-syllabus";
-import { API_URL } from "@/lib/api";
+import { API_URL, safeBackendMessage } from "@/lib/api";
 
 interface Props {
   readonly courseId: string;
@@ -72,13 +72,9 @@ export function SyllabusUploadCard({ courseId }: Props) {
         );
 
         if (!res.ok) {
-          const payload = (await res.json().catch(() => null)) as
-            | { error?: { message?: string }; detail?: string }
-            | null;
-          const msg =
-            payload?.error?.message ??
-            payload?.detail ??
-            `Upload failed (${res.status})`;
+          const payload = await res.json().catch(() => null);
+          // Multipart upload bypasses apiFetch, so apply the boundary rule here.
+          const msg = safeBackendMessage(payload, `Upload failed (${res.status})`);
           setUploadState({ kind: "error", message: msg });
           return;
         }
@@ -92,8 +88,10 @@ export function SyllabusUploadCard({ courseId }: Props) {
           return;
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Network error";
-        setUploadState({ kind: "error", message: msg });
+        // A thrown Error here is a transport/runtime failure; its message can
+        // carry internals, so it is logged rather than rendered.
+        console.error("[syllabus-upload] request failed", err);
+        setUploadState({ kind: "error", message: "Network error" });
         return;
       }
 
