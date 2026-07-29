@@ -167,9 +167,19 @@ async function login(context, role) {
   await page.fill('input[name="email"]', CREDS[role].email);
   await page.fill('input[name="password"]', CREDS[role].password);
   await page.click('button[type="submit"]');
-  await page
-    .waitForURL(/\/(teacher|student|dashboard)/, { timeout: 25000 })
-    .catch(() => {});
+  // Do NOT swallow this. A silent login failure sends every later goto to
+  // /sign-in, which yields few violations and prints "PASS: no rendered
+  // violations" having audited nothing but the login page.
+  try {
+    await page.waitForURL(/\/(teacher|student|dashboard)/, { timeout: 25000 });
+  } catch {
+    const at = page.url();
+    await page.close();
+    throw new Error(
+      `login failed for ${role} (${CREDS[role].email}); still at ${at}. ` +
+        `Check the demo seed and that this host allows email/password sign-in.`
+    );
+  }
   await page.waitForTimeout(2000);
   await page.close();
 }
@@ -186,6 +196,8 @@ async function resolveCourseRoutes(page) {
   const base = href.split("?")[0].replace(/\/setup$/, "");
   return base;
 }
+
+let audited = 0;
 
 async function run() {
   const outDir = process.argv[2] || "audit-out";
@@ -241,6 +253,23 @@ async function run() {
             timeout: 30000,
           });
           await page.waitForTimeout(900);
+          // A silent redirect to /sign-in means this route was never audited.
+          // Counting it as "no violations" is how an audit reports success
+          // having measured nothing.
+          const landedAt = new URL(page.url()).pathname;
+          if (/\/sign-in|\/sign-up/.test(landedAt) && !/sign-in|sign-up/.test(url)) {
+            findings.push({
+              role,
+              viewport: viewport.name,
+              label,
+              url,
+              problems: [
+                { kind: "not-audited", detail: `redirected to ${landedAt}; session lost` },
+              ],
+            });
+            continue;
+          }
+          audited += 1;
           const problems = await page.evaluate(AUDIT);
           if (problems.length) {
             findings.push({ role, viewport: viewport.name, label, url, problems });
@@ -285,9 +314,12 @@ async function run() {
   }
 
   if (!Object.keys(byKind).length) {
-    console.log("PASS: no rendered violations at any viewport.");
+    console.log(`PASS: no rendered violations across ${audited} audited page loads.`);
     return;
   }
+  // Findings must gate. Previously this only printed, so the audit could never
+  // fail a caller even when it found real violations.
+  process.exitCode = 1;
   for (const [kind, items] of Object.entries(byKind)) {
     console.log(`\n### ${kind} (${items.length})`);
     // Collapse duplicates across viewports.

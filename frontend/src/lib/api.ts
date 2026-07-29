@@ -43,10 +43,19 @@ export class ApiError extends Error {
     detail?: string,
     code?: string
   ) {
+    // NOTE: userMessage is trusted here because every in-repo caller passes
+    // either statusMessage() output or its own literal copy. Running it
+    // through isUserSafeText would false-positive on our own strings (e.g.
+    // "Request failed (HTTP 400)."). Callers must not pass backend text;
+    // apiFetch is the boundary that gates that on a typed code.
     super(userMessage);
     this.name = "ApiError";
     this.status = status;
-    this.detail = detail && isUserSafeText(detail) ? detail : undefined;
+    // Same allowlist rule as `message`: backend text is retained only when
+    // the backend also typed it with a code. isUserSafeText remains as a
+    // second filter, never as the only one.
+    this.detail =
+      detail && code && isUserSafeText(detail) ? detail : undefined;
     this.code = code;
   }
 }
@@ -92,20 +101,32 @@ export function isAuthError(err: unknown): boolean {
 /**
  * Turn a status plus an optional backend message into copy safe to render.
  *
- * The backend message is only used when it passes `isUserSafeText`. Roughly
- * thirty components render `ApiError.message` directly, so this boundary is the
- * only place a guard reliably covers them all: a future handler that does
- * `raise HTTPException(400, detail=str(exc))` would otherwise put an exception
- * on screen through every one of them. That is precisely the class of defect
+ * Roughly thirty components render `ApiError.message` directly, so this
+ * boundary is the only place a guard reliably covers them all: a handler that
+ * does `raise HTTPException(400, detail=str(exc))` would otherwise put an
+ * exception on screen through every one of them. That is the class of defect
  * the release contract forbids ("Raw exception, provider operation, object key,
  * stack name, and request identifier stay in structured server logs").
+ *
+ * The gate is an ALLOWLIST, not a pattern denylist. A denylist fails OPEN: an
+ * unrecognised string renders, so every backend failure shape nobody thought to
+ * write a regex for reaches users. `KeyError 'course_id'`, `relation "documents"
+ * does not exist`, and `Expecting value: line 1 column 1 (char 0)` all slip past
+ * a reasonable pattern list. Instead, a backend message is surfaced only when
+ * the response also carried a typed `code`, which is the backend asserting the
+ * text is deliberate user copy rather than an exception that happened to escape.
+ * `isUserSafeText` is kept as a second filter, so a typed-but-careless message
+ * still cannot ship internals.
  */
 function userFacingMessage(
   status: number,
-  backendMessage: string | undefined
+  backendMessage: string | undefined,
+  code: string | undefined
 ): string {
   const safeMessage =
-    backendMessage && isUserSafeText(backendMessage) ? backendMessage : undefined;
+    backendMessage && code && isUserSafeText(backendMessage)
+      ? backendMessage
+      : undefined;
   return statusMessage(status, safeMessage);
 }
 
@@ -167,7 +188,7 @@ export async function apiFetch<T>(
     const { code, message } = extractError(payload);
     throw new ApiError(
       response.status,
-      userFacingMessage(response.status, message),
+      userFacingMessage(response.status, message, code),
       message,
       code
     );

@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { ApiError } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
 import {
   canTransitionSession,
   courseActionVerb,
@@ -192,11 +192,19 @@ describe("the fetch boundary is the backstop", () => {
     expect(error.detail).toBeUndefined();
   });
 
-  it("keeps a safe backend message on both message and detail", () => {
+  it("keeps a safe backend message on detail only when it is typed", () => {
     const safe = "Add a schedule before publishing.";
-    const error = new ApiError(422, safe, safe);
-    expect(error.message).toBe(safe);
-    expect(error.detail).toBe(safe);
+
+    // Typed: the backend asserted this is deliberate user copy.
+    const typed = new ApiError(422, safe, safe, "SETUP_INCOMPLETE");
+    expect(typed.message).toBe(safe);
+    expect(typed.detail).toBe(safe);
+
+    // Untyped: indistinguishable from an exception that escaped a handler, so
+    // it is dropped even though it happens to read as friendly copy. The
+    // predicate alone fails open, which is why the code is what gates this.
+    const untyped = new ApiError(422, safe, safe);
+    expect(untyped.detail).toBeUndefined();
   });
 });
 
@@ -286,5 +294,75 @@ describe("toSafeError", () => {
       expect(isUserSafeText(safe.title)).toBe(true);
       expect(isUserSafeText(safe.consequence)).toBe(true);
     }
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Regression: the safe-text predicate is a DENYLIST and therefore fails open.
+// These strings are all realistic backend output that no pattern catches. They
+// must not reach users, so the boundary in lib/api.ts gates on a typed `code`
+// rather than trusting the predicate alone. Found by code review of 63bd2d3.
+// ---------------------------------------------------------------------------
+
+const UNTYPED_BACKEND_STRINGS = [
+  "KeyError 'course_id'",
+  'duplicate key value violates unique constraint "ix_courses_code"',
+  "column courses.setup_status does not exist",
+  'relation "documents" does not exist',
+  "invalid literal for int() with base 10: 'abc'",
+  "Expecting value: line 1 column 1 (char 0)",
+  "Connection refused to 127.0.0.1:5432",
+  "cannot import name 'Settings' from config",
+  "psycopg.errors.UniqueViolation",
+  "Field required [type=missing, input_value={'name': 'x'}]",
+  "Generation failed after 3 retries",
+  "model did not return valid JSON",
+];
+
+describe("untyped backend messages never reach users", () => {
+  it.each(UNTYPED_BACKEND_STRINGS)(
+    "a 400 carrying %j but no code renders generic copy",
+    async (leaked) => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: async () => ({ error: { message: leaked } }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(apiFetch("/anything")).rejects.toSatisfy((err: unknown) => {
+        const e = err as ApiError;
+        expect(e.message).not.toContain(leaked);
+        expect(e.message).toBe("Request failed (HTTP 400).");
+        return true;
+      });
+
+      vi.unstubAllGlobals();
+    }
+  );
+
+  it("still surfaces a message the backend typed with a code", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: { code: "SETUP_INCOMPLETE", message: "Finish the schedule step first." },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiFetch("/anything")).rejects.toThrow(
+      "Finish the schedule step first."
+    );
+
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps a leaked string out of .detail as well as .message", () => {
+    // .detail is rendered directly by several components to get a more
+    // specific message than the status fallback, so it needs the same guard.
+    const err = new ApiError(400, "Request failed.", "psycopg.errors.UniqueViolation");
+    expect(err.detail).toBeUndefined();
   });
 });

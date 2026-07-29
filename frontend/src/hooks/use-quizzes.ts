@@ -262,11 +262,18 @@ export async function publishWithScoreGate<T>(
           missing
         );
       }
+      // Same allowlist rule as the apiFetch boundary: the backend's own text is
+      // only shown when it also carried a typed code, so an untyped exception
+      // string cannot ride into user copy through this hand-rolled path.
+      const code = typeof d.code === "string" ? d.code : undefined;
+      const backendMessage = typeof d.message === "string" ? d.message : undefined;
       throw new ApiError(
         res.status,
-        typeof d.message === "string" ? d.message : `Publish failed (HTTP ${res.status}).`,
-        typeof d.message === "string" ? d.message : undefined,
-        typeof d.code === "string" ? d.code : undefined
+        code && backendMessage
+          ? backendMessage
+          : `Publish failed (HTTP ${res.status}).`,
+        backendMessage,
+        code
       );
     }
     throw new ApiError(res.status, `Publish failed (HTTP ${res.status}).`);

@@ -21,6 +21,11 @@
 
 import { chromium } from "@playwright/test";
 
+if (process.env.NODE_ENV === "production") {
+  console.error("refusing to run against a production build (types demo credentials into a live form)");
+  process.exit(2);
+}
+
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";
 const API = process.env.API_URL ?? "http://localhost:8000/api";
 const EMAIL = process.env.DEMO_TEACHER ?? "meli.teacher@ust.hk";
@@ -48,6 +53,7 @@ page.on("console", (m) => {
 });
 
 // Record every WS the page opens, plus its frames in order.
+let serverCount = null;
 const sockets = [];
 page.on("websocket", (ws) => {
   const rec = { url: ws.url(), sent: [], received: [], closed: false };
@@ -66,7 +72,8 @@ try {
     page.waitForURL((u) => !u.pathname.includes("/sign-in"), { timeout: 30000 }),
     page.click('button[type="submit"]'),
   ]);
-  check("demo instructor signs in", true, `-> ${new URL(page.url()).pathname}`);
+  const landed = new URL(page.url()).pathname;
+  check("demo instructor signs in", /^\/(teacher|dashboard)/.test(landed), `-> ${landed}`);
 
   // ---- open the checkpoint studio, where the monitor mounts ------------------
   const studio = `${BASE}/teacher/courses/${courseId}/sessions/${meetingId}/checkpoints/${checkpointId}`;
@@ -76,7 +83,8 @@ try {
   const deadline = Date.now() + 30000;
   let monitor;
   while (Date.now() < deadline) {
-    monitor = sockets.find((s) => s.url.includes(`/checkpoints/${checkpointId}/monitor`));
+    const cands = sockets.filter((s) => s.url.includes(`/checkpoints/${checkpointId}/monitor`));
+    monitor = cands.find((s) => s.received.length > 0) ?? cands.at(-1);
     if (monitor && monitor.received.length > 0) break;
     await page.waitForTimeout(500);
   }
@@ -115,6 +123,7 @@ try {
     const stateFrames = monitor.received
       .map((p) => { try { return JSON.parse(p); } catch { return null; } })
       .filter((m) => m && (m.type === "state" || m.type === "submission" || m.type === "closed"));
+    serverCount = stateFrames.length ? (stateFrames[0].submission_count ?? null) : null;
     check(
       "server sent a state frame after auth (handshake verified)",
       stateFrames.length > 0,
@@ -124,12 +133,30 @@ try {
   }
 
   // ---- monitor UI actually rendered -----------------------------------------
-  const live = await page
-    .getByText(/live|submission/i)
-    .first()
-    .isVisible()
-    .catch(() => false);
-  check("monitor UI rendered", live);
+  // Anchored to strings ONLY the monitor renders. A loose /live|submission/i
+  // match would be vacuous: 35 strings in messages/en.json match it, including
+  // the checkpoint lifecycle hint that renders on this very page, so such a
+  // check passes even when the monitor never mounts.
+  const heading = page.getByRole("heading", { name: "Live responses", exact: true });
+  const distribution = page.getByLabel("Confidence distribution");
+  const mounted = (await heading.count()) > 0 && (await distribution.count()) > 0;
+  check("monitor UI mounted (its own heading + distribution)", mounted);
+
+  // Tie the DOM to the frame the server actually sent. This can only pass if
+  // the monitor rendered from verified live data, which is the property the
+  // old check claimed but did not test.
+  if (mounted && serverCount !== null) {
+    const card = heading.locator("xpath=../../..");
+    const rendered = (await card.locator("p").first().innerText()).trim();
+    check(
+      "rendered submission count matches the server frame",
+      rendered === String(serverCount),
+      `DOM=${rendered} server=${serverCount}`
+    );
+  } else {
+    check("rendered submission count matches the server frame", false,
+      mounted ? "no server frame to compare against" : "monitor did not mount");
+  }
 
   check("no console errors on the studio page", consoleErrors.length === 0,
     consoleErrors.slice(0, 2).join(" | "));
@@ -148,7 +175,8 @@ try {
     const adl = Date.now() + 30000;
     let am;
     while (Date.now() < adl) {
-      am = sockets.find((s) => s.url.includes(`/activities/${activityId}/monitor`));
+      const acands = sockets.filter((s) => s.url.includes(`/activities/${activityId}/monitor`));
+      am = acands.find((s) => s.received.length > 0) ?? acands.at(-1);
       if (am && am.received.length > 0) break;
       await page.waitForTimeout(500);
     }
@@ -176,7 +204,10 @@ try {
   }
 
   // ---- negative: a bad token must be rejected with 1008 ----------------------
+  // Reuse the observed URL so the invalid-token case is a true differential:
+  // same endpoint, same server, only the token differs.
   const wsBase = API.replace(/^http/, "ws");
+  const negUrl = monitor?.url ?? `${wsBase}/checkpoints/${checkpointId}/monitor`;
   const negative = await page.evaluate(
     ([wsUrl]) =>
       new Promise((resolve) => {
@@ -186,7 +217,7 @@ try {
         ws.onclose = (e) => { clearTimeout(t); resolve({ code: e.code }); };
         ws.onmessage = (e) => { clearTimeout(t); resolve({ code: 0, note: `got data: ${e.data}` }); };
       }),
-    [`${wsBase}/checkpoints/${checkpointId}/monitor`]
+    [negUrl]
   );
   check("invalid token closed with 1008", negative.code === 1008,
     `close code ${negative.code}${negative.note ? ` (${negative.note})` : ""}`);
@@ -200,7 +231,7 @@ try {
         ws.onclose = (e) => { clearTimeout(t); resolve({ code: e.code }); };
         ws.onmessage = (e) => { clearTimeout(t); resolve({ code: 0, note: `got data: ${e.data}` }); };
       }),
-    [`${wsBase}/checkpoints/${checkpointId}/monitor`]
+    [negUrl]
   );
   check("silent client closed with 1008 after timeout", silent.code === 1008,
     `close code ${silent.code}${silent.note ? ` (${silent.note})` : ""}`);

@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+import warnings
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -72,15 +73,28 @@ def _preserve_current_event_loop():
 
     See tests/test_event_loop_guard.py for the regression this pins.
     """
-    policy = asyncio.get_event_loop_policy()
-    entry_loop = _installed_loop(policy)
+    entry_loop = _installed_loop(asyncio.get_event_loop_policy())
 
     yield
 
+    # Re-read the policy: on the session's first async test the global policy
+    # swaps (default to the selector policy from ``event_loop_policy``), so the
+    # object captured at setup can be stale by teardown.
+    policy = asyncio.get_event_loop_policy()
     if entry_loop is None or entry_loop.is_closed():
         return
     if _installed_loop(policy) is not entry_loop:
         policy.set_event_loop(entry_loop)
+        # Repair AND report. Silently healing would mean the next stray
+        # ``asyncio.run`` costs nothing observable and is never found; failing
+        # here would resurrect the cascade this guard exists to stop. The
+        # warning names the offending test, which is what triage needs.
+        warnings.warn(
+            "this test detached the thread's current event loop (a stray "
+            "asyncio.run?); it was reinstalled so later async tests still run",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
 
 @pytest_asyncio.fixture
