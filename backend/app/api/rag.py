@@ -153,7 +153,11 @@ def _task_to_status_response(task: Task) -> JobStatusResponse:
         course_id=course_id,  # type: ignore[arg-type]
         title=title,
         result=result if isinstance(result, dict) else None,
-        error=task.error_message,
+        # The typed code, NOT task.error_message. That column holds
+        # "{ExceptionClass}: {message}", which is exactly the raw exception text
+        # the safe-failure contract keeps out of user-facing surfaces. Clients
+        # map the code to their own copy.
+        error=task.error_code,
         created_at=task.created_at,
         completed_at=task.completed_at,
     )

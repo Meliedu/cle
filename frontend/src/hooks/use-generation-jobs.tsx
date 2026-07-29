@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
+import { useSafeError } from "@/hooks/use-safe-error";
 import { userSafeOr } from "@/lib/contracts/user-safe-text";
 
 export type GenerationJobKind =
@@ -122,6 +123,7 @@ export function GenerationJobsProvider({ children }: { children: ReactNode }) {
   const [jobs, dispatch] = useReducer(reducer, [] as readonly GenerationJob[]);
   const { getToken, isSignedIn } = useAuth();
   const queryClient = useQueryClient();
+  const safeError = useSafeError();
   const pollersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map()
   );
@@ -202,12 +204,16 @@ export function GenerationJobsProvider({ children }: { children: ReactNode }) {
             patch: {
               status: data.status,
               result: data.result,
-              // `tasks.error_message` is written by the worker's sanitiser,
-              // which redacts credential URLs but deliberately KEEPS the
-              // exception class name. The dock and its toast render this
-              // string directly, so it is filtered here at ingest rather than
-              // at each render site.
-              error: userSafeOr(data.error, GENERIC_JOB_ERROR),
+              // The API now sends a typed SourceFailureCode, not free text
+              // (migration b8d2f5c31a90). Map it to copy we own. userSafeOr
+              // stays as a belt-and-braces filter for rows that predate the
+              // migration and could still carry a legacy string.
+              error: data.error
+                ? userSafeOr(
+                    safeError.fromCode(data.error).title,
+                    GENERIC_JOB_ERROR
+                  )
+                : null,
             },
           });
 

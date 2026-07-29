@@ -500,3 +500,50 @@ async def test_manual_sync_404_when_not_connected(
 
     resp = await async_client.post(f"/api/courses/{course.id}/canvas/sync")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_run_scheduler_drains_then_stops_reclaiming(monkeypatch):
+    """The inner drain loop must consume every due integration exactly once.
+
+    The existing shutdown test stubs the claim to return None immediately, so
+    the `while True` at canvas_sync.py never iterates and nothing verifies that
+    `processed` accumulates between claims. Without that set, a sync that errors
+    (and so never advances last_roster_sync_at) is re-claimed on the next
+    iteration of the SAME pass and retried in a tight loop.
+    """
+    claimed: list[str] = []
+    synced: list[str] = []
+
+    class _Row:
+        def __init__(self, name: str) -> None:
+            self.id = name
+
+    queue = [_Row("a"), _Row("b")]
+
+    async def fake_claim(session, exclude=None):
+        exclude = exclude or set()
+        for row in queue:
+            if row.id not in exclude:
+                claimed.append(row.id)
+                return row
+        return None
+
+    async def fake_sync(session, integration):
+        # Deliberately does NOT advance last_roster_sync_at, mimicking a sync
+        # that errored: only `processed` can stop it being re-claimed.
+        synced.append(integration.id)
+
+    monkeypatch.setattr(canvas_sync, "_claim_due_integration", fake_claim)
+    monkeypatch.setattr(canvas_sync, "sync_integration", fake_sync)
+    monkeypatch.setattr(canvas_sync, "SCHEDULER_POLL_SECONDS", 0.01)
+
+    shutdown = asyncio.Event()
+    shutdown.set()
+    await asyncio.wait_for(canvas_sync.run_scheduler(shutdown), timeout=5.0)
+
+    assert synced == ["a", "b"], "each due integration is synced exactly once"
+    # Exactly two successful claims, then the drain loop ends because the
+    # exclude set hides both. A third entry here would mean `processed` was not
+    # threaded through and an errored sync is being retried in a tight loop.
+    assert claimed == ["a", "b"], f"unexpected claim sequence: {claimed}"

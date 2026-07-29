@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { useCreateCourse } from "@/hooks/use-courses";
-import { toSafeError } from "@/lib/contracts/safe-error";
+import { useSafeError } from "@/hooks/use-safe-error";
 
 interface CreateCourseDialogProps {
   readonly open: boolean;
@@ -55,20 +56,24 @@ interface FormErrors {
   readonly semester?: string;
 }
 
-function validateForm(form: FormState): FormErrors {
+/** Validation copy is injected so this stays a pure function AND localised. */
+function validateForm(
+  form: FormState,
+  t: (key: string) => string
+): FormErrors {
   const errors: Record<string, string> = {};
 
   if (!form.name.trim()) {
-    errors.name = "Course name is required";
+    errors.name = t("nameRequired");
   }
   if (!form.code.trim()) {
-    errors.code = "Course code is required";
+    errors.code = t("codeRequired");
   }
   if (!form.language) {
-    errors.language = "Please select a language";
+    errors.language = t("languageRequired");
   }
   if (!form.semester.trim()) {
-    errors.semester = "Semester is required";
+    errors.semester = t("semesterRequired");
   }
 
   return errors;
@@ -78,6 +83,8 @@ export function CreateCourseDialog({
   open,
   onOpenChange,
 }: CreateCourseDialogProps) {
+  const t = useTranslations("teacher.createCourse");
+  const safeError = useSafeError();
   const router = useRouter();
   const createCourse = useCreateCourse();
   const [form, setForm] = useState<FormState>(initialForm);
@@ -104,7 +111,7 @@ export function CreateCourseDialog({
   const handleSubmit = useCallback(
     async (e: { preventDefault: () => void }) => {
       e.preventDefault();
-      const validationErrors = validateForm(form);
+      const validationErrors = validateForm(form, t);
 
       if (Object.keys(validationErrors).length > 0) {
         setErrors(validationErrors);
@@ -134,10 +141,12 @@ export function CreateCourseDialog({
         // returns the persisted course precisely so the caller can route here.
         router.push(`/teacher/courses/${course.id}/setup`);
       } catch (error: unknown) {
-        setSubmitError(toSafeError(error, { objectName: form.name.trim() }).title);
+        setSubmitError(
+          safeError.fromError(error, { objectName: form.name.trim() }).title
+        );
       }
     },
-    [form, onOpenChange, createCourse, router]
+    [form, onOpenChange, createCourse, router, t, safeError]
   );
 
   const handleOpenChange = useCallback(
@@ -156,21 +165,22 @@ export function CreateCourseDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Create Course</DialogTitle>
-          <DialogDescription>
-            Set up a new language course for your students.
-          </DialogDescription>
+          <DialogTitle>{t("title")}</DialogTitle>
+          <DialogDescription>{t("description")}</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Name */}
           <div className="space-y-1.5">
             <Label htmlFor="course-name">
-              Course Name <span className="text-[var(--color-error)]">*</span>
+              {t("nameLabel")}{" "}
+              <span className="text-[var(--color-error)]" aria-label={t("requiredMark")}>
+                *
+              </span>
             </Label>
             <Input
               id="course-name"
-              placeholder="e.g. Chinese for Beginners"
+              placeholder={t("namePlaceholder")}
               value={form.name}
               onChange={(e) => updateField("name", e.target.value)}
               aria-invalid={!!errors.name}
@@ -186,11 +196,14 @@ export function CreateCourseDialog({
           {/* Code */}
           <div className="space-y-1.5">
             <Label htmlFor="course-code">
-              Course Code <span className="text-[var(--color-error)]">*</span>
+              {t("codeLabel")}{" "}
+              <span className="text-[var(--color-error)]" aria-label={t("requiredMark")}>
+                *
+              </span>
             </Label>
             <Input
               id="course-code"
-              placeholder="e.g. LANG1010"
+              placeholder={t("codePlaceholder")}
               value={form.code}
               onChange={(e) => updateField("code", e.target.value)}
               aria-invalid={!!errors.code}
@@ -206,7 +219,10 @@ export function CreateCourseDialog({
           {/* Language */}
           <div className="space-y-1.5">
             <Label>
-              Language <span className="text-[var(--color-error)]">*</span>
+              {t("languageLabel")}{" "}
+              <span className="text-[var(--color-error)]" aria-label={t("requiredMark")}>
+                *
+              </span>
             </Label>
             <Select
               value={form.language}
@@ -217,12 +233,12 @@ export function CreateCourseDialog({
                 aria-invalid={!!errors.language}
                 aria-describedby={errors.language ? "course-language-error" : undefined}
               >
-                <SelectValue placeholder="Select language" />
+                <SelectValue placeholder={t("languagePlaceholder")} />
               </SelectTrigger>
               <SelectContent>
                 {languages.map((lang) => (
                   <SelectItem key={lang} value={lang}>
-                    {lang}
+                    {t(`languages.${lang}`)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -237,11 +253,14 @@ export function CreateCourseDialog({
           {/* Semester */}
           <div className="space-y-1.5">
             <Label htmlFor="course-semester">
-              Semester <span className="text-[var(--color-error)]">*</span>
+              {t("semesterLabel")}{" "}
+              <span className="text-[var(--color-error)]" aria-label={t("requiredMark")}>
+                *
+              </span>
             </Label>
             <Input
               id="course-semester"
-              placeholder="e.g. 2025 Spring"
+              placeholder={t("semesterPlaceholder")}
               value={form.semester}
               onChange={(e) => updateField("semester", e.target.value)}
               aria-invalid={!!errors.semester}
@@ -256,10 +275,10 @@ export function CreateCourseDialog({
 
           {/* Description */}
           <div className="space-y-1.5">
-            <Label htmlFor="course-description">Description</Label>
+            <Label htmlFor="course-description">{t("descriptionLabel")}</Label>
             <Textarea
               id="course-description"
-              placeholder="Brief description of the course..."
+              placeholder={t("descriptionPlaceholder")}
               value={form.description}
               onChange={(e) => updateField("description", e.target.value)}
               rows={3}
@@ -277,11 +296,11 @@ export function CreateCourseDialog({
               onClick={() => handleOpenChange(false)}
               disabled={isSubmitting}
             >
-              Cancel
+              {t("cancel")}
             </Button>
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="size-4 animate-spin" />}
-              {isSubmitting ? "Creating..." : "Create Course"}
+              {isSubmitting ? t("submitting") : t("submit")}
             </Button>
           </DialogFooter>
         </form>

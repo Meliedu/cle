@@ -2298,7 +2298,8 @@
         "note": "Calendar remains the source of time; session readiness stays with the course.",
         "viewCalendar": "View full calendar",
         "prevWeek": "Previous week",
-        "nextWeek": "Next week"
+        "nextWeek": "Next week",
+        "weekOf": "Week of {date}"
       },
       "kind": {
         "class": "Class",
@@ -2355,6 +2356,34 @@
       "openSettings": "Course settings",
       "duplicate": "Duplicate course",
       "archive": "Archive course"
+    },
+    "createCourse": {
+      "title": "Create course",
+      "description": "Set up a new language course for your students.",
+      "nameLabel": "Course name",
+      "namePlaceholder": "e.g. Chinese for Beginners",
+      "nameRequired": "Course name is required",
+      "codeLabel": "Course code",
+      "codePlaceholder": "e.g. LANG1010",
+      "codeRequired": "Course code is required",
+      "languageLabel": "Language",
+      "languagePlaceholder": "Select language",
+      "languageRequired": "Please select a language",
+      "semesterLabel": "Semester",
+      "semesterPlaceholder": "e.g. 2025 Spring",
+      "semesterRequired": "Semester is required",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Brief description of the course...",
+      "requiredMark": "required",
+      "cancel": "Cancel",
+      "submit": "Create course",
+      "submitting": "Creating...",
+      "languages": {
+        "Chinese": "Chinese",
+        "English": "English",
+        "Japanese": "Japanese",
+        "Korean": "Korean"
+      }
     }
   },
   "student": {
@@ -3283,8 +3312,95 @@
         "activity": "Activity",
         "material": "Material",
         "follow_up": "Follow-up",
-        "report": "Report"
+        "report": "Report",
+        "other": "Task"
       }
+    }
+  },
+  "safeError": {
+    "unreadable_file": {
+      "titleNamed": "Meli could not finish reading {object}",
+      "title": "Meli could not finish reading this file",
+      "consequence": "This source is not contributing to your course content yet.",
+      "preserved": "Your files are saved. Everything else you have set up is intact.",
+      "nextAction": "Retry now, or replace the file later."
+    },
+    "unsupported_format": {
+      "titleNamed": "{object} is not a supported file type",
+      "title": "Unsupported file type",
+      "consequence": "Meli cannot read this format, so it will not be used as a source.",
+      "preserved": "Your other sources and setup progress are saved.",
+      "nextAction": "Replace it with a PDF, DOCX, or PPTX file."
+    },
+    "file_too_large": {
+      "titleNamed": "{object} is too large",
+      "title": "File is too large",
+      "consequence": "Meli stopped before reading it, so it has not been added.",
+      "preserved": "Your other sources and setup progress are saved.",
+      "nextAction": "Split the file or upload a smaller version."
+    },
+    "empty_document": {
+      "titleNamed": "Meli found no readable text in {object}",
+      "title": "No readable text found",
+      "consequence": "Scanned pages and images without text cannot be used to generate course content.",
+      "preserved": "The file is still attached and your other work is saved.",
+      "nextAction": "Replace it with a text-based version."
+    },
+    "storage_unavailable": {
+      "titleNamed": "Meli could not open {object}",
+      "title": "Meli could not open this file",
+      "consequence": "The file could not be retrieved for processing just now.",
+      "preserved": "Nothing was lost. Your upload and setup progress are saved.",
+      "nextAction": "Retry in a moment."
+    },
+    "analysis_unavailable": {
+      "titleNamed": "Meli could not analyse {object}",
+      "title": "Meli could not finish the analysis",
+      "consequence": "Suggested outcomes and checkpoints are not ready yet.",
+      "preserved": "Your files and every completed step are saved.",
+      "nextAction": "Retry now, or continue and analyse later."
+    },
+    "timeout": {
+      "titleNamed": "{object} took too long to process",
+      "title": "This took too long to process",
+      "consequence": "Processing stopped before it finished.",
+      "preserved": "Your files and completed steps are saved.",
+      "nextAction": "Retry now."
+    },
+    "permission_denied": {
+      "titleNamed": "You do not have access to this",
+      "title": "You do not have access to this",
+      "consequence": "This action is limited to the people who own this course.",
+      "preserved": "Nothing was changed.",
+      "nextAction": "Ask the course owner for access."
+    },
+    "not_found": {
+      "titleNamed": "{object} was not found",
+      "title": "This was not found",
+      "consequence": "It may have been moved or removed.",
+      "preserved": "Nothing else was changed.",
+      "nextAction": "Go back and refresh the list."
+    },
+    "rate_limited": {
+      "titleNamed": "Too many requests for now",
+      "title": "Too many requests for now",
+      "consequence": "Meli paused this action to stay within the usage limit.",
+      "preserved": "Your work is saved.",
+      "nextAction": "Try again in a few minutes."
+    },
+    "network": {
+      "titleNamed": "Meli could not reach the server",
+      "title": "Meli could not reach the server",
+      "consequence": "This action did not complete.",
+      "preserved": "Your work is saved on this device.",
+      "nextAction": "Check your connection and retry."
+    },
+    "unknown": {
+      "titleNamed": "Something went wrong with {object}",
+      "title": "Something went wrong",
+      "consequence": "This action did not complete.",
+      "preserved": "Your saved work is intact.",
+      "nextAction": "Retry now. If it keeps happening, contact CLE support."
     }
   }
 }

@@ -81,8 +81,11 @@ export function ReportArchive({ courseId }: ReportArchiveProps) {
 
   return (
     <section className="space-y-4">
+      {/* radiogroup, not tablist: these are filter chips with no tabpanels,
+          and tab semantics would promise arrow-key navigation this does not
+          implement. */}
       <div
-        role="tablist"
+        role="radiogroup"
         aria-label={t("filter.label")}
         className="flex flex-wrap gap-1.5"
       >
@@ -92,8 +95,8 @@ export function ReportArchive({ courseId }: ReportArchiveProps) {
             <button
               key={value}
               type="button"
-              role="tab"
-              aria-selected={isActive}
+              role="radio"
+              aria-checked={isActive}
               onClick={() => setFilter(value)}
               className={cn(
                 "min-h-9 rounded-[var(--radius-pill)] border px-3.5 text-[13px] font-medium transition-colors duration-[var(--duration-fast)]",

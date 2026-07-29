@@ -172,3 +172,28 @@ describe("session routes always carry course context", () => {
     }
   });
 });
+
+
+describe("lifecycle is derived in exactly one place", () => {
+  it("no source outside contracts/state.ts spells out the published rule", () => {
+    // The contract says lifecycle is never inferred from a badge string or a
+    // URL. The subtler violation is restating the RULE: two copies of
+    // `setup_status === "published" && context_status === "approved"` drift
+    // apart silently, and a badge then disagrees with a roster verb.
+    const offenders = SOURCE_FILES.filter((file) => {
+      if (file.includes("contracts") && file.endsWith("state.ts")) return false;
+      if (/\.test\.tsx?$/.test(file)) return false;
+      // Strip comments first: a docstring that DESCRIBES the rule is fine,
+      // only a second executable copy of it is the problem.
+      const code = readFileSync(file, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      return /setup_status\s*===/.test(code);
+    });
+
+    expect(
+      offenders,
+      `these files re-derive lifecycle instead of calling courseLifecycle(): ${offenders.join(", ")}`
+    ).toEqual([]);
+  });
+});

@@ -343,8 +343,10 @@ async def enroll_by_code(
             # Copying the caller's GLOBAL role let any `@ust.hk` account (whose
             # domain rule makes them role="instructor") mint an instructor-role
             # enrollment in any course whose code they knew, and thereby reach
-            # that course's instructor-only surfaces. Co-instructors and TAs are
-            # granted through an explicit invite, never through a join code.
+            # that course's instructor-only surfaces. There is deliberately no
+            # invite endpoint: after this change the only routes to an
+            # instructor enrollment are creating the course, the Canvas OAuth
+            # link, and claiming a Canvas roster PendingEnrollment.
             role="student",
             status=new_status,
         )

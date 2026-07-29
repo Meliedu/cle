@@ -165,15 +165,17 @@ describe("SetupWizard: stage reachability", () => {
   it("locks stages beyond the frontier and explains why", () => {
     renderWizard();
     const review = screen.getByRole("button", { name: /Review opens after/ });
-    expect(review.hasAttribute("disabled")).toBe(true);
+    // aria-disabled, not `disabled`: a locked stage must stay in the tab
+    // order so its "why is this locked" label is reachable.
+    expect(review.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("opens a stage the user has reached", () => {
     stubState(["basics"]);
     renderWizard();
     expect(
-      screen.getByRole("button", { name: /^Sources/ }).hasAttribute("disabled")
-    ).toBe(false);
+      screen.getByRole("button", { name: /^Sources/ }).getAttribute("aria-disabled")
+    ).toBe("false");
   });
 
   it("keeps Publish closed while any step is missing", () => {
@@ -182,16 +184,16 @@ describe("SetupWizard: stage reachability", () => {
     expect(
       screen
         .getByRole("button", { name: /Publish opens after/ })
-        .hasAttribute("disabled")
-    ).toBe(true);
+        .getAttribute("aria-disabled")
+    ).toBe("true");
   });
 
   it("opens Publish once nothing is missing", () => {
     stubState([...SETUP_STEP_KEYS]);
     renderWizard();
     expect(
-      screen.getByRole("button", { name: /^Publish/ }).hasAttribute("disabled")
-    ).toBe(false);
+      screen.getByRole("button", { name: /^Publish/ }).getAttribute("aria-disabled")
+    ).toBe("false");
   });
 
   it("refuses a deep link to a locked stage", () => {

@@ -79,14 +79,17 @@ export function NextTeachingHero({
             {entry.courseCode} · {entry.courseName}
           </p>
 
+          {/* A plain list: these are unlabelled facts, and a <dl> whose items
+              have no <dt> is an invalid description list that screen readers
+              announce as having no terms. */}
           {meta.length > 0 ? (
-            <dl className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[var(--color-gold)]/35 pt-4 text-[14px] text-[var(--color-text-secondary)]">
+            <ul className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[var(--color-gold)]/35 pt-4 text-[14px] text-[var(--color-text-secondary)]">
               {meta.map((value) => (
-                <dd key={value} className="font-medium">
+                <li key={value} className="font-medium">
                   {value}
-                </dd>
+                </li>
               ))}
-            </dl>
+            </ul>
           ) : null}
         </div>
 

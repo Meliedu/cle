@@ -297,9 +297,13 @@ async def reprocess_document(
     # Cooldown. Each retry re-runs parsing and billed embedding calls, and this
     # route is outside the `/api/rag/*` rate limiter, so without a floor a
     # scripted client could loop fail -> retry indefinitely at our cost.
-    # `updated_at` moves on every status transition, which is exactly the
-    # "when did we last attempt this" signal we need.
-    if doc.status == "failed" and doc.updated_at is not None:
+    # Gated on error_code as well as status: `updated_at` moves on ANY write to
+    # the row (assign-to-session, kind change), so keying the cooldown on it
+    # alone turned an unrelated edit within the window into a spurious 429 on a
+    # retry the instructor had not yet attempted. A failed row always carries a
+    # code after migration a7c4e91d3f80, so requiring one narrows this to rows
+    # whose last meaningful transition really was a failure.
+    if doc.status == "failed" and doc.error_code and doc.updated_at is not None:
         since = datetime.now(timezone.utc) - doc.updated_at
         if since < REPROCESS_COOLDOWN:
             raise HTTPException(

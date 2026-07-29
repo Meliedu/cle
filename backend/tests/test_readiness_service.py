@@ -153,3 +153,38 @@ async def test_recommendation_hard_fails_when_claim_limit_missing(
             db_session, user=test_student, course=c, phase="recommendation", answers={}
         )
     assert exc.value.code == "MISSING_CLAIM_LIMIT"
+
+
+def test_skill_question_ids_exist_in_the_pilot_survey():
+    """The evidence map is coupled to pilot question ids with nothing pinning it.
+
+    If a pilot renames a prompt, `_skill_evidence` silently returns [] and the
+    recommendation loses its justification with no failure anywhere: the UI just
+    stops explaining itself. Fail here instead.
+    """
+    from app.pilot.cle import CLE_PROFILE
+    from app.services.readiness import _SKILL_BY_QUESTION
+
+    survey_ids = {
+        question.id
+        for phase in CLE_PROFILE.readiness
+        for question in phase.questions
+    }
+    missing = set(_SKILL_BY_QUESTION) - survey_ids
+    assert not missing, (
+        f"_SKILL_BY_QUESTION references question ids the pilot survey no longer "
+        f"has: {sorted(missing)}"
+    )
+
+
+def test_skill_evidence_never_ships_a_raw_score():
+    """The band is user-safe copy; a number invites being read as a grade."""
+    from app.services.readiness import _skill_evidence
+
+    rows = _skill_evidence(
+        {"conf_listening": 2.0, "conf_speaking": -2.0, "conf_reading": 0.0}
+    )
+    assert rows, "expected evidence for the answered questions"
+    for row in rows:
+        assert "score" not in row, f"raw score leaked in {row}"
+        assert row["state"] in {"ready", "developing", "needs_support"}

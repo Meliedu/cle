@@ -191,8 +191,14 @@ export function CalendarShell({ actions }: CalendarShellProps) {
               {periodLabel}
             </h2>
 
+            {/* Not a tablist: there are no tabpanels, and tab semantics
+                promise arrow-key navigation with a roving tabindex that this
+                control does not implement, so screen readers announce
+                "tab 1 of 2" and arrow keys do nothing. A radiogroup describes
+                what this actually is, a choice between two mutually exclusive
+                views. */}
             <div
-              role="tablist"
+              role="radiogroup"
               aria-label={t("viewLabel")}
               className="inline-flex items-center gap-1 rounded-[var(--radius-lg)] border border-[var(--color-border)] p-1"
             >
@@ -200,8 +206,8 @@ export function CalendarShell({ actions }: CalendarShellProps) {
                 <button
                   key={mode}
                   type="button"
-                  role="tab"
-                  aria-selected={view === mode}
+                  role="radio"
+                  aria-checked={view === mode}
                   onClick={() => setView(mode)}
                   className={cn(
                     "h-11 rounded-[var(--radius-md)] px-4 text-[13px] font-medium outline-none transition-colors duration-[var(--duration-fast)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none",
@@ -360,7 +366,18 @@ function parseDate(value: string, fallback: Date): Date {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return fallback;
   const [year, month, day] = value.split("-").map(Number);
   const parsed = new Date(year, month - 1, day);
-  return Number.isNaN(parsed.getTime()) ? fallback : startOfDay(parsed);
+  if (Number.isNaN(parsed.getTime())) return fallback;
+  // Reject values that only LOOK valid. `2026-99-99` is well-formed by shape
+  // and Date happily rolls it over into a real but entirely different date, so
+  // the user lands somewhere they never asked for instead of on the fallback.
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return fallback;
+  }
+  return startOfDay(parsed);
 }
 
 /** "22 – 28 June 2026" style label for the visible week. */

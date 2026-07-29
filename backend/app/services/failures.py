@@ -61,11 +61,19 @@ class SourceFailureCode(str, Enum):
 
 
 #: Codes whose recovery path is "try again" rather than "replace the file".
+#: Codes worth offering a Retry for. The test is "could the same input
+#: plausibly succeed on a second attempt", not "did this fail".
+#:
+#: ANALYSIS_UNAVAILABLE is deliberately EXCLUDED. It is the bucket for
+#: AttributeError / KeyError / ImportError, i.e. our own defects and
+#: misconfiguration, and a retry re-runs download, parse (Docling plus VLM
+#: captioning) and embedding only to fail identically. Offering Retry there
+#: spends real money to show the instructor the same failure, and invites them
+#: to keep clicking. Recovery is an operator fix, not a user action.
 RETRYABLE_CODES = frozenset(
     {
         SourceFailureCode.UNREADABLE_FILE,
         SourceFailureCode.STORAGE_UNAVAILABLE,
-        SourceFailureCode.ANALYSIS_UNAVAILABLE,
         SourceFailureCode.TIMEOUT,
         SourceFailureCode.UNKNOWN,
     }
@@ -159,11 +167,16 @@ def classify_and_log(
     identifiers for triage (document_id, course_id) that must not reach the UI.
     """
     code = classify(exc)
-    logger.exception(
+    logger.error(
         "%s failed: code=%s exc=%s %s",
         context,
         code.value,
         type(exc).__name__,
         " ".join(f"{key}={value}" for key, value in sorted(fields.items())),
+        # Explicit rather than logger.exception(): that resolves exc_info from
+        # sys.exc_info(), so it only captures a traceback when called from
+        # inside an except block. Passing the exception makes this correct from
+        # any call site, and makes the test asserting it non-vacuous.
+        exc_info=exc,
     )
     return code

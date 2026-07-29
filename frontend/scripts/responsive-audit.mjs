@@ -15,7 +15,7 @@
 // classes are present. This script measures the rendered result.
 //
 // Usage: node scripts/responsive-audit.mjs [outDir]
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 
 if (process.env.NODE_ENV === "production") {

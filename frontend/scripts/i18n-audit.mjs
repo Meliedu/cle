@@ -40,11 +40,22 @@ const COMPONENT_DIRS = [
   "student-workspace",
   "materials",
   "setup",
+  // Added after review: the hardcoded strings this audit exists to catch were
+  // living in exactly the dirs it did not scan.
+  "dashboard",
+  "layout",
+  "join",
+  "documents",
+  "patterns",
 ];
 const ROUTE_DIRS = [
   join("app", "(app)", "teacher"),
   join("app", "(app)", "student"),
 ];
+// `lib/` returns user-facing strings as DATA (provenance labels, safe-error
+// copy), which reaches the DOM just the same but is invisible to a scan that
+// only looks at components.
+const LIB_DIRS = ["lib"];
 
 /** Recursively collect .ts/.tsx source files, excluding tests/stories. */
 function collectSourceFiles(dir) {
@@ -73,6 +84,7 @@ function scanRoots() {
   const roots = [
     ...COMPONENT_DIRS.map((d) => join(FRONTEND_ROOT, "src", "components", d)),
     ...ROUTE_DIRS.map((d) => join(FRONTEND_ROOT, "src", d)),
+    ...LIB_DIRS.map((d) => join(FRONTEND_ROOT, "src", d)),
   ];
   const files = new Set();
   for (const root of roots) {

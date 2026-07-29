@@ -45,11 +45,15 @@ export function TeacherRosterView() {
   const { nextClassByCourse, isLoading: scheduleLoading } =
     useCourseNextClasses();
 
-  const filters: RosterFilters = {
-    query: url.get("q"),
-    term: url.get("term"),
-    status: url.get("status"),
-  };
+  // Memoised on the three scalars. As a bare object literal this was a new
+  // reference every render, so the filterRoster memo below never hit.
+  const query = url.get("q");
+  const term = url.get("term");
+  const status = url.get("status");
+  const filters: RosterFilters = useMemo(
+    () => ({ query, term, status }),
+    [query, term, status]
+  );
 
   const rows = useMemo(
     () => buildRoster(courseList, nextClassByCourse),

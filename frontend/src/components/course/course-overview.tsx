@@ -8,6 +8,8 @@ import { ArrowRight, CalendarX2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StateBanner } from "@/components/patterns";
+import { useSafeError } from "@/hooks/use-safe-error";
 import { MemorySummary } from "@/components/memory";
 import { useCourse } from "@/hooks/use-courses";
 import { useMeetings } from "@/hooks/use-meetings";
@@ -51,7 +53,9 @@ const WEEK_DAYS = 7;
  */
 export function CourseOverview({ courseId }: CourseOverviewProps) {
   const t = useTranslations("teacher.course.overview");
-  const { data: course } = useCourse(courseId);
+  const safeError = useSafeError();
+  const courseQuery = useCourse(courseId);
+  const course = courseQuery.data;
 
   const now = useMemo(() => new Date(), []);
   const { from, to } = useMemo(() => {
@@ -88,7 +92,41 @@ export function CourseOverview({ courseId }: CourseOverviewProps) {
     [documents.data]
   );
 
-  if (!course) return null;
+  // `useCourse` returns undefined for BOTH loading and failure (403/404/
+  // network). Returning null for both rendered a blank page with no skeleton,
+  // no explanation and no way back, while every sibling surface handles this.
+  if (courseQuery.isPending) {
+    return (
+      <div className="space-y-4 p-6" aria-busy="true">
+        <Skeleton className="h-8 w-1/3" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  }
+
+  if (!course) {
+    const safe = safeError.fromError(courseQuery.error);
+    return (
+      <div className="p-6">
+        <StateBanner
+          tone="warning"
+          title={safe.title}
+          reason={safe.consequence}
+          action={
+            safe.retryable ? (
+              <Button
+                size="xl"
+                variant="outline"
+                onClick={() => void courseQuery.refetch()}
+              >
+                {safe.nextAction}
+              </Button>
+            ) : undefined
+          }
+        />
+      </div>
+    );
+  }
 
   const lifecycle = courseLifecycle(course);
   const studentCount =

@@ -6,7 +6,7 @@ import { FileText, ListChecks, Loader2, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState, StateBanner } from "@/components/patterns";
-import { safeErrorFromCode } from "@/lib/contracts/safe-error";
+import { useSafeError } from "@/hooks/use-safe-error";
 import { SyllabusUploadCard } from "@/components/documents/syllabus-upload-card";
 import {
   useApplySyllabusImport,
@@ -23,8 +23,11 @@ import { useSetStep } from "@/hooks/use-setup";
  * reached an instructor in the live product. A legacy row with no code falls
  * back to generic recoverable copy rather than to its stored text.
  */
-function safeFailure(imp: SyllabusImport) {
-  return safeErrorFromCode(imp.error_code, { objectName: null });
+function safeFailure(
+  imp: SyllabusImport,
+  fromCode: ReturnType<typeof useSafeError>["fromCode"]
+) {
+  return fromCode(imp.error_code, { objectName: null });
 }
 
 interface StepSyllabusProps {
@@ -53,6 +56,7 @@ function previewCounts(payload: Record<string, unknown>): { key: string; count: 
  */
 export function StepSyllabus({ courseId, onComplete }: StepSyllabusProps) {
   const t = useTranslations("teacher.setup.syllabus");
+  const safeError = useSafeError();
   const { data: imports, isLoading } = useSyllabusImports(courseId, { poll: true });
   const applyImport = useApplySyllabusImport(courseId);
   const setStep = useSetStep(courseId);
@@ -171,6 +175,9 @@ interface ImportStatusProps {
 }
 
 function ImportStatus({ imp, counts, onApply, isApplying, t }: ImportStatusProps) {
+  const safeError = useSafeError();
+  const failure = safeFailure(imp, safeError.fromCode);
+
   if (imp.status === "pending" || imp.status === "applying") {
     return (
       <StateBanner
@@ -186,7 +193,7 @@ function ImportStatus({ imp, counts, onApply, isApplying, t }: ImportStatusProps
       <StateBanner
         tone="warning"
         title={t("status.failed.title")}
-        reason={`${safeFailure(imp).consequence} ${safeFailure(imp).nextAction}`}
+        reason={`${failure.consequence} ${failure.nextAction}`}
       />
     );
   }

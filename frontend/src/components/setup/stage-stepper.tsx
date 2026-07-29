@@ -50,7 +50,11 @@ export function StageStepper({
               <button
                 type="button"
                 onClick={() => canOpen && onSelect(stage)}
-                disabled={!canOpen}
+                // aria-disabled, not `disabled`: a disabled button leaves the
+                // tab order, so the t("stageLocked") explanation on aria-label
+                // is unreachable by keyboard and virtual cursor, which is the
+                // one thing a locked stage needs to communicate.
+                aria-disabled={!canOpen}
                 aria-current={status === "current" ? "step" : undefined}
                 aria-label={
                   canOpen

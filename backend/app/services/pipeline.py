@@ -12,6 +12,7 @@ from app.models.document import Document
 from app.models.task import Task
 from app.services.chunker import chunk_text
 from app.services.embedder import embed_texts
+from app.services.failures import classify_and_log
 from app.services.parser import parse_document
 from app.services.storage import download_file
 
@@ -142,8 +143,6 @@ async def process_document_pipeline(
         # Classify before persisting so the instructor sees actionable copy
         # rather than an exception, and the raw detail goes to the structured
         # log where triage needs it (safe failure contract, rules 01 and 02).
-        from app.services.failures import classify_and_log
-
         code = classify_and_log(
             exc,
             context="process_document_pipeline",

@@ -59,10 +59,23 @@ export function DayRail({
     month: "long",
     year: "numeric",
   });
+  // The heading and the sr-only caption must describe the week actually shown.
+  // Derived from `focus`, they stayed on the focus day while the strip below
+  // paged, so prev/next appeared to do nothing to anyone reading the heading,
+  // and the caption described a week no longer on screen.
   const focusLabel = focus.toLocaleDateString(locale, {
     day: "numeric",
     weekday: "long",
   });
+  const weekLabel =
+    weekOffset === 0
+      ? focusLabel
+      : t("rail.weekOf", {
+          date: anchor.toLocaleDateString(locale, {
+            day: "numeric",
+            month: "long",
+          }),
+        });
 
   return (
     <aside
@@ -79,7 +92,7 @@ export function DayRail({
             id="day-rail-title"
             className="text-[24px] font-semibold tracking-[-0.02em] text-[var(--color-text)]"
           >
-            {focusLabel}
+            {weekLabel}
           </h2>
           <div className="flex items-center gap-1">
             <StripButton
@@ -100,7 +113,7 @@ export function DayRail({
         {/* Orientation strip. Read-only: these are not controls, so they are
             not focusable and do not claim a keyboard stop. */}
         <table className="mt-4 w-full border-separate border-spacing-y-2">
-          <caption className="sr-only">{focusLabel}</caption>
+          <caption className="sr-only">{weekLabel}</caption>
           <thead>
             <tr>
               {days.map((day) => (

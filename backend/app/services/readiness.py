@@ -192,7 +192,11 @@ def _skill_evidence(ready: dict[str, Any]) -> list[dict[str, Any]]:
             state = "developing"
         else:
             state = "needs_support"
-        rows.append({"skill": skill, "state": state, "score": float(value)})
+        # No raw score. The docstring above promises the learner never sees a
+        # number they could mistake for a grade, and shipping the value in the
+        # same payload made that promise depend on every client choosing not to
+        # render it. The band is the contract.
+        rows.append({"skill": skill, "state": state})
     return rows
 
 

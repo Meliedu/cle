@@ -107,8 +107,8 @@ describe("CalendarShell: controls live in the calendar header (rule 1)", () => {
     const header = prev.closest("div")?.parentElement;
     expect(header).toBeTruthy();
     expect(within(header as HTMLElement).getByText("Today")).toBeTruthy();
-    expect(within(header as HTMLElement).getByRole("tab", { name: "Month" })).toBeTruthy();
-    expect(within(header as HTMLElement).getByRole("tab", { name: "Week" })).toBeTruthy();
+    expect(within(header as HTMLElement).getByRole("radio", { name: "Month" })).toBeTruthy();
+    expect(within(header as HTMLElement).getByRole("radio", { name: "Week" })).toBeTruthy();
   });
 
   it("meets the 44px target on every navigation control", () => {
@@ -134,10 +134,10 @@ describe("CalendarShell: one state owner (rule 2)", () => {
   it("writes the view mode into URL state", () => {
     const { set } = stubUrlState();
     renderShell();
-    fireEvent.click(screen.getByRole("tab", { name: "Week" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Week" }));
     expect(set).toHaveBeenCalledWith("view", "week");
     // Month is the default, so it clears the key rather than storing it.
-    fireEvent.click(screen.getByRole("tab", { name: "Month" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Month" }));
     expect(set).toHaveBeenCalledWith("view", null);
   });
 
@@ -145,7 +145,7 @@ describe("CalendarShell: one state owner (rule 2)", () => {
     stubUrlState({ view: "week" });
     renderShell();
     expect(
-      screen.getByRole("tab", { name: "Week" }).getAttribute("aria-selected")
+      screen.getByRole("radio", { name: "Week" }).getAttribute("aria-checked")
     ).toBe("true");
   });
 

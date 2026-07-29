@@ -5,7 +5,8 @@ import { FileText } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { safeErrorFromCode, type SafeError } from "@/lib/contracts/safe-error";
+import { type SafeError } from "@/lib/contracts/safe-error";
+import { useSafeError } from "@/hooks/use-safe-error";
 import {
   sourceIsInFlight,
   sourceNeedsAttention,
@@ -52,6 +53,7 @@ export function SourceStatusList({
   isRetrying,
 }: SourceStatusListProps) {
   const t = useTranslations("teacher.setup");
+  const safeError = useSafeError();
 
   const failed = sources.filter((source) => sourceNeedsAttention(source.readiness));
 
@@ -121,7 +123,7 @@ export function SourceStatusList({
           <RecoveryBanner
             key={source.id}
             source={source}
-            error={safeErrorFromCode(source.errorCode, { objectName: source.name })}
+            error={safeError.fromCode(source.errorCode, { objectName: source.name })}
             onRetry={() => onRetry(source)}
             onReplace={() => onReplace(source)}
             isRetrying={isRetrying}
@@ -194,11 +196,15 @@ function RecoveryBanner({
 }: RecoveryBannerProps) {
   return (
     <section className="rounded-[var(--radius-xl)] border border-[var(--color-gold)]/45 bg-[var(--color-cream)] px-5 py-4">
+      {/* The heading names the FAILURE. It previously read "Your files are
+          saved", so anyone navigating by heading heard reassurance where the
+          problem was, and the actual failure sat in body text. Reassurance is
+          still first in reading order, just not as the heading. */}
       <h3 className="text-[14px] font-semibold text-[var(--color-text)]">
-        {savedLabel}
+        {error.title}
       </h3>
       <p className="mt-1 text-[14px] leading-relaxed text-[var(--color-primary-hover)]">
-        {error.title}. {error.nextAction}
+        {savedLabel} {error.nextAction}
       </p>
       <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
         {error.consequence} {error.preserved}

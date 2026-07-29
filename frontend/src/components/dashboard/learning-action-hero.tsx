@@ -44,8 +44,22 @@ export function LearningActionHero({ action }: LearningActionHeroProps) {
         : t("leadNoDue")
       : t("leadStart");
 
+  // A source_kind the messages file does not know would render the raw key
+  // path ("student.home.kind.whatever") to the learner. The backend owns this
+  // enum and can add to it, so fall back rather than trust the union.
+  const KNOWN_KINDS = [
+    "checkpoint",
+    "practice",
+    "quiz",
+    "activity",
+    "material",
+    "follow_up",
+    "report",
+  ];
   const meta = [
-    t("kind." + item.source_kind),
+    KNOWN_KINDS.includes(item.source_kind)
+      ? t(`kind.${item.source_kind}`)
+      : t("kind.other"),
     due ? t("dueAt", { date: formatDate(due, locale), time: formatTime(due, locale) }) : t("noDue"),
   ];
 

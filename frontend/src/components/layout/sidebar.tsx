@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -45,6 +45,53 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const activeCourse = courseId
     ? courses?.find((course) => course.id === courseId) ?? null
     : null;
+
+  // --- modal drawer plumbing (below md only) --------------------------------
+  const drawerRef = useRef<HTMLElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+
+  // Move focus into the drawer on open and put it back where it came from on
+  // close, so the trigger does not lose its place in the tab order.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    restoreFocusRef.current = document.activeElement as HTMLElement | null;
+    closeButtonRef.current?.focus();
+    return () => {
+      restoreFocusRef.current?.focus?.();
+    };
+  }, [mobileOpen]);
+
+  const onDrawerKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLElement>) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        onMobileClose?.();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      // Trap Tab inside the drawer. The page behind is covered by an opaque
+      // backdrop, so focus reaching it would be invisible to sighted keyboard
+      // users and nonsensical to screen-reader users.
+      const focusables = drawerRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusables || focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    },
+    [onMobileClose]
+  );
 
   const handleSignOut = useCallback(() => {
     void signOut({ redirectUrl: "/sign-in" });
@@ -145,7 +192,12 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       {/* Desktop: fixed rail, always expanded */}
       <aside className="hidden h-full shrink-0 md:block">{rail}</aside>
 
-      {/* Below md: overlay drawer. Automatic, not a stored preference. */}
+      {/* Below md: overlay drawer. Automatic, not a stored preference.
+
+          This is a modal: an opaque backdrop covers the page, so content behind
+          it is visually unavailable. Without dialog semantics and a focus trap,
+          keyboard and screen-reader users tab straight out of the drawer into
+          content they cannot see, which at 390px is the primary navigation. */}
       {mobileOpen ? (
         <>
           <div
@@ -154,10 +206,15 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
             aria-hidden="true"
           />
           <aside
+            ref={drawerRef}
+            role="dialog"
+            aria-modal="true"
             className="fixed inset-y-0 left-0 z-50 md:hidden"
             aria-label={t("navigationLabel")}
+            onKeyDown={onDrawerKeyDown}
           >
             <button
+              ref={closeButtonRef}
               onClick={onMobileClose}
               className="absolute right-2 top-3 z-10 flex size-11 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-rail-text-muted)] outline-none hover:bg-[var(--color-rail-raised)] hover:text-[var(--color-rail-text)] focus-visible:ring-2 focus-visible:ring-[var(--color-rail-text)]"
               aria-label={t("closeNavigation")}

@@ -118,6 +118,8 @@ class JobStatusResponse(BaseModel):
     course_id: uuid.UUID
     title: str | None = None
     result: dict[str, Any] | None = None
+    # Typed SourceFailureCode, not free text. The client owns the wording; the
+    # server never ships an exception string here.
     error: str | None = None
     created_at: datetime
     completed_at: datetime | None = None

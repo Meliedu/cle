@@ -39,14 +39,6 @@ export type CourseTab =
   | "reports"
   | "memory";
 
-/**
- * Kept for the many callers that already import it. Delegates to the single
- * lifecycle derivation so a badge and a roster verb can never disagree.
- */
-export function isCoursePublished(course: CourseResponse): boolean {
-  return courseLifecycle(course) === "published";
-}
-
 const LIFECYCLE_BADGE: Record<
   CourseLifecycle,
   { readonly key: string; readonly className: string }

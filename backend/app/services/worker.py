@@ -255,7 +255,9 @@ async def complete_task(
     await session.commit()
 
 
-async def fail_task(session: AsyncSession, task_id, error: str) -> None:
+async def fail_task(
+    session: AsyncSession, task_id, error: str, error_code: str | None = None
+) -> None:
     result = await session.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
     if task is None:
@@ -263,6 +265,7 @@ async def fail_task(session: AsyncSession, task_id, error: str) -> None:
     permanently_failed = task.attempts >= task.max_attempts
     task.status = "failed" if permanently_failed else "pending"
     task.error_message = error
+    task.error_code = error_code
 
     orphan_r2_key: str | None = None
     if permanently_failed and task.task_type == "process_document":
@@ -674,8 +677,13 @@ async def _process_claimed_task(task: Task) -> None:
         logger.exception("Task %s failed", task_id)
         try:
             async with async_session_factory() as fail_session:
+                from app.services.failures import classify
+
                 await fail_task(
-                    fail_session, task_id, _sanitize_error_message(exc)
+                    fail_session,
+                    task_id,
+                    _sanitize_error_message(exc),
+                    classify(exc).value,
                 )
         except Exception:  # noqa: BLE001
             logger.exception("fail_task itself failed for %s", task_id)

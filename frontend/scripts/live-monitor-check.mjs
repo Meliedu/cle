@@ -16,10 +16,28 @@
  * onopen, before the server has validated anything. A green "connected" badge
  * is therefore NOT evidence that auth succeeded.
  *
- * Usage: node scripts/live-monitor-check.mjs <courseId> <meetingId> <checkpointId>
+ * Usage:
+ *   node scripts/live-monitor-check.mjs <courseId> <meetingId> <checkpointId> [activityId]
+ *
+ * PRECONDITIONS (the monitors only open a socket when the work is live):
+ *   - the checkpoint must be `published` or `live`. CheckpointLifecyclePanel
+ *     renders the monitor only for those, so a draft or closed checkpoint
+ *     legitimately opens nothing.
+ *   - the activity, if given, must be `live`. ActivityMonitor takes
+ *     enabled={isLive}, so a merely `published` activity does not connect.
+ * The seed's checkpoints are closed / published / draft, so pick deliberately.
  */
 
 import { chromium } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Resolved against THIS file, not the caller's cwd, so running the harness
+// from the repo root does not drop an untracked screenshot outside the
+// frontend/.gitignore rules that cover it.
+const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "tmp");
+mkdirSync(OUT_DIR, { recursive: true });
 
 if (process.env.NODE_ENV === "production") {
   console.error("refusing to run against a production build (types demo credentials into a live form)");
@@ -90,7 +108,19 @@ try {
   }
 
   if (!monitor) {
-    check("monitor WebSocket opened", false, "no socket matching the monitor path");
+    // Name the likely cause rather than leaving a bare "no socket" after a 30s
+    // stall, which reads as "the WS fix is broken" when it usually means the
+    // checkpoint simply is not running.
+    const lifecycleHint = (await page
+      .getByText(/draft|closed|approved|scheduled/i)
+      .first()
+      .textContent()
+      .catch(() => null)) ?? "unknown";
+    check(
+      "monitor WebSocket opened",
+      false,
+      `no socket. The monitor mounts only for a published/live checkpoint; this page shows "${String(lifecycleHint).slice(0, 40)}"`
+    );
   } else {
     check("monitor WebSocket opened", true, monitor.url);
 
@@ -160,6 +190,8 @@ try {
 
   check("no console errors on the studio page", consoleErrors.length === 0,
     consoleErrors.slice(0, 2).join(" | "));
+  // Reset so the next page's assertion reports only its own console.
+  consoleErrors.length = 0;
 
   // ---- the other changed monitor: activities --------------------------------
   // The activity detail opens from client state on the activities page, not its
@@ -203,6 +235,12 @@ try {
     }
   }
 
+  if (activityId) {
+    check("no console errors on the activities page", consoleErrors.length === 0,
+      consoleErrors.slice(0, 2).join(" | "));
+    consoleErrors.length = 0;
+  }
+
   // ---- negative: a bad token must be rejected with 1008 ----------------------
   // Reuse the observed URL so the invalid-token case is a true differential:
   // same endpoint, same server, only the token differs.
@@ -238,7 +276,9 @@ try {
 } catch (err) {
   check("harness completed", false, String(err).slice(0, 200));
 } finally {
-  await page.screenshot({ path: "tmp/live-monitor.png", fullPage: true }).catch(() => {});
+  await page
+    .screenshot({ path: join(OUT_DIR, "live-monitor.png"), fullPage: true })
+    .catch(() => {});
   await browser.close();
 }
 

@@ -14,6 +14,7 @@ import {
   courseActionVerb,
   courseLifecycle,
   type CourseActionVerb,
+  COURSE_LIFECYCLES,
   type CourseLifecycle,
 } from "@/lib/contracts/state";
 
@@ -93,7 +94,16 @@ export function filterRoster(
   const query = filters.query.trim().toLowerCase();
 
   return rows.filter((row) => {
-    if (filters.status && row.lifecycle !== filters.status) return false;
+    // Ignore a status the URL invented (`?status=banana`). Honouring it would
+    // filter everything out while no filter chip appears selected, which reads
+    // as "this teacher has no courses".
+    if (
+      filters.status &&
+      COURSE_LIFECYCLES.includes(filters.status as CourseLifecycle) &&
+      row.lifecycle !== filters.status
+    ) {
+      return false;
+    }
     if (filters.term && (row.course.semester ?? "") !== filters.term) {
       return false;
     }

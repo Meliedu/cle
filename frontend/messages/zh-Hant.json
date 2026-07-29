@@ -345,7 +345,8 @@
         "note": "行事曆是時間的依據；課堂就緒狀態由課程管理。",
         "viewCalendar": "查看完整行事曆",
         "prevWeek": "上一週",
-        "nextWeek": "下一週"
+        "nextWeek": "下一週",
+        "weekOf": "{date} 當週"
       },
       "kind": {
         "class": "課堂",
@@ -402,6 +403,34 @@
       "openSettings": "課程設定",
       "duplicate": "複製課程",
       "archive": "封存課程"
+    },
+    "createCourse": {
+      "title": "建立課程",
+      "description": "為學生設定一門新的語言課程。",
+      "nameLabel": "課程名稱",
+      "namePlaceholder": "例如：初級中文",
+      "nameRequired": "請輸入課程名稱",
+      "codeLabel": "課程代碼",
+      "codePlaceholder": "例如：LANG1010",
+      "codeRequired": "請輸入課程代碼",
+      "languageLabel": "語言",
+      "languagePlaceholder": "選擇語言",
+      "languageRequired": "請選擇語言",
+      "semesterLabel": "學期",
+      "semesterPlaceholder": "例如：2025 春季",
+      "semesterRequired": "請輸入學期",
+      "descriptionLabel": "課程簡介",
+      "descriptionPlaceholder": "簡短描述這門課程……",
+      "requiredMark": "必填",
+      "cancel": "取消",
+      "submit": "建立課程",
+      "submitting": "建立中……",
+      "languages": {
+        "Chinese": "中文",
+        "English": "英文",
+        "Japanese": "日文",
+        "Korean": "韓文"
+      }
     }
   },
   "student": {
@@ -525,8 +554,95 @@
         "activity": "活動",
         "material": "教材",
         "follow_up": "追蹤練習",
-        "report": "報告"
+        "report": "報告",
+        "other": "任務"
       }
+    }
+  },
+  "safeError": {
+    "unreadable_file": {
+      "titleNamed": "Meli 無法讀取完 {object}",
+      "title": "Meli 無法讀取完這個檔案",
+      "consequence": "這份資料尚未納入你的課程內容。",
+      "preserved": "檔案已保存，你設定的其他內容都完好無缺。",
+      "nextAction": "現在重試，或稍後更換檔案。"
+    },
+    "unsupported_format": {
+      "titleNamed": "{object} 不是支援的檔案格式",
+      "title": "不支援的檔案格式",
+      "consequence": "Meli 無法讀取此格式，因此不會用作課程資料。",
+      "preserved": "你的其他資料與設定進度都已保存。",
+      "nextAction": "請改用 PDF、DOCX 或 PPTX 檔案。"
+    },
+    "file_too_large": {
+      "titleNamed": "{object} 檔案過大",
+      "title": "檔案過大",
+      "consequence": "Meli 在讀取前已停止，因此尚未加入。",
+      "preserved": "你的其他資料與設定進度都已保存。",
+      "nextAction": "請分割檔案或上傳較小的版本。"
+    },
+    "empty_document": {
+      "titleNamed": "Meli 在 {object} 中找不到可讀取的文字",
+      "title": "找不到可讀取的文字",
+      "consequence": "掃描頁面與沒有文字的圖片無法用來生成課程內容。",
+      "preserved": "檔案仍然附加著，你的其他工作也已保存。",
+      "nextAction": "請改用含文字的版本。"
+    },
+    "storage_unavailable": {
+      "titleNamed": "Meli 無法開啟 {object}",
+      "title": "Meli 無法開啟這個檔案",
+      "consequence": "目前無法取得該檔案進行處理。",
+      "preserved": "沒有任何遺失。你的上傳與設定進度都已保存。",
+      "nextAction": "請稍候重試。"
+    },
+    "analysis_unavailable": {
+      "titleNamed": "Meli 無法分析 {object}",
+      "title": "Meli 無法完成分析",
+      "consequence": "建議的學習成果與檢核點尚未準備好。",
+      "preserved": "你的檔案與已完成的每個步驟都已保存。",
+      "nextAction": "現在重試，或先繼續、稍後再分析。"
+    },
+    "timeout": {
+      "titleNamed": "{object} 處理時間過長",
+      "title": "處理時間過長",
+      "consequence": "處理在完成前已停止。",
+      "preserved": "你的檔案與已完成的步驟都已保存。",
+      "nextAction": "請立即重試。"
+    },
+    "permission_denied": {
+      "titleNamed": "你沒有存取權限",
+      "title": "你沒有存取權限",
+      "consequence": "此操作僅限這門課程的擁有者。",
+      "preserved": "沒有任何變更。",
+      "nextAction": "請向課程擁有者申請權限。"
+    },
+    "not_found": {
+      "titleNamed": "找不到 {object}",
+      "title": "找不到這個項目",
+      "consequence": "它可能已被移動或刪除。",
+      "preserved": "沒有其他變更。",
+      "nextAction": "請返回並重新整理列表。"
+    },
+    "rate_limited": {
+      "titleNamed": "目前請求次數過多",
+      "title": "目前請求次數過多",
+      "consequence": "Meli 暫停了此操作以符合使用限制。",
+      "preserved": "你的工作已保存。",
+      "nextAction": "請幾分鐘後再試。"
+    },
+    "network": {
+      "titleNamed": "Meli 無法連上伺服器",
+      "title": "Meli 無法連上伺服器",
+      "consequence": "此操作未能完成。",
+      "preserved": "你的工作已保存在此裝置上。",
+      "nextAction": "請檢查網路連線後重試。"
+    },
+    "unknown": {
+      "titleNamed": "{object} 發生問題",
+      "title": "發生問題",
+      "consequence": "此操作未能完成。",
+      "preserved": "你已保存的工作完好無缺。",
+      "nextAction": "請立即重試。若持續發生，請聯絡 CLE 支援。"
     }
   }
 }

@@ -2,7 +2,7 @@
 // point a real instructor uses. Reports where it breaks.
 //
 // Usage: node scripts/new-course-flow.mjs [outDir]
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
 if (process.env.NODE_ENV === "production") {

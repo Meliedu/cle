@@ -21,7 +21,11 @@ from app.services.auth import VerifiedToken, verify_jwt
 
 logger = logging.getLogger(__name__)
 
-_AUTH_FRAME_TIMEOUT_S = 10.0
+# Accept-then-auth means an unauthenticated peer holds a real connection until
+# this fires, and there is no cap on concurrent unauthenticated sockets. Real
+# clients send the frame from onopen, so this only needs to cover a slow
+# network, not a slow user.
+_AUTH_FRAME_TIMEOUT_S = 5.0
 
 
 async def reject_ws(websocket: WebSocket) -> None:

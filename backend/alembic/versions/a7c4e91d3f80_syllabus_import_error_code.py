@@ -62,7 +62,9 @@ def upgrade() -> None:
         """
         UPDATE syllabus_imports
         SET error_code = CASE
-            WHEN error_message IS NULL THEN NULL
+            -- 'unknown', not NULL: a failed row with no code leaves the UI a
+            -- failure it cannot map to copy. Matches the documents backfill.
+            WHEN error_message IS NULL THEN 'unknown'
             WHEN error_message ~ '^[A-Z][A-Za-z]*(Error|Exception):'
                 THEN 'analysis_unavailable'
             WHEN lower(error_message) LIKE '%missing or kind changed%'
