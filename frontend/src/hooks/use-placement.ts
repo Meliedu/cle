@@ -62,6 +62,8 @@ export interface PlacementAttempt {
   readonly state: string;
   readonly attempt_number: number;
   readonly form_code: string;
+  /** False until CLE approves recorded audio; listening is proctor-read. */
+  readonly audio_available: boolean;
   readonly started_at: string | null;
   readonly expires_at: string | null;
   readonly submitted_at: string | null;

@@ -928,7 +928,8 @@
       "timeRemainingLabel": "剩餘時間",
       "minutesLeft": "尚餘 {minutes} 分鐘",
       "timeUp": "時間到，系統正在提交你的作答。",
-      "sectionProgress": "{section}，第 {index} 部分，共 {total} 部分"
+      "sectionProgress": "{section}，第 {index} 部分，共 {total} 部分",
+      "proctorRead": "本題的聽力內容由監考人員朗讀 {plays} 次，沒有錄音可供播放。"
     },
     "result": {
       "pendingTitle": "你的作答已送交語文教育中心",

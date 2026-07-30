@@ -3684,7 +3684,8 @@
       "timeRemainingLabel": "Time remaining",
       "minutesLeft": "{minutes} minutes remaining",
       "timeUp": "Time is up. Your answers are being submitted.",
-      "sectionProgress": "{section}, section {index} of {total}"
+      "sectionProgress": "{section}, section {index} of {total}",
+      "proctorRead": "The listening script for this question is read aloud {plays} times by the person supervising your test. There is no recording to play."
     },
     "result": {
       "pendingTitle": "Your answers are with CLE",

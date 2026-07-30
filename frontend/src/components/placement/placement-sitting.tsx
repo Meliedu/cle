@@ -246,6 +246,7 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
           onChange={handleChange}
           playCount={plays[current.id] ?? 0}
           onPlay={handlePlay}
+          audioAvailable={attempt.audio_available}
         />
       </div>
 

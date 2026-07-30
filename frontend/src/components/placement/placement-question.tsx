@@ -15,6 +15,11 @@ interface PlacementQuestionProps {
   /** Times the learner has played this item's audio, if it has any. */
   readonly playCount?: number;
   readonly onPlay?: () => void;
+  /**
+   * Whether approved recordings exist for this form. When false the listening
+   * script is read aloud by a proctor, so no play control is offered.
+   */
+  readonly audioAvailable?: boolean;
 }
 
 /**
@@ -32,6 +37,7 @@ export function PlacementQuestion({
   onChange,
   playCount = 0,
   onPlay,
+  audioAvailable = false,
 }: PlacementQuestionProps) {
   const t = useTranslations("placement.sitting");
   const groupId = useId();
@@ -56,7 +62,17 @@ export function PlacementQuestion({
         {t("questionLegend", { number: item.question_number })}
       </legend>
 
-      {item.audio_playback ? (
+      {/* No approved recordings yet, so a play button would produce silence and
+          a learner would burn exam minutes deciding their audio is broken. Say
+          what actually happens instead: a proctor reads the script twice. */}
+      {item.audio_playback && !audioAvailable ? (
+        <p className="flex items-start gap-2 rounded-[var(--radius-lg)] bg-[var(--color-surface-hover)] p-3 text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
+          <Volume2 aria-hidden="true" className="mt-0.5 size-4 shrink-0" strokeWidth={1.9} />
+          {t("proctorRead", { plays: playsAllowed })}
+        </p>
+      ) : null}
+
+      {item.audio_playback && audioAvailable ? (
         <div className="flex flex-wrap items-center gap-3">
           <Button
             type="button"
@@ -204,17 +220,20 @@ function SequenceQuestion({
 
   const setPosition = useCallback(
     (index: number, letter: string) => {
-      setSlots((previous) => {
-        const next = [...previous];
-        next[index] = letter;
-        // The partial order is reported too. The sitting keeps it on screen but
-        // only sends a complete one, so paging away mid-order does not discard
-        // the positions already chosen.
-        onChange(next.some(Boolean) ? next.join("-") : null);
-        return next;
-      });
+      // Computed from the current slots and applied directly, NOT inside a
+      // setState updater. An updater runs during React's render phase, so
+      // calling the parent's `onChange` from in there is a setState-during-
+      // render of a different component -- React warns, and in the sitting it
+      // broke the whole answer surface.
+      const next = [...slots];
+      next[index] = letter;
+      setSlots(next);
+      // The partial order is reported too. The sitting keeps it on screen but
+      // only sends a complete one, so paging away mid-order does not discard
+      // the positions already chosen.
+      onChange(next.some(Boolean) ? next.join("-") : null);
     },
-    [onChange]
+    [onChange, slots]
   );
 
   const letters = slots;

@@ -89,43 +89,51 @@ describe("multiple-choice question", () => {
   });
 });
 
+function renderListening(props: { playCount?: number; audioAvailable?: boolean }) {
+  render(
+    <NextIntlClientProvider locale="en" messages={messages}>
+      <PlacementQuestion
+        item={choiceItem({ section: "listening", audio_playback: 2 })}
+        value={null}
+        onChange={vi.fn()}
+        playCount={props.playCount ?? 0}
+        onPlay={vi.fn()}
+        audioAvailable={props.audioAvailable ?? false}
+      />
+    </NextIntlClientProvider>
+  );
+}
+
 describe("audio items", () => {
   it("offers a play control limited to the item's allowance", () => {
-    render(
-      <NextIntlClientProvider locale="en" messages={messages}>
-        <PlacementQuestion
-          item={choiceItem({ section: "listening", audio_playback: 2 })}
-          value={null}
-          onChange={vi.fn()}
-          playCount={0}
-          onPlay={vi.fn()}
-        />
-      </NextIntlClientProvider>
-    );
+    renderListening({ audioAvailable: true });
     const playable = screen.getByRole("button", { name: /play audio/i }) as HTMLButtonElement;
     expect(playable.disabled).toBe(false);
     expect(screen.getByText(/2 of 2 plays left/i)).toBeTruthy();
   });
 
   it("disables playback once the allowance is spent", () => {
-    render(
-      <NextIntlClientProvider locale="en" messages={messages}>
-        <PlacementQuestion
-          item={choiceItem({ section: "listening", audio_playback: 2 })}
-          value={null}
-          onChange={vi.fn()}
-          playCount={2}
-          onPlay={vi.fn()}
-        />
-      </NextIntlClientProvider>
-    );
+    renderListening({ audioAvailable: true, playCount: 2 });
     const spent = screen.getByRole("button", { name: /play audio/i }) as HTMLButtonElement;
     expect(spent.disabled).toBe(true);
   });
 
-  it("shows no audio control on a reading item", () => {
+  it("offers no play control when no approved recording exists", () => {
+    // A button that produces silence is worse than no button: mid-exam, a
+    // learner would spend their own minutes deciding their audio is broken.
+    renderListening({ audioAvailable: false });
+    expect(screen.queryByRole("button", { name: /play audio/i })).toBeNull();
+  });
+
+  it("says a proctor reads the script instead", () => {
+    renderListening({ audioAvailable: false });
+    expect(screen.getByText(/read aloud 2 times by the person supervising/i)).toBeTruthy();
+  });
+
+  it("shows no audio affordance at all on a reading item", () => {
     renderQuestion(choiceItem());
     expect(screen.queryByRole("button", { name: /play audio/i })).toBeNull();
+    expect(screen.queryByText(/read aloud/i)).toBeNull();
   });
 });
 

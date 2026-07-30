@@ -20,6 +20,9 @@ import { flagSeverity, hasBlockingFlag, sortFlags } from "./review-flags";
 
 const COURSES = ["LANG1511", "LANG1512", "LANG1513", "LANG1514", "LANG1515"] as const;
 
+/** The order the learner sat the sections in, per the published blueprint. */
+const SKILL_ORDER = ["listening", "language_use", "reading"] as const;
+
 const REASON_CODES = [
   "course_fit",
   "evidence_mismatch",
@@ -186,8 +189,14 @@ function ReviewBody({ evidence }: { readonly evidence: PlacementEvidence }) {
           <h2 className="text-[15px] font-semibold text-[var(--color-text)]">
             {t("skillEvidenceTitle")}
           </h2>
+          {/* Blueprint order, not object order. `skill_scores` is stored as
+              JSONB, and Postgres reorders JSONB keys by length, so iterating the
+              object put Reading first and Language use last -- the opposite of
+              the order the learner actually sat them in. */}
           <ul className="mt-3 space-y-3">
-            {Object.entries(evidence.skill_scores ?? {}).map(([skill, score]) => (
+            {SKILL_ORDER.filter((skill) => evidence.skill_scores?.[skill]).map((skill) => {
+              const score = evidence.skill_scores![skill];
+              return (
               <li key={skill}>
                 <div className="flex items-baseline justify-between">
                   <span className="text-[14px] text-[var(--color-text)]">
@@ -215,7 +224,8 @@ function ReviewBody({ evidence }: { readonly evidence: PlacementEvidence }) {
                   />
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </div>
       </section>

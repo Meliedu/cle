@@ -68,6 +68,10 @@ class AttemptOut(BaseModel):
     state: str
     attempt_number: int
     form_code: str
+    #: False until CLE approves recorded audio for this form. While false the
+    #: listening section is proctor-read, and the client must not offer a play
+    #: control that would produce silence.
+    audio_available: bool = False
     started_at: str | None = None
     expires_at: str | None = None
     submitted_at: str | None = None

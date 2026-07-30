@@ -133,9 +133,13 @@ async def _load_own_attempt(
 async def _attempt_out(
     db: AsyncSession, attempt: PlacementAttempt, *, form_code: str | None = None
 ) -> AttemptOut:
+    form = await db.get(PlacementForm, attempt.form_id)
     if form_code is None:
-        form = await db.get(PlacementForm, attempt.form_id)
         form_code = form.form_code if form else ""
+    # The package is explicit that approved audio does not exist yet and that a
+    # proctor reads each script twice until it does. An empty manifest is that
+    # state, and the client needs to know so it does not offer a silent button.
+    audio_available = bool((form.audio_manifest if form else None) or {})
 
     answered = int(
         (
@@ -162,6 +166,7 @@ async def _attempt_out(
         state=attempt.state,
         attempt_number=attempt.attempt_number,
         form_code=form_code,
+        audio_available=audio_available,
         started_at=_iso(attempt.started_at),
         expires_at=_iso(attempt.expires_at),
         submitted_at=_iso(attempt.submitted_at),
