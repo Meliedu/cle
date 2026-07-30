@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -516,7 +516,7 @@ async def submit_attempt(
 
 
 async def score_attempt(
-    db: AsyncSession, *, attempt: PlacementAttempt, actor: User
+    db: AsyncSession, *, attempt: PlacementAttempt, actor: User | None
 ) -> PlacementAttempt:
     """Compute band/skill evidence and the provisional recommendation."""
     version = await db.get(PlacementTestVersion, attempt.test_version_id)
@@ -647,6 +647,135 @@ async def score_attempt(
         },
     )
     return attempt
+
+
+# ---------------------------------------------------------------------------
+# Expiry sweep
+# ---------------------------------------------------------------------------
+
+#: A pre-timer attempt older than this is treated as walked away from. It has
+#: seen no questions (the paper is released only once the clock starts), so
+#: closing it costs the learner nothing.
+ABANDON_AFTER_HOURS = 24
+
+
+async def sweep_stale_attempts(db: AsyncSession) -> dict[str, int]:
+    """Close attempts the learner never finished. Returns per-outcome counts.
+
+    Without this, an attempt whose learner shut their laptop stays
+    ``in_progress`` forever: the partial unique index then blocks them from ever
+    starting another, and CLE never sees the work they did do.
+
+    Three outcomes, because "the timer ran out" is not one situation:
+
+    * something went wrong (interruptions were recorded) -> ``technical_review``,
+      so a human looks before any number is attached to the learner;
+    * they were working and ran out of time -> submit and score it. Their
+      answers are evidence, and the duration and completeness triggers will tell
+      the reviewer exactly what happened. Voiding real work would be worse for
+      the learner than a flagged result;
+    * they never answered anything -> ``expired``. There is nothing to score,
+      and inventing a band-0 result from an empty paper would be a fiction.
+    """
+    now = _now()
+    counts = {"technical_review": 0, "submitted": 0, "expired": 0, "abandoned": 0}
+
+    running = (
+        (
+            await db.execute(
+                select(PlacementAttempt).where(
+                    PlacementAttempt.state == "in_progress",
+                    PlacementAttempt.expires_at.isnot(None),
+                    PlacementAttempt.expires_at
+                    < now - timedelta(seconds=SUBMIT_GRACE_SECONDS),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    for attempt in running:
+        answered = int(
+            (
+                await db.execute(
+                    select(func.count(PlacementResponse.id)).where(
+                        PlacementResponse.attempt_id == attempt.id,
+                        PlacementResponse.response.isnot(None),
+                    )
+                )
+            ).scalar_one()
+        )
+        await record_interruption(
+            db, attempt=attempt, kind="timer_expired",
+            detail=f"{answered} answered when the time limit passed",
+        )
+
+        if attempt.interruptions and len(attempt.interruptions) > 1:
+            attempt.state = "technical_review"
+            counts["technical_review"] += 1
+            await _audit_sweep(db, attempt, "technical_review", answered)
+            continue
+
+        if answered == 0:
+            attempt.state = "expired"
+            counts["expired"] += 1
+            await _audit_sweep(db, attempt, "expired", answered)
+            continue
+
+        # Close it the way the learner would have, so the normal scoring and
+        # review path runs and CLE sees a comparable record.
+        started = _aware(attempt.started_at)
+        expires = _aware(attempt.expires_at)
+        attempt.state = "submitted"
+        attempt.submitted_at = expires
+        if started and expires:
+            attempt.duration_seconds = int((expires - started).total_seconds())
+        await db.flush()
+        await score_attempt(db, attempt=attempt, actor=None)
+        counts["submitted"] += 1
+        await _audit_sweep(db, attempt, "auto_submitted", answered)
+
+    stale_before = now - timedelta(hours=ABANDON_AFTER_HOURS)
+    waiting = (
+        (
+            await db.execute(
+                select(PlacementAttempt).where(
+                    PlacementAttempt.state.in_(
+                        [
+                            "created",
+                            "eligibility_confirmed",
+                            "instructions_acknowledged",
+                        ]
+                    ),
+                    PlacementAttempt.created_at < stale_before,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for attempt in waiting:
+        attempt.state = "abandoned"
+        counts["abandoned"] += 1
+        await _audit_sweep(db, attempt, "abandoned", 0)
+
+    await db.flush()
+    return counts
+
+
+async def _audit_sweep(
+    db: AsyncSession, attempt: PlacementAttempt, outcome: str, answered: int
+) -> None:
+    await record_audit(
+        db,
+        actor=None,
+        actor_role="system",
+        event_type=f"placement.attempt.swept.{outcome}",
+        entity_kind="placement_attempt",
+        entity_id=attempt.id,
+        metadata={"answered": answered, "state": attempt.state},
+    )
 
 
 # ---------------------------------------------------------------------------

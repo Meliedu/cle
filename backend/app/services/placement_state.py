@@ -74,12 +74,22 @@ PENDING_STATES: frozenset[str] = frozenset(
 #: The only state in which a recommendation may be shown to the learner.
 RELEASED_STATES: frozenset[str] = frozenset({"released"})
 
-#: States that consume one of the learner's attempts. An attempt invalidated by
-#: CLE does not: invalidation is our failure or a compromised sitting, and
-#: charging the learner for it would penalise them for our problem.
+#: States that consume one of the learner's attempts.
+#:
+#: Two exclusions, both deliberate:
+#:
+#: * ``invalidated`` -- invalidation is our failure or a compromised sitting,
+#:   and charging the learner for it would penalise them for our problem;
+#: * ``abandoned`` -- the sweep only abandons attempts that never started the
+#:   timer, and the paper is released only once the timer runs, so the learner
+#:   saw nothing. Charging them for clicking Start and walking away would cost
+#:   a third of their allowance for no information gained.
+#:
+#: ``expired`` does consume: the timer ran, the paper was on screen, and the
+#: opportunity was real whether or not they used it.
 CONSUMING_STATES: frozenset[str] = frozenset(
     {"in_progress", "submitted", "scored", "review_pending", "approved",
-     "overridden", "advising_required", "released", "expired", "abandoned",
+     "overridden", "advising_required", "released", "expired",
      "technical_review"}
 )
 

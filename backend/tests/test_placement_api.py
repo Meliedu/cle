@@ -314,10 +314,14 @@ async def test_pressing_start_twice_resumes_rather_than_burning_an_attempt(
     assert first["id"] == second["id"]
 
 
-async def test_items_are_withheld_until_instructions_are_acknowledged(
-    client, published, student
-):
-    """Handing out the paper before the sitting would let it be read for free."""
+async def test_items_are_withheld_until_the_timer_is_running(client, published, student):
+    """The paper is released only once the clock starts.
+
+    Acknowledging the instructions is the screen *before* the sitting. If the
+    API handed the questions over there, anyone calling it directly could read
+    all thirty untimed and then start the clock, and the time limit would mean
+    nothing.
+    """
     _as(student)
     attempt = (await client.post("/api/placement/attempts", json={})).json()["data"]
 
@@ -325,9 +329,17 @@ async def test_items_are_withheld_until_instructions_are_acknowledged(
     assert detail["items"] == []
 
     await client.post(f"/api/placement/attempts/{attempt['id']}/confirm-eligibility")
-    await client.post(f"/api/placement/attempts/{attempt['id']}/acknowledge-instructions")
-
     detail = (await client.get(f"/api/placement/attempts/{attempt['id']}")).json()["data"]
+    assert detail["items"] == []
+
+    await client.post(f"/api/placement/attempts/{attempt['id']}/acknowledge-instructions")
+    detail = (await client.get(f"/api/placement/attempts/{attempt['id']}")).json()["data"]
+    assert detail["state"] == "instructions_acknowledged"
+    assert detail["items"] == [], "the paper must not be readable before the timer"
+
+    await client.post(f"/api/placement/attempts/{attempt['id']}/begin")
+    detail = (await client.get(f"/api/placement/attempts/{attempt['id']}")).json()["data"]
+    assert detail["state"] == "in_progress"
     assert len(detail["items"]) == 30
 
 
@@ -430,17 +442,29 @@ async def _begin(client, student) -> dict:
 
 
 async def test_answers_cannot_be_saved_before_the_timer_starts(
-    client, published, student
+    client, published, db_session, student
 ):
     _as(student)
     attempt = (await client.post("/api/placement/attempts", json={})).json()["data"]
     await client.post(f"/api/placement/attempts/{attempt['id']}/confirm-eligibility")
     await client.post(f"/api/placement/attempts/{attempt['id']}/acknowledge-instructions")
-    detail = (await client.get(f"/api/placement/attempts/{attempt['id']}")).json()["data"]
+
+    # The item id comes from the database, not the API: the API deliberately
+    # will not hand out the paper before the clock starts, so a caller guessing
+    # an id is exactly the attack this endpoint has to refuse.
+    row = await db_session.get(PlacementAttempt, uuid.UUID(attempt["id"]))
+    item = (
+        await db_session.execute(
+            select(PlacementItem)
+            .where(PlacementItem.form_id == row.form_id)
+            .order_by(PlacementItem.question_number)
+            .limit(1)
+        )
+    ).scalar_one()
 
     response = await client.put(
         f"/api/placement/attempts/{attempt['id']}/responses",
-        json={"item_id": detail["items"][0]["id"], "response": "A"},
+        json={"item_id": str(item.id), "response": "A"},
     )
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "ATTEMPT_NOT_EDITABLE"
@@ -890,3 +914,152 @@ async def test_a_closed_window_refuses_a_new_attempt(
     response = await client.post("/api/placement/attempts", json={})
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "WINDOW_CLOSED"
+
+
+# ---------------------------------------------------------------------------
+# Expiry sweep
+# ---------------------------------------------------------------------------
+
+
+async def _expired_attempt(client, db_session, student, *, answers: int) -> PlacementAttempt:
+    """An in-progress attempt whose timer has already run out."""
+    detail = await _begin(client, student)
+    attempt = await db_session.get(PlacementAttempt, uuid.UUID(detail["id"]))
+
+    for item in detail["items"][:answers]:
+        await client.put(
+            f"/api/placement/attempts/{detail['id']}/responses",
+            json={"item_id": item["id"], "response": item["option_letters"][0]},
+        )
+
+    past = datetime.now(timezone.utc) - timedelta(minutes=10)
+    attempt.started_at = past - timedelta(minutes=30)
+    attempt.expires_at = past
+    await db_session.commit()
+    return attempt
+
+
+async def test_an_expired_attempt_with_answers_is_submitted_and_scored(
+    client, published, db_session, student
+):
+    """Running out of time must not throw away the work already done."""
+    attempt = await _expired_attempt(client, db_session, student, answers=12)
+
+    counts = await svc.sweep_stale_attempts(db_session)
+    await db_session.commit()
+    await db_session.refresh(attempt)
+
+    assert counts["submitted"] == 1
+    assert attempt.state in {"scored", "review_pending"}
+    assert attempt.raw_score is not None
+    assert attempt.answered_count == 12
+    # The reviewer is told why the record looks the way it does.
+    assert "incomplete_answers" in attempt.review_flags
+    assert any(e["kind"] == "timer_expired" for e in attempt.interruptions)
+
+
+async def test_an_expired_attempt_with_no_answers_is_expired_not_scored(
+    client, published, db_session, student
+):
+    """An empty paper has nothing to score; a band-0 result would be fiction."""
+    attempt = await _expired_attempt(client, db_session, student, answers=0)
+
+    counts = await svc.sweep_stale_attempts(db_session)
+    await db_session.commit()
+    await db_session.refresh(attempt)
+
+    assert counts["expired"] == 1
+    assert attempt.state == "expired"
+    assert attempt.raw_score is None
+
+
+async def test_an_expiry_after_an_interruption_goes_to_technical_review(
+    client, published, db_session, student
+):
+    """"The timer ran out" and "something broke" are not the same situation."""
+    detail = await _begin(client, student)
+    await client.post(
+        f"/api/placement/attempts/{detail['id']}/interruptions",
+        json={"kind": "disconnect"},
+    )
+    attempt = await db_session.get(PlacementAttempt, uuid.UUID(detail["id"]))
+    attempt.started_at = datetime.now(timezone.utc) - timedelta(minutes=40)
+    attempt.expires_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+    await db_session.commit()
+
+    counts = await svc.sweep_stale_attempts(db_session)
+    await db_session.commit()
+    await db_session.refresh(attempt)
+
+    assert counts["technical_review"] == 1
+    assert attempt.state == "technical_review"
+
+
+async def test_the_sweep_leaves_a_running_attempt_alone(
+    client, published, db_session, student
+):
+    detail = await _begin(client, student)
+    counts = await svc.sweep_stale_attempts(db_session)
+    await db_session.commit()
+
+    attempt = await db_session.get(PlacementAttempt, uuid.UUID(detail["id"]))
+    await db_session.refresh(attempt)
+    assert attempt.state == "in_progress"
+    assert not any(counts.values())
+
+
+async def test_a_never_started_attempt_is_abandoned_without_costing_one(
+    client, published, db_session, student
+):
+    """Clicking Start and walking away must not burn a third of the allowance.
+
+    The paper is only released once the timer runs, so an attempt that never
+    began gave the learner no information at all.
+    """
+    _as(student)
+    created = (await client.post("/api/placement/attempts", json={})).json()["data"]
+    attempt = await db_session.get(PlacementAttempt, uuid.UUID(created["id"]))
+    attempt.created_at = datetime.now(timezone.utc) - timedelta(hours=48)
+    await db_session.commit()
+
+    counts = await svc.sweep_stale_attempts(db_session)
+    await db_session.commit()
+    await db_session.refresh(attempt)
+
+    assert counts["abandoned"] == 1
+    assert attempt.state == "abandoned"
+
+    # And they still have all three attempts.
+    intro = (await client.get("/api/placement")).json()["data"]
+    assert intro["attempts_remaining"] == 3
+
+
+async def test_a_swept_attempt_frees_the_learner_to_start_again(
+    client, published, db_session, student
+):
+    """The bug this sweep exists for: a dead attempt blocking every future one."""
+    await _expired_attempt(client, db_session, student, answers=3)
+    await svc.sweep_stale_attempts(db_session)
+    await db_session.commit()
+
+    _as(student)
+    response = await client.post("/api/placement/attempts", json={})
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["attempt_number"] == 2
+
+
+async def test_the_sweep_is_audited(client, published, db_session, student):
+    attempt = await _expired_attempt(client, db_session, student, answers=0)
+    await svc.sweep_stale_attempts(db_session)
+    await db_session.commit()
+
+    events = (
+        await db_session.execute(
+            select(PlacementAuditEvent).where(
+                PlacementAuditEvent.entity_id == attempt.id,
+                PlacementAuditEvent.event_type.like("placement.attempt.swept.%"),
+            )
+        )
+    ).scalars().all()
+    assert len(events) == 1
+    assert events[0].actor_role == "system"

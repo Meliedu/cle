@@ -342,16 +342,19 @@ async def get_attempt(
 ):
     """The attempt plus its safe item payload and any saved answers.
 
-    Items are withheld until the learner has acknowledged the instructions:
-    there is no legitimate reason to hand out a form before the sitting starts,
-    and doing so would let someone read the paper without spending an attempt.
+    Items are released ONLY once the timer is running.
+
+    Acknowledging the instructions is not the sitting starting: it is the screen
+    before it. Delivering the paper there would let anyone calling this endpoint
+    read all thirty questions untimed and then start the clock, which defeats
+    the point of a timed screener. The instructions screen never needs them.
     """
     attempt = await _load_own_attempt(attempt_id, user, db)
     base = await _attempt_out(db, attempt)
 
     items: list[dict[str, Any]] = []
     saved: dict[str, str | None] = {}
-    if attempt.state in {"instructions_acknowledged", "in_progress"}:
+    if attempt.state == "in_progress":
         items = await svc.delivery_items(db, attempt=attempt)
         rows = (
             (
@@ -505,8 +508,15 @@ async def review_queue(
     _: User = Depends(require_instructor),
     db: AsyncSession = Depends(get_db),
 ):
-    """Attempts awaiting a CLE decision, most recently submitted first."""
-    open_states = ["review_pending", "technical_review", "scored", "advising_required"]
+    """Attempts awaiting a CLE decision, most recently submitted first.
+
+    ``expired`` is included even though there is nothing to score: the learner's
+    sitting ended with no answers, which cost them an attempt, and CLE needs to
+    be able to see it to invalidate it and give the attempt back.
+    """
+    open_states = [
+        "review_pending", "technical_review", "scored", "advising_required", "expired",
+    ]
     wanted = [state] if state else open_states
 
     rows = (

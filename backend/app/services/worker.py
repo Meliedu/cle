@@ -487,6 +487,16 @@ async def _body_decay() -> None:
         logger.info("HLR decay touched %d mastery rows", n)
 
 
+async def _body_placement_sweep() -> None:
+    from app.services.placement import sweep_stale_attempts
+
+    async with async_session_factory() as session:
+        counts = await sweep_stale_attempts(session)
+        await session.commit()
+        if any(counts.values()):
+            logger.info("placement sweep: %s", counts)
+
+
 async def _body_close_due() -> None:
     from app.services.checkpoints import close_due_checkpoints
 
@@ -707,6 +717,12 @@ async def _run_cron_ticks() -> None:
     )
     await _claim_and_run_cron(
         "draft_reports", timedelta(days=7), _body_draft_reports
+    )
+    # Every five minutes: a learner whose laptop died is otherwise stuck. Their
+    # attempt stays in_progress forever, the single-open-attempt index blocks
+    # them from starting another, and CLE never sees the work they did do.
+    await _claim_and_run_cron(
+        "placement_sweep", timedelta(minutes=5), _body_placement_sweep
     )
 
 
