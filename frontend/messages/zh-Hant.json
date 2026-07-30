@@ -664,5 +664,28 @@
       "preserved": "你已保存的工作完好無缺。",
       "nextAction": "請立即重試。若持續發生，請聯絡 CLE 支援。"
     }
+  },
+  "auth": {
+    "brand": "Meli · 香港科技大學 CLE",
+    "eyebrow": "課程存取",
+    "heading": "請使用你的 HKUST 帳戶登入。",
+    "body": "Meli 會開啟指派給你的課程、教材與課堂活動。",
+    "domains": "教師使用 <staff>@ust.hk</staff> 登入，學生使用 <student>@connect.ust.hk</student> 登入。",
+    "insideTitle": "登入後你會看到",
+    "inside": {
+      "coursesTitle": "你的課程與教材",
+      "coursesBody": "教師已發佈的所有內容，集中在一處。",
+      "actionTitle": "清楚的下一步",
+      "actionBody": "檢核點、練習與截止日期，整合成單一清單。",
+      "checkInTitle": "課堂簽到",
+      "checkInBody": "掃描教師顯示的 QR 碼即可記錄出席。"
+    },
+    "tagline": {
+      "signIn": "歡迎回來",
+      "signUp": "開始使用",
+      "forgotPassword": "復原你的帳戶",
+      "resetPassword": "設定新密碼",
+      "verifyEmail": "最後一步"
+    }
   }
 }

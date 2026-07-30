@@ -1,10 +1,20 @@
 import type { ReactNode } from "react";
+import { useTranslations } from "next-intl";
+import { BookOpen, ListChecks, QrCode } from "lucide-react";
 
 import { HoneycombMark } from "@/components/auth/honeycomb-mark";
 
+export type AuthTagline =
+  | "signIn"
+  | "signUp"
+  | "forgotPassword"
+  | "resetPassword"
+  | "verifyEmail";
+
 interface AuthShellProps {
   readonly children: ReactNode;
-  readonly tagline?: string;
+  /** Key into `auth.tagline.*`, so the eyebrow is localised like everything else. */
+  readonly tagline?: AuthTagline;
 }
 
 /**
@@ -19,14 +29,23 @@ interface AuthShellProps {
  * pattern in favor of an editorial composition coherent with the dashboard.
  */
 export function AuthShell({ children, tagline }: AuthShellProps) {
+  const t = useTranslations("auth");
+
   return (
     <div className="min-h-dvh bg-[var(--color-bg)]">
       <div className="grid min-h-dvh grid-cols-1 lg:grid-cols-12">
-        {/* Brand pane, desktop only */}
-        <aside
-          aria-hidden="true"
-          className="relative hidden flex-col justify-between overflow-hidden bg-[var(--color-bg)] px-12 pb-12 pt-14 lg:col-span-7 lg:flex xl:px-20"
-        >
+        {/*
+          Brand pane, desktop only.
+
+          NOT aria-hidden. It carries the one thing a person stuck at this
+          screen actually needs: which HKUST account signs in. Hiding the whole
+          pane from assistive tech hid that guidance too.
+
+          The layout is a centred stack rather than justify-between. With only
+          a header and a footer the pane had a screen-height void in the middle
+          and pushed the useful copy below the fold on shorter windows.
+        */}
+        <aside className="relative hidden flex-col overflow-hidden bg-[var(--color-bg)] px-12 pb-12 pt-14 lg:col-span-7 lg:flex xl:px-20">
           <header className="relative z-10 flex items-center gap-2.5">
             <span
               aria-hidden="true"
@@ -35,30 +54,76 @@ export function AuthShell({ children, tagline }: AuthShellProps) {
               M
             </span>
             <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-secondary)]">
-              Meli · HKUST CLE
+              {t("brand")}
             </span>
           </header>
 
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <HoneycombMark className="size-[min(620px,72%)]" />
+          {/* Background texture only. Anchored bottom-right and well behind
+              the copy: as a mid-pane element it read as a stray artifact
+              colliding with the headline rather than as decoration. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -bottom-32 -right-32 z-0 opacity-[0.18]"
+          >
+            <HoneycombMark className="size-[min(560px,52vw)]" />
           </div>
 
-          <footer className="relative z-10 max-w-[38ch] space-y-3">
+          <div className="relative z-10 flex flex-1 flex-col justify-center py-10">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-muted)]">
-              {tagline ?? "The checkpoint-centred course loop"}
+              {tagline ? t(`tagline.${tagline}`) : t("eyebrow")}
             </p>
-            <p className="font-display text-[1.6rem] font-semibold leading-[1.15] text-[var(--color-text)]">
-              A reviewed loop from course materials to a clear next action.
+            <h2 className="mt-3 max-w-[20ch] font-display text-[2rem] font-semibold leading-[1.12] text-[var(--color-text)]">
+              {t("heading")}
+            </h2>
+            <p className="mt-3 max-w-[42ch] text-[15px] leading-relaxed text-[var(--color-text-secondary)]">
+              {t("body")}
             </p>
-            <p className="text-[14px] leading-relaxed text-[var(--color-text-secondary)]">
-              Teachers review and publish checkpoints; students act from a
-              checklist, a calendar, or a QR scan in class.
+
+            <p className="mt-4 max-w-[42ch] text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
+              {t.rich("domains", {
+                staff: (chunks) => (
+                  <span className="font-medium text-[var(--color-text)]">
+                    {chunks}
+                  </span>
+                ),
+                student: (chunks) => (
+                  <span className="font-medium text-[var(--color-text)]">
+                    {chunks}
+                  </span>
+                ),
+              })}
             </p>
-            <p className="pt-2 text-[11px] tracking-[0.04em] text-[var(--color-text-muted)]">
-              Available to instructors at <span className="font-medium text-[var(--color-text-secondary)]">@ust.hk</span>{" "}
-              · students at <span className="font-medium text-[var(--color-text-secondary)]">@connect.ust.hk</span>
-            </p>
-          </footer>
+
+            <div className="mt-9 max-w-[46ch] border-t border-[var(--color-border)] pt-7">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                {t("insideTitle")}
+              </h3>
+              <ul className="mt-4 space-y-4">
+                {[
+                  { icon: BookOpen, key: "courses" },
+                  { icon: ListChecks, key: "action" },
+                  { icon: QrCode, key: "checkIn" },
+                ].map(({ icon: Icon, key }) => (
+                  <li key={key} className="flex gap-3">
+                    <span
+                      aria-hidden="true"
+                      className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-surface)] text-[var(--color-primary-hover)] ring-1 ring-[var(--color-border)]"
+                    >
+                      <Icon className="size-4" strokeWidth={1.9} />
+                    </span>
+                    <span>
+                      <span className="block text-[14px] font-medium text-[var(--color-text)]">
+                        {t(`inside.${key}Title`)}
+                      </span>
+                      <span className="block text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
+                        {t(`inside.${key}Body`)}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
         </aside>
 
         {/* Card pane */}
@@ -72,7 +137,7 @@ export function AuthShell({ children, tagline }: AuthShellProps) {
               M
             </span>
             <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-secondary)]">
-              Meli
+              {t("brand")}
             </span>
           </div>
 

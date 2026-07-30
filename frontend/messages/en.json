@@ -3422,5 +3422,28 @@
       "preserved": "Your saved work is intact.",
       "nextAction": "Retry now. If it keeps happening, contact CLE support."
     }
+  },
+  "auth": {
+    "brand": "Meli · HKUST CLE",
+    "eyebrow": "Course access",
+    "heading": "Use your HKUST account.",
+    "body": "Meli opens the courses, materials, and class activities assigned to you.",
+    "domains": "Instructors sign in with <staff>@ust.hk</staff>. Students sign in with <student>@connect.ust.hk</student>.",
+    "insideTitle": "What you'll find inside",
+    "inside": {
+      "coursesTitle": "Your courses and materials",
+      "coursesBody": "Everything your instructor has released, in one place.",
+      "actionTitle": "A clear next action",
+      "actionBody": "Checkpoints, practice, and deadlines as a single checklist.",
+      "checkInTitle": "Check in during class",
+      "checkInBody": "Scan the QR your instructor shows to record attendance."
+    },
+    "tagline": {
+      "signIn": "Welcome back",
+      "signUp": "Get started",
+      "forgotPassword": "Recover your account",
+      "resetPassword": "New password",
+      "verifyEmail": "One last step"
+    }
   }
 }

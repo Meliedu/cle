@@ -66,7 +66,7 @@ export default function ForgotPasswordPage() {
   if (!allowed) return null;
 
   return (
-    <AuthShell tagline="Recover your account">
+    <AuthShell tagline="forgotPassword">
       <AuthCard
         eyebrow="Reset password"
         heading={sent ? "Check your inbox" : "Forgot your password?"}

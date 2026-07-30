@@ -11,7 +11,7 @@ import { AuthShell } from "@/components/auth/auth-shell";
  */
 export default function VerifyEmailPage() {
   return (
-    <AuthShell tagline="One last step">
+    <AuthShell tagline="verifyEmail">
       <AuthCard
         eyebrow="Almost there"
         heading="Check your inbox"

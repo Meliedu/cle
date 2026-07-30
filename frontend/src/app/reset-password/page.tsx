@@ -88,7 +88,7 @@ export default function ResetPasswordPage() {
   if (!allowed) return null;
 
   return (
-    <AuthShell tagline="New password">
+    <AuthShell tagline="resetPassword">
       <AuthCard
         eyebrow="Reset password"
         heading={linkInvalid ? "This link expired" : "Choose a new password"}

@@ -133,7 +133,7 @@ export default function SignInPage() {
   };
 
   return (
-    <AuthShell tagline="Welcome back">
+    <AuthShell tagline="signIn">
       <AuthCard
         eyebrow="Welcome back · HKUST CLE"
         heading="Sign in to Meli"

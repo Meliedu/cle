@@ -128,7 +128,7 @@ export default function SignUpPage() {
   if (emailEnabled !== true) return null;
 
   return (
-    <AuthShell tagline="Get started">
+    <AuthShell tagline="signUp">
       <AuthCard
         eyebrow="New to Meli · HKUST CLE"
         heading="Create your account"
