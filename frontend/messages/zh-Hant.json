@@ -36,7 +36,9 @@
       "insights": "洞察",
       "progress": "進度"
     },
-    "wordmark": "Meli / 課程工作室"
+    "wordmark": "Meli / 課程工作室",
+    "placement": "分級測驗",
+    "placementReview": "分級審核"
   },
   "dashboard": {
     "welcome": "歡迎回來",
@@ -431,6 +433,146 @@
         "Japanese": "日文",
         "Korean": "韓文"
       }
+    },
+    "placement": {
+      "title": "分級審核",
+      "subtitle": "每份分級結果都須經語文教育中心決定，學生才會看到。",
+      "loading": "正在載入審核清單",
+      "needsReview": "待審核",
+      "readyToApprove": "可核准",
+      "blocked": "受阻",
+      "emptyTitle": "目前沒有待審核項目",
+      "emptyReason": "已提交的作答完成評分後會顯示於此。",
+      "queueTitle": "審核清單",
+      "unknownStudent": "未具名學生",
+      "rowSummary": "{form} 卷 · 第 {attempt} 次 · {course}",
+      "noCourseYet": "尚未有課程",
+      "open": "開啟",
+      "flag": {
+        "incomplete_answers": "作答不完整",
+        "incomplete_answersDetail": "30 題中作答少於 27 題，證據不足以支持自動推薦。",
+        "duration_too_short": "完成時間過短",
+        "duration_too_shortDetail": "作答時間少於 12 分鐘，比本卷設計的閱讀時間更快。",
+        "duration_too_long": "作答時間異常長",
+        "duration_too_longDetail": "作答超過 45 分鐘且無經核准的特別安排，通常代表中途受到干擾。",
+        "lower_band_break": "水平分佈不均",
+        "lower_band_breakDetail": "較低參考級別得分為 2 分或以下，較高級別卻表現良好，結果未能呈現清晰的級別。",
+        "declared_background_mismatch": "與自述背景不符",
+        "declared_background_mismatchDetail": "測得級別與學生自述的級別相差超過一級。",
+        "technical_interruption": "技術中斷",
+        "technical_interruptionDetail": "作答期間曾記錄到連線中斷或音訊故障。",
+        "form_compromised": "試卷已外洩",
+        "form_compromisedDetail": "此卷已被標記為外洩，其結果不可採信。",
+        "attempt_spread": "多次作答結果不穩定",
+        "attempt_spreadDetail": "該學生各次作答的結果相差超過一個課程級別。",
+        "response_pattern_anomaly": "作答模式異常",
+        "response_pattern_anomalyDetail": "答案高度重複，或作答速度快於題目可被閱讀的時間。這需要查看，並非指控。",
+        "item_key_disputed": "題目答案有爭議",
+        "item_key_disputedDetail": "本卷有題目未有共識答案，已不計入分數，因此總分並非以 30 題計算。",
+        "high_band_ceiling": "已達測驗上限",
+        "high_band_ceilingDetail": "結果已達本測驗可分辨的上限，因此無法為更高一級的分界提供證據。"
+      },
+      "review": {
+        "loading": "正在載入作答紀錄",
+        "notFoundTitle": "找不到該次作答",
+        "notFoundReason": "紀錄可能已被移除，或連結有誤。請返回審核清單再開啟一次。",
+        "backToQueue": "返回審核清單",
+        "title": "分級測驗作答",
+        "subtitle": "{student} · {form} 卷",
+        "unknownStudent": "未具名學生",
+        "blockedTitle": "此次作答目前無法核准",
+        "blockedReason": "本卷有題目未有共識答案，或試卷已外洩。請先處理題目內容，或將此次作答作廢，讓學生改用無問題的試卷重考。",
+        "systemResultTitle": "系統計算結果",
+        "provisionalCourse": "暫定課程",
+        "sustainedBand": "最高穩定級別",
+        "bandValue": "參考級別 {band}",
+        "confidence": "可信度",
+        "confidenceValue": {
+          "high": "高",
+          "medium": "中",
+          "review": "須人工審核"
+        },
+        "rawScore": "分數",
+        "scoreValue": "答對 {score} 題，已作答 {answered} 題",
+        "duration": "作答時間",
+        "minutes": "{minutes} 分鐘",
+        "boundary": "級別分界",
+        "boundaryClear": "清晰",
+        "boundaryNarrow": "接近",
+        "versionFootnote": "使用答案版本 {key} 及規則版本 {rule} 評分。",
+        "skillEvidenceTitle": "各項技能證據",
+        "skill": {
+          "listening": "聽力",
+          "language_use": "詞彙與語法",
+          "reading": "閱讀"
+        },
+        "skillProgress": "{skill}：答對 {correct} 題，共 {total} 題",
+        "bandProfileTitle": "參考級別分佈",
+        "bandProfileReason": "每個級別五題。必須在該級別有直接證據，且在其以下各級別的整體正確率足夠，才算穩定達到該級別。",
+        "bandLabel": "第 {band} 級",
+        "lowerBandBreakNote": "較低級別的表現弱於較高級別，此分佈並非逐級遞減。",
+        "flagsTitle": "須審核的原因",
+        "priorAttemptsTitle": "該學生的其他作答",
+        "priorAttemptLabel": "第 {number} 次",
+        "priorAttemptValue": "{course} · 答對 {score} 題 · {state}",
+        "answerSheetTitle": "作答明細",
+        "answerSheetCaption": "逐題列出學生的答案、標準答案，以及是否計分。",
+        "colQuestion": "題號",
+        "colBand": "級別",
+        "colAnswer": "作答",
+        "colKey": "答案",
+        "colResult": "結果",
+        "colChanges": "修改次數",
+        "itemFlagged": "有爭議",
+        "noAnswer": "未作答",
+        "resultCorrect": "正確",
+        "resultIncorrect": "錯誤",
+        "resultUnscored": "未計分",
+        "decidedTitle": "此次作答狀態：{state}",
+        "decidedReason": "再次記錄決定會新增一筆紀錄，原有紀錄不會被覆寫。",
+        "state": {
+          "approved": "已核准",
+          "overridden": "已更改",
+          "released": "已向學生發放",
+          "invalidated": "已作廢"
+        },
+        "decisionTitle": "你的決定",
+        "decisionReason": "系統推薦僅屬暫定。在你核准或更改並發放之前，學生不會看到任何結果。",
+        "actionLegend": "你要採取什麼行動？",
+        "action": {
+          "approve": "核准",
+          "override": "更改",
+          "request_advising": "安排面談",
+          "invalidate": "作廢",
+          "release": "向學生發放"
+        },
+        "actionHint": {
+          "approve": "接受暫定課程，不作更改。",
+          "override": "改選其他課程，並註明原因。",
+          "request_advising": "先與學生面談再作決定。",
+          "invalidate": "將此次作答擱置，不會佔用學生的可測次數。",
+          "release": "公布已核准的決定，學生會即時看到。"
+        },
+        "finalCourseLabel": "課程",
+        "reasonCodeLabel": "原因",
+        "reason": {
+          "course_fit": "其他級別更為合適",
+          "evidence_mismatch": "證據不支持此結果",
+          "technical_issue": "作答期間出現技術問題",
+          "background_evidence": "其他背景證據",
+          "advising_needed": "需先行面談",
+          "suspected_irregularity": "懷疑有異常情況"
+        },
+        "reasonTextLabel": "備註（選填）",
+        "reasonTextHint": "會與決定一併保存以供稽核，學生不會看到。",
+        "staleEvidence": "你閱讀期間此作答已有變動。請重新載入頁面，依最新資料作決定。",
+        "record": "記錄決定",
+        "recording": "正在記錄",
+        "blockedActionHint": "本卷仍有爭議題目時，只能選擇作廢。"
+      },
+      "linkTitle": "分級審核",
+      "linkReason": "有 {waiting} 份分級結果待決定。",
+      "linkReasonBlocked": "有 {waiting} 份待處理，其中 {blocked} 份因內容問題受阻。"
     }
   },
   "student": {
@@ -495,6 +637,11 @@
           "needs_support": "建議於第 1-2 週安排諮詢與額外練習。"
         },
         "supportPlan": "支援計畫"
+      },
+      "diagnostic": {
+        "placementTitle": "不確定應該修讀哪一級？",
+        "placementReason": "中文分級測驗是一份簡短測驗，語文教育中心會先行審核，再推薦合適課程。此測驗與加入本課程是分開的。",
+        "placementLink": "開啟分級測驗"
       }
     },
     "home": {
@@ -686,6 +833,115 @@
       "forgotPassword": "復原你的帳戶",
       "resetPassword": "設定新密碼",
       "verifyEmail": "最後一步"
+    }
+  },
+  "placement": {
+    "title": "中文分級測驗",
+    "subtitle": "一份簡短的測驗，協助語文教育中心為你推薦合適的課程級別。",
+    "loading": "正在載入分級測驗",
+    "closed": {
+      "notOpenTitle": "分級測驗尚未開放",
+      "notOpenReason": "語文教育中心尚未開放測驗時段。開放時會另行通知，你目前不需要採取任何行動。",
+      "unavailableTitle": "目前無法載入測驗",
+      "unavailableReason": "這是我們系統的問題，與你的帳戶無關。請稍後再試；若情況持續，請聯絡語文教育中心。"
+    },
+    "intro": {
+      "purposeTitle": "這是什麼",
+      "timeLabel": "時間",
+      "timeValue": "{minutes} 分鐘",
+      "itemsLabel": "題數",
+      "itemsValue": "{count} 題",
+      "attemptsLabel": "可測次數",
+      "attemptsValue": "尚餘 {remaining} 次，共 {total} 次",
+      "structureTitle": "測驗內容",
+      "section": {
+        "listening": "聽力",
+        "language_use": "詞彙與語法",
+        "reading": "閱讀"
+      },
+      "questionCount": "{count} 題",
+      "privacyTitle": "你的作答如何被使用",
+      "accommodation": "若你需要特別安排，例如延長時間或替代形式，請在開始前聯絡語文教育中心，不要在測驗途中提出。",
+      "exhaustedTitle": "你已用完所有測驗次數",
+      "exhaustedReason": "你已完成 {total} 次測驗。若你認為仍需再測一次，請聯絡語文教育中心。",
+      "start": "開始測驗",
+      "starting": "正在開始",
+      "startFailed": "無法開始測驗，請再試一次。"
+    },
+    "eligibility": {
+      "allocatedTitle": "你獲分配的是 {form} 卷",
+      "allocatedReason": "每次測驗會使用不同試卷。各卷涵蓋相同的技能與級別。",
+      "title": "開始之前",
+      "point1": "開始後會啟動 {minutes} 分鐘計時，中途不會暫停。",
+      "point2": "不可使用字典、翻譯工具，也不可由他人協助作答。",
+      "point3": "請作答每一題。猜答不會被扣分。",
+      "confirm": "我明白，繼續"
+    },
+    "instructions": {
+      "title": "測驗方式",
+      "rule1": "全部題目共有 {minutes} 分鐘作答時間。",
+      "rule2": "聽力錄音的播放次數有限，超過次數後不能再播放。",
+      "rule3": "你可以自由前後切換題目，並在提交前修改答案。",
+      "rule4": "作答會自動儲存。若連線中斷，請繼續作答，系統會自動重試。",
+      "audioTitle": "請先檢查音訊",
+      "audioReason": "計時開始後隨即進入聽力部分。先行檢查可避免因耳機靜音而浪費作答時間。",
+      "audioConfirm": "我在此裝置上可以聽到聲音",
+      "timerTitle": "計時將於下一頁開始",
+      "timerReason": "計時不會暫停，關閉分頁亦不會停止計時。",
+      "begin": "開始計時並作答",
+      "starting": "正在開始"
+    },
+    "sitting": {
+      "section": {
+        "listening": "聽力",
+        "language_use": "詞彙與語法",
+        "reading": "閱讀"
+      },
+      "progress": "第 {current} 題，共 {total} 題",
+      "answeredOf": "已作答 {answered} 題，共 {total} 題",
+      "questionHeading": "第 {number} 題",
+      "questionLegend": "第 {number} 題的選項",
+      "questionMapLabel": "跳至指定題目",
+      "goToAnswered": "第 {number} 題，已作答",
+      "goToUnanswered": "第 {number} 題，未作答",
+      "previous": "上一題",
+      "next": "下一題",
+      "reviewAndSubmit": "檢查並提交",
+      "confirmTitle": "確定提交作答？",
+      "confirmUnanswered": "尚有 {unanswered} 題未作答。未作答會計為錯誤，而猜答不會被扣分。",
+      "confirmAll": "你已完成所有題目。",
+      "confirmFinal": "提交後將無法修改答案。",
+      "submitConfirm": "提交",
+      "submitting": "正在提交",
+      "keepAnswering": "繼續作答",
+      "submitFailed": "無法提交。你的作答已儲存，請再試一次。",
+      "saveFailedTitle": "有答案尚未儲存",
+      "saveFailedReason": "你的答案暫存於此裝置，系統會持續重試。儲存完成前請勿關閉分頁。",
+      "expiredTitle": "時間到",
+      "expiredReason": "系統正在自動提交你的作答。",
+      "loadingTitle": "正在載入題目",
+      "loadingReason": "請稍候片刻。",
+      "playAudio": "播放錄音",
+      "playsLeft": "尚可播放 {count} 次，共 {total} 次",
+      "orderPosition": "第 {position} 位",
+      "orderEmpty": "請選擇",
+      "timeRemainingLabel": "剩餘時間",
+      "minutesLeft": "尚餘 {minutes} 分鐘",
+      "timeUp": "時間到，系統正在提交你的作答。",
+      "sectionProgress": "{section}，第 {index} 部分，共 {total} 部分"
+    },
+    "result": {
+      "pendingTitle": "你的作答已送交語文教育中心",
+      "pendingReason": "所有結果都會先經語文教育中心人員審核才會發放。你不需要採取任何行動；審核完成後本頁會自動更新。",
+      "whatHappensTitle": "接下來會發生什麼",
+      "whatHappens1": "語文教育中心會結合你的作答與其他已知背景資料一併審視。",
+      "whatHappens2": "他們會確認課程、建議另一個級別，或先安排與你面談。",
+      "whatHappens3": "結果發放後，你會在此看到推薦課程。",
+      "releasedEyebrow": "推薦課程",
+      "releasedReason": "語文教育中心已完成審核並發放此推薦。選課手續需另行辦理。",
+      "retake": "再測一次（尚餘 {remaining} 次）",
+      "invalidatedTitle": "此次作答已被作廢",
+      "invalidatedReason": "語文教育中心已將此次作答作廢。請聯絡中心了解後續安排。"
     }
   }
 }

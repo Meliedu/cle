@@ -18,6 +18,16 @@ from app.models.flashcard import (
     FlashcardSetDocument,
 )
 from app.models.quiz import Question, Quiz, QuizAttempt, QuizDocument, QuizFolder
+from app.models.placement import (
+    PlacementAttempt,
+    PlacementAuditEvent,
+    PlacementForm,
+    PlacementItem,
+    PlacementItemKey,
+    PlacementResponse,
+    PlacementReview,
+    PlacementTestVersion,
+)
 from app.models.readiness import ReadinessResponse
 from app.models.report import Report
 from app.models.scheduler import SchedulerModel
@@ -141,6 +151,14 @@ __all__ = [
     "OutcomeCheck",
     "CourseRecordItem",
     "ReadinessResponse",
+    "PlacementTestVersion",
+    "PlacementForm",
+    "PlacementItem",
+    "PlacementItemKey",
+    "PlacementAttempt",
+    "PlacementResponse",
+    "PlacementReview",
+    "PlacementAuditEvent",
     "Report",
     "WorkItem",
     "WorkItemProgress",

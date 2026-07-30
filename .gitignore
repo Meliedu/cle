@@ -76,3 +76,8 @@ test-results/
 playwright-report/
 # Throwaway one-off probe scripts (persistent QA tools like shots.mjs are kept)
 frontend/scripts/_probe.mjs
+
+# Placement item bank is regenerated from the controlled source package by
+# scripts/extract_placement_bank.py. It carries answer keys, listening scripts
+# and rationales, which the package marks "do not distribute".
+backend/app/data/placement/*.json

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import { ClipboardCheck } from "lucide-react";
 import { useTranslations } from "next-intl";
 
@@ -75,6 +76,25 @@ export function StepDiagnostic({
         title={t("diagnostic.skipTitle")}
         reason={t("diagnostic.skipReason")}
       />
+
+      {/* The Chinese placement screener is a separate, CLE-reviewed assessment,
+          not a step of this funnel: it decides which course a learner should
+          join, so it cannot sit inside the flow for joining one. Offered here
+          as a link because this is the moment a learner wonders about level. */}
+      <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+        <p className="text-[14px] font-medium text-[var(--color-text)]">
+          {t("diagnostic.placementTitle")}
+        </p>
+        <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
+          {t("diagnostic.placementReason")}
+        </p>
+        <Link
+          href="/student/placement"
+          className="mt-2 inline-flex items-center rounded-[var(--radius-sm)] text-[14px] font-medium text-[var(--color-primary-hover)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 pointer-coarse:min-h-11"
+        >
+          {t("diagnostic.placementLink")}
+        </Link>
+      </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
         {onBack ? (

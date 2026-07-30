@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/patterns";
+import { PlacementReviewLink } from "@/components/placement/placement-review-link";
 import { TeacherInsightsBrowser } from "@/components/teacher-insights";
 
 /**
@@ -12,6 +13,9 @@ export default function TeacherInsightsPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-6 px-6 py-6 md:px-10 md:py-10">
       <PageHeader title="Insights" />
+      {/* Placement review sits above cohort insight because it is blocking
+          work: a student is waiting on a decision, not on analysis. */}
+      <PlacementReviewLink />
       <TeacherInsightsBrowser />
     </div>
   );

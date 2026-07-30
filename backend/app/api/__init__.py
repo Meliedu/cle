@@ -39,6 +39,9 @@ from app.api.progress import router as progress_router
 from app.api.pronunciation import router as pronunciation_router
 from app.api.quizzes import router as quizzes_router
 from app.api.rag import router as rag_router
+from app.api.placement import admin_router as placement_admin_router
+from app.api.placement import review_router as placement_review_router
+from app.api.placement import router as placement_router
 from app.api.readiness import router as readiness_router
 from app.api.recalibration import router as recalibration_router
 from app.api.reports import me_router as reports_me_router
@@ -60,6 +63,12 @@ api_router.include_router(auth_router)
 api_router.include_router(config_router)
 api_router.include_router(courses_router)
 api_router.include_router(readiness_router)
+# Review/admin first: their prefixes are more specific than /placement, and
+# registering the generic router first would let /placement/{attempt_id}-style
+# paths shadow /placement/review/*.
+api_router.include_router(placement_review_router)
+api_router.include_router(placement_admin_router)
+api_router.include_router(placement_router)
 api_router.include_router(documents_router)
 api_router.include_router(materials_router)
 api_router.include_router(canvas_router)
