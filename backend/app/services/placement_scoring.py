@@ -83,6 +83,11 @@ REVIEW_FORCING_FLAGS: frozenset[str] = frozenset(
     }
 )
 
+#: Interruption kinds the system records itself. They are evidence for a
+#: reviewer but are not the learner's connection failing, so they must not
+#: raise the technical-interruption trigger.
+_SYSTEM_INTERRUPTION_KINDS: frozenset[str] = frozenset({"timer_expired"})
+
 #: Raised as evidence, never as a confidence override. See above.
 ADVISORY_FLAGS: frozenset[str] = frozenset({"high_band_ceiling"})
 
@@ -384,12 +389,13 @@ def _confidence(
     """
     minutes = _duration_minutes(duration_seconds)
 
+    # Every condition below is already expressed as a flag, so the flag list is
+    # the single source of truth. Duplicating the duration tests here meant an
+    # approved extended-time accommodation suppressed the FLAG but not the
+    # confidence: the learner landed in review with an empty flag list, and the
+    # reviewer's "why this needs review" panel rendered nothing at all.
     if (
         sustained == 0
-        or answered < policy.incomplete_answers_below
-        or (minutes is not None and minutes < policy.fast_duration_minutes)
-        or (minutes is not None and minutes > policy.long_duration_minutes)
-        or lower_break
         or any(flag in REVIEW_FORCING_FLAGS for flag in flags)
     ):
         return "review"
@@ -446,7 +452,14 @@ def _review_flags(
         flags.append("declared_background_mismatch")
 
     # 5. Technical: interruption, missing audio, or a compromised form.
-    if interruptions:
+    #    System-generated markers are excluded. The expiry sweep records its own
+    #    `timer_expired` entry, and counting that as a technical interruption
+    #    told every reviewer that a sitting was disrupted when the learner had
+    #    simply run out of time -- corrupting the evidence they reason from.
+    if any(
+        (event or {}).get("kind") not in _SYSTEM_INTERRUPTION_KINDS
+        for event in interruptions
+    ):
         flags.append("technical_interruption")
     if form_compromised:
         flags.append("form_compromised")

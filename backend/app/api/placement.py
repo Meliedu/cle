@@ -91,6 +91,7 @@ def _fail(error: svc.PlacementError) -> HTTPException:
         "OVERRIDE_NEEDS_COURSE": status.HTTP_422_UNPROCESSABLE_ENTITY,
         "REASON_REQUIRED": status.HTTP_422_UNPROCESSABLE_ENTITY,
         "UNKNOWN_ACTION": status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "BLOCKED_BY_CONTENT": status.HTTP_409_CONFLICT,
     }
     return HTTPException(
         status_code=codes.get(error.code, status.HTTP_400_BAD_REQUEST),
@@ -269,7 +270,6 @@ async def start_attempt(
             db,
             user=user,
             declared_band=payload.declared_band,
-            accommodation=payload.accommodation,
         )
     except svc.PlacementError as error:
         raise _fail(error) from error
@@ -427,7 +427,12 @@ async def report_interruption(
 ):
     """Record a reconnect or audio failure so review can see it."""
     attempt = await _load_own_attempt(attempt_id, user, db)
-    await svc.record_interruption(db, attempt=attempt, kind=payload.kind, detail=payload.detail)
+    try:
+        await svc.record_interruption(
+            db, attempt=attempt, kind=payload.kind, detail=payload.detail
+        )
+    except svc.PlacementError as error:
+        raise _fail(error) from error
     await db.commit()
     await db.refresh(attempt)
     return APIResponse(success=True, data=await _attempt_out(db, attempt))
@@ -514,8 +519,13 @@ async def review_queue(
     sitting ended with no answers, which cost them an attempt, and CLE needs to
     be able to see it to invalidate it and give the attempt back.
     """
+    # Everything a reviewer still has work to do on. `approved` and `overridden`
+    # belong here: a decision without a release has not reached the learner, and
+    # omitting them meant an approved attempt vanished from the queue and was
+    # never released while the learner polled the pending screen forever.
     open_states = [
-        "review_pending", "technical_review", "scored", "advising_required", "expired",
+        "scored", "review_pending", "technical_review", "advising_required",
+        "expired", "approved", "overridden",
     ]
     wanted = [state] if state else open_states
 
@@ -550,14 +560,18 @@ async def review_queue(
     # "Blocked" is a distinct count from "needs review": an attempt whose form
     # contains a disputed key cannot be approved at all until CLE fixes the
     # content, so grouping it with ordinary review work would hide the blocker.
+    # Every row must be counted somewhere, or the header reads zero while work
+    # sits in the list and nobody opens it.
     blocked = sum(
         1 for i in items
         if "item_key_disputed" in i.review_flags or "form_compromised" in i.review_flags
     )
     needs_review = sum(
-        1 for i in items if i.state in {"review_pending", "technical_review"}
+        1
+        for i in items
+        if i.state in {"review_pending", "technical_review", "advising_required", "expired"}
     )
-    ready = sum(1 for i in items if i.state == "scored")
+    ready = sum(1 for i in items if i.state in {"scored", "approved", "overridden"})
 
     return APIResponse(
         success=True,

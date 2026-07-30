@@ -152,7 +152,16 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
     return () => window.removeEventListener("offline", onOffline);
   }, [reportInterruption]);
 
-  const handleSubmit = useCallback(async () => {
+  /**
+   * @param force submit even if an answer could not be saved.
+   *
+   * Only the timer path forces. Past `expires_at + grace` the server rejects
+   * every save, so a flush can never succeed again: blocking submission there
+   * would strand the whole attempt to protect one answer, and the alert
+   * explaining why is inside the confirm dialog, which the timer never opens.
+   * Losing one unsaved answer beats losing the sitting.
+   */
+  const handleSubmit = useCallback(async (force = false) => {
     // Flush anything the autosave never landed, and CHECK whether it landed.
     // `persist` swallows its own errors so the sitting keeps working, which
     // meant this loop used to complete identically whether the flush succeeded
@@ -166,7 +175,7 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
         if (item) stillUnsaved.push(item.question_number);
       }
     }
-    if (stillUnsaved.length > 0) {
+    if (stillUnsaved.length > 0 && !force) {
       setUnsavedQuestions(stillUnsaved.sort((a, b) => a - b));
       return;
     }
@@ -182,7 +191,9 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
 
   const handleExpire = useCallback(() => {
     setExpired(true);
-    void handleSubmit();
+    // Force: saves are already rejected, so a blocked submit would strand the
+    // whole attempt rather than protect an answer.
+    void handleSubmit(true);
   }, [handleSubmit]);
 
   if (!current) {
@@ -417,7 +428,7 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
             <Button
               type="button"
               size="lg"
-              onClick={handleSubmit}
+              onClick={() => handleSubmit(false)}
               disabled={submit.isPending}
             >
               {submit.isPending ? t("submitting") : t("submitConfirm")}

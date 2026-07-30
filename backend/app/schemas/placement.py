@@ -71,9 +71,18 @@ class PlacementIntroOut(BaseModel):
 
 
 class AttemptStartIn(BaseModel):
+    """What a learner may state about their own attempt.
+
+    Deliberately does NOT accept an accommodation. Accommodation is an
+    authority-bearing field: it extends the deadline and suppresses the
+    long-duration review trigger. Accepting it from the learner's own request
+    body let anyone grant themselves unlimited extra time and mute the one flag
+    that would have caught it. It has to come from CLE.
+    """
+
     #: The learner's own estimate, used only for the mismatch review trigger.
+    #: Harmless to self-report: a wrong value only makes review MORE likely.
     declared_band: int | None = Field(default=None, ge=0, le=6)
-    accommodation: dict[str, Any] | None = None
 
 
 class AttemptOut(BaseModel):
@@ -241,7 +250,10 @@ class AttemptEvidenceOut(BaseModel):
 
 
 class DecisionIn(BaseModel):
-    action: Literal["approve", "override", "request_advising", "invalidate", "release"]
+    action: Literal[
+        "approve", "override", "request_advising", "invalidate", "release",
+        "resume_review",
+    ]
     final_course: str | None = Field(default=None, max_length=20)
     reason_code: str | None = Field(default=None, max_length=60)
     reason_text: str | None = Field(default=None, max_length=2000)

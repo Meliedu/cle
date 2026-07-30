@@ -237,6 +237,21 @@ def test_confidence_matches_the_workbook_on_every_vector(answered, minutes):
         break_below = has_lower_band_break(b, band)
         boundary = has_clear_next_band_boundary(b, band)
 
+        # Confidence is derived from the flag list, so the workbook's own four
+        # conditions have to be supplied AS flags. Building them here rather
+        # than calling `_review_flags` keeps this file an independent
+        # transcription: it asserts the Excel conditions directly, and would
+        # still catch a change to how the real scorer decides to raise them.
+        flags: list[str] = []
+        if answered < 27:
+            flags.append("incomplete_answers")
+        if minutes < 12:
+            flags.append("duration_too_short")
+        if minutes > 45:
+            flags.append("duration_too_long")
+        if break_below:
+            flags.append("lower_band_break")
+
         ours = _confidence(
             scores=b,
             answered=answered,
@@ -245,9 +260,7 @@ def test_confidence_matches_the_workbook_on_every_vector(answered, minutes):
             clear_boundary=boundary,
             duration_seconds=int(minutes * 60),
             policy=policy,
-            # No system-level triggers: this compares against the workbook,
-            # which has no telemetry and cannot express them.
-            flags=[],
+            flags=flags,
         )
         expected = xl_b23(b, band, break_below, boundary, answered, minutes)
         assert _CONFIDENCE[ours] == expected, (b, answered, minutes)

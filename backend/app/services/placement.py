@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
 
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,6 +41,32 @@ from app.services.placement_state import PlacementStateError
 #: A learner whose last answer lands two seconds after the timer should not lose
 #: it to clock skew; a learner still answering ten minutes later should.
 SUBMIT_GRACE_SECONDS = 120
+
+#: Ceiling on a granted extra-time accommodation, in minutes. Generous (four
+#: hours on a thirty-minute paper) but finite: a stored value of 100000 would
+#: otherwise put the deadline two months out, and a malformed one would raise
+#: out of the request. An accommodation beyond this is a conversation, not a
+#: field.
+MAX_EXTRA_MINUTES = 240
+
+
+def _granted_extra_minutes(
+    accommodation: Mapping[str, Any] | None, duration_minutes: int
+) -> int:
+    """Extra minutes to add to the deadline, from a CLE-granted accommodation.
+
+    Total, not doubled: an ``extended_time`` grant with no stated increment used
+    to silently hand over a second full sitting. Unparseable and out-of-range
+    values clamp rather than raising, because failing a learner's start request
+    over a bad stored field would be worse than granting the default.
+    """
+    if not accommodation or not accommodation.get("extended_time"):
+        return 0
+    try:
+        requested = int(accommodation.get("extra_minutes", duration_minutes))
+    except (TypeError, ValueError):
+        requested = duration_minutes
+    return max(0, min(requested, MAX_EXTRA_MINUTES))
 
 
 class PlacementError(Exception):
@@ -181,6 +208,15 @@ async def create_attempt(
             f"this learner has used all {version.max_attempts} placement attempts",
         )
 
+    # "How many attempts has this learner spent" and "what number is this row"
+    # are DIFFERENT questions, and using one answer for both bricked learners
+    # permanently. The quota is counted from consuming states; the number must
+    # come from every prior row, because uq_placement_attempts_user_version_number
+    # covers all of them regardless of state. An invalidated or abandoned attempt
+    # is not consuming, so numbering from the quota reused a number that already
+    # existed and every retry died on the unique index.
+    next_number = max((a.attempt_number for a in prior), default=0) + 1
+
     forms = (
         (
             await db.execute(
@@ -195,13 +231,19 @@ async def create_attempt(
             available=[
                 {"form_code": form.form_code, "status": form.status} for form in forms
             ],
-            # Only forms actually sat are excluded. An invalidated attempt's
-            # form becomes available again, which is the point of invalidating.
+            # Every form the learner has actually SEEN is excluded, which is not
+            # the same as every form that consumed an attempt. Invalidating an
+            # attempt gives the learner their allowance back; it does not
+            # un-read the paper, so re-serving that form would turn a retake
+            # into a memory test. Only an attempt that never started the timer
+            # (abandoned) leaves its form available, because the paper is
+            # released only at `in_progress`.
             used_form_codes=[
                 _form_code(forms, attempt.form_id)
-                for attempt in consuming
+                for attempt in prior
+                if attempt.state != "abandoned"
             ],
-            attempt_number=len(consuming) + 1,
+            attempt_number=next_number,
         )
     except placement_state.FormRotationError as error:
         raise PlacementError(error.code, error.message) from error
@@ -212,20 +254,42 @@ async def create_attempt(
         user_id=user.id,
         test_version_id=version.id,
         form_id=form.id,
-        attempt_number=len(consuming) + 1,
+        attempt_number=next_number,
         state="created",
         allocation_reference=allocation.reference,
         declared_band=declared_band,
         accommodation=dict(accommodation) if accommodation else None,
     )
     db.add(attempt)
+    # Captured BEFORE the rollback below: rollback expires every instance in the
+    # identity map, including primary keys, so reading `user.id` afterwards is a
+    # lazy refresh on an async session and raises MissingGreenlet -- turning the
+    # recovery path into an uncaught 500.
+    user_id, version_id = user.id, version.id
     try:
         await db.flush()
     except IntegrityError as error:
-        # Lost the race on uq_placement_attempts_single_open: the other request
-        # already created the attempt, so resume that one.
+        # The only race this can legitimately be is the single-open partial
+        # index: another request created the learner's attempt first, so resume
+        # it. Any other constraint is a real bug and must not be disguised as a
+        # lost race.
         await db.rollback()
-        resumed = await open_attempt(db, user=user, version=version)
+        resumed = (
+            await db.execute(
+                select(PlacementAttempt).where(
+                    PlacementAttempt.user_id == user_id,
+                    PlacementAttempt.test_version_id == version_id,
+                    PlacementAttempt.state.in_(
+                        [
+                            "created",
+                            "eligibility_confirmed",
+                            "instructions_acknowledged",
+                            "in_progress",
+                        ]
+                    ),
+                )
+            )
+        ).scalar_one_or_none()
         if resumed is None:
             raise PlacementError(
                 "ATTEMPT_CONFLICT", "could not start a placement attempt"
@@ -319,11 +383,7 @@ async def advance(
         started = _now()
         attempt.started_at = started
         minutes = version.duration_minutes if version else 30
-        extra = 0
-        if attempt.accommodation and attempt.accommodation.get("extended_time"):
-            # Extra time is a granted accommodation, expressed in minutes so the
-            # audit record shows exactly what was granted.
-            extra = int(attempt.accommodation.get("extra_minutes", minutes))
+        extra = _granted_extra_minutes(attempt.accommodation, minutes)
         attempt.expires_at = started + timedelta(minutes=minutes + extra)
 
     await db.flush()
@@ -417,22 +477,42 @@ async def save_response(
 
     now = _now()
     if existing is None:
-        row = PlacementResponse(
-            attempt_id=attempt.id,
-            item_id=item.id,
-            user_id=attempt.user_id,
-            question_number=item.question_number,
-            response=value,
-            first_seen_at=now,
-            answered_at=now if value else None,
-            change_count=0,
-            audio_play_count=audio_play_count or 0,
-            time_spent_ms=time_spent_ms,
-            connection_state=connection_state,
+        # Upsert, not INSERT. The client fires autosaves without awaiting the
+        # previous one, so two writes for the same item can both find no row;
+        # a plain INSERT then raises IntegrityError and 500s mid-exam. On
+        # conflict the other write already landed, so re-read it and fall
+        # through to the update path below.
+        stmt = (
+            pg_insert(PlacementResponse)
+            .values(
+                id=uuid.uuid4(),
+                attempt_id=attempt.id,
+                item_id=item.id,
+                user_id=attempt.user_id,
+                question_number=item.question_number,
+                response=value,
+                first_seen_at=now,
+                answered_at=now if value else None,
+                change_count=0,
+                audio_play_count=audio_play_count or 0,
+                time_spent_ms=time_spent_ms,
+                connection_state=connection_state,
+            )
+            .on_conflict_do_nothing(index_elements=["attempt_id", "item_id"])
+            .returning(PlacementResponse.id)
         )
-        db.add(row)
-        await db.flush()
-        return row
+        inserted = (await db.execute(stmt)).scalar_one_or_none()
+        if inserted is not None:
+            await db.flush()
+            return await db.get(PlacementResponse, inserted)
+        existing = (
+            await db.execute(
+                select(PlacementResponse).where(
+                    PlacementResponse.attempt_id == attempt.id,
+                    PlacementResponse.item_id == item.id,
+                )
+            )
+        ).scalar_one()
 
     if existing.response != value:
         existing.change_count += 1
@@ -449,14 +529,40 @@ async def save_response(
     return existing
 
 
+#: Interruptions a learner may report, per attempt. Generous for a real bad
+#: connection, finite because the array is learner-controlled and is inside the
+#: evidence bundle a reviewer's decision is hashed against.
+MAX_INTERRUPTIONS = 50
+
+
 async def record_interruption(
-    db: AsyncSession, *, attempt: PlacementAttempt, kind: str, detail: str | None = None
+    db: AsyncSession,
+    *,
+    attempt: PlacementAttempt,
+    kind: str,
+    detail: str | None = None,
+    system: bool = False,
 ) -> None:
-    """Append a technical event. Feeds the technical review trigger."""
+    """Append a technical event. Feeds the technical review trigger.
+
+    Learner-reported events are only accepted while the attempt is running.
+    Without that, a learner could append to a submitted attempt at will: every
+    append changes the evidence hash, so each one would 409 the reviewer's
+    decision as stale and they could block any decision on their own result
+    indefinitely.
+    """
+    if not system and attempt.state != "in_progress":
+        raise PlacementError(
+            "ATTEMPT_NOT_EDITABLE",
+            "this attempt can no longer be changed",
+        )
+
     events = list(attempt.interruptions or [])
-    events.append(
-        {"kind": kind, "detail": detail, "at": _now().isoformat()}
-    )
+    if len(events) >= MAX_INTERRUPTIONS:
+        # Silently capped rather than erroring: the learner is already having a
+        # bad time, and the reviewer has more than enough evidence by now.
+        return
+    events.append({"kind": kind, "detail": detail, "at": _now().isoformat()})
     attempt.interruptions = events
     await db.flush()
 
@@ -709,6 +815,7 @@ async def sweep_stale_attempts(db: AsyncSession) -> dict[str, int]:
         await record_interruption(
             db, attempt=attempt, kind="timer_expired",
             detail=f"{answered} answered when the time limit passed",
+            system=True,
         )
 
         if attempt.interruptions and len(attempt.interruptions) > 1:
@@ -783,11 +890,20 @@ async def _audit_sweep(
 # ---------------------------------------------------------------------------
 
 
+#: Flags that make an attempt unapprovable until the underlying content or
+#: form is fixed. Mirrored in the client, but enforced here.
+BLOCKING_FLAGS: frozenset[str] = frozenset({"item_key_disputed", "form_compromised"})
+
 ACTION_TO_STATE = {
     "approve": "approved",
     "override": "overridden",
     "request_advising": "advising_required",
     "invalidate": "invalidated",
+    # Without this, `technical_review` was a trap: the transition table allowed
+    # an exit but no action mapped to one, so the only legal decision was
+    # `invalidate` -- on exactly the attempts where something went wrong through
+    # no fault of the learner.
+    "resume_review": "review_pending",
 }
 
 
@@ -819,6 +935,22 @@ async def record_decision(
         placement_state.assert_transition(attempt.state, target)
     except PlacementStateError as error:
         raise PlacementError(error.code, error.message) from error
+
+    # Blocking flags were enforced only by a disabled button in the browser, so
+    # a direct POST could approve an attempt whose score silently excluded an
+    # item nobody can key -- and a later release would hand the learner a course
+    # derived from it. The rule belongs on the server.
+    if action in {"approve", "override", "release"}:
+        blocking = [
+            flag for flag in (attempt.review_flags or []) if flag in BLOCKING_FLAGS
+        ]
+        if blocking:
+            raise PlacementError(
+                "BLOCKED_BY_CONTENT",
+                "this attempt cannot be approved while its form has an "
+                "unresolved content problem; resolve the item or invalidate "
+                "the attempt",
+            )
 
     if action == "override" and not final_course:
         raise PlacementError(

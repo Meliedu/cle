@@ -74,7 +74,12 @@ ALL_ATTEMPT_STATES = ATTEMPT_STATES + ATTEMPT_EXCEPTION_STATES
 VERSION_STATUSES = ("draft", "candidate", "published", "retired")
 FORM_STATUSES = ("active", "disabled", "compromised")
 SECTIONS = ("listening", "language_use", "reading")
-REVIEW_ACTIONS = ("approve", "override", "request_advising", "invalidate", "release")
+REVIEW_ACTIONS = (
+    "approve", "override", "request_advising", "invalidate", "release",
+    # Returns a technical_review attempt to the normal queue once the fault
+    # is understood. Without it, the only legal exit was invalidation.
+    "resume_review",
+)
 
 
 def _in_list(column: str, values: tuple[str, ...]) -> str:
