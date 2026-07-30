@@ -312,9 +312,32 @@ async function studentJourney(context, viewport) {
 
   const begin = page.getByRole("button", { name: /start the timer and begin/i });
   if ((await begin.count()) === 0) { fail("never reached the instructions screen"); await page.close(); return; }
-  if (await begin.isEnabled()) fail("the timer can start before the audio check is confirmed");
-  await page.getByRole("checkbox").first().check();
-  if (!(await begin.isEnabled())) fail("confirming audio did not enable the start button");
+
+  // The audio gate applies only when recordings exist. With none, the listening
+  // section is proctor-read, and demanding a headphone confirmation would lock
+  // out precisely the learners it claims to protect.
+  const audioCheckbox = page.getByRole("checkbox");
+  const gated = (await audioCheckbox.count()) > 0;
+  const instructionsText = await page.locator("main").innerText();
+
+  if (gated) {
+    if (await begin.isEnabled()) {
+      fail("the timer can start before the audio check is confirmed");
+    }
+    await audioCheckbox.first().check();
+    if (!(await begin.isEnabled())) {
+      fail("confirming audio did not enable the start button");
+    }
+    note("audio gate applies and works");
+  } else {
+    if (!(await begin.isEnabled())) {
+      fail("no recordings exist, but the start button is still gated on audio");
+    }
+    if (!/read aloud|monitor|supervising|朗讀/i.test(instructionsText)) {
+      fail("no recordings exist and the screen does not say a proctor reads them");
+    }
+    note("no recordings: proctor-read stated, no audio gate");
+  }
 
   // The paper must not be reachable before the clock starts.
   const preItems = await page.locator('main input[type="radio"]').count();

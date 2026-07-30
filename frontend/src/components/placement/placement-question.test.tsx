@@ -109,7 +109,7 @@ describe("audio items", () => {
     renderListening({ audioAvailable: true });
     const playable = screen.getByRole("button", { name: /play audio/i }) as HTMLButtonElement;
     expect(playable.disabled).toBe(false);
-    expect(screen.getByText(/2 of 2 plays left/i)).toBeTruthy();
+    expect(screen.getByText(/2 plays left of 2/i)).toBeTruthy();
   });
 
   it("disables playback once the allowance is spent", () => {

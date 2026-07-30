@@ -18,8 +18,11 @@ tables. Three properties make it different in kind:
 
 RLS follows the established owner-isolation pattern (``28236be3d7b3``):
 ``placement_attempts`` and ``placement_responses`` are student-owned and carry
-an ``app.current_user_id`` policy. Reviewer access is authorised at the
-application layer exactly as it is for ``reports`` and ``checkpoint_responses``.
+an ``app.current_user_id`` policy. That policy is defence in depth for the
+STUDENT path only -- it matches the caller's own id, so it would exclude a
+reviewer too. Reviewer access is authorised in the application layer by
+``require_instructor``, exactly as it is for ``reports`` and
+``checkpoint_responses``.
 """
 from __future__ import annotations
 
@@ -435,6 +438,10 @@ class PlacementAttempt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     raw_score: Mapped[int | None] = mapped_column(Integer)
     answered_count: Mapped[int | None] = mapped_column(Integer)
+    #: Items that actually carried a defensible key. Below the blueprint
+    #: count when an item's key is disputed, and the reviewer must be able to
+    #: see that the result rests on fewer than thirty items.
+    scorable_count: Mapped[int | None] = mapped_column(Integer)
     #: ``{"1": 5, "2": 4, …}`` — correct count out of five per legacy band.
     band_scores: Mapped[dict | None] = mapped_column(JSONB)
     #: ``{"listening": {"correct": 9, "total": 12}, …}``.

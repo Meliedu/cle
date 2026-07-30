@@ -178,6 +178,9 @@ class ReviewQueueOut(BaseModel):
     needs_review: int
     ready_to_approve: int
     blocked: int
+    #: Across all pages, so a reviewer can tell there is more than this page.
+    total: int = 0
+    page: int = 1
     items: list[ReviewQueueItemOut]
 
 
@@ -228,6 +231,7 @@ class AttemptEvidenceOut(BaseModel):
     form_code: str
     raw_score: int | None = None
     answered_count: int | None = None
+    scorable_count: int | None = None
     band_scores: dict[str, int] | None = None
     skill_scores: dict[str, dict[str, int]] | None = None
     highest_sustained_band: int | None = None
@@ -249,12 +253,19 @@ class AttemptEvidenceOut(BaseModel):
     evidence_hash: str
 
 
+COURSE_CODES = Literal[
+    "LANG1511", "LANG1512", "LANG1513", "LANG1514", "LANG1515"
+]
+
+
 class DecisionIn(BaseModel):
     action: Literal[
         "approve", "override", "request_advising", "invalidate", "release",
         "resume_review",
     ]
-    final_course: str | None = Field(default=None, max_length=20)
+    #: Constrained to the real course codes: this string is shown to the
+    #: learner verbatim as their recommendation.
+    final_course: COURSE_CODES | None = None
     reason_code: str | None = Field(default=None, max_length=60)
     reason_text: str | None = Field(default=None, max_length=2000)
     evidence_hash: str | None = None

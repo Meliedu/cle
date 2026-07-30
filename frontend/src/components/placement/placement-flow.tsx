@@ -349,20 +349,26 @@ function EligibilityScreen({
           <li>{t("point3")}</li>
         </ul>
       </div>
+      {/* One press, both transitions. Splitting them across two identical
+          screens made the first click look like it had done nothing. */}
       <Button
         type="button"
         size="lg"
-        onClick={() =>
-          advance.mutate(
-            attempt.state === "created"
-              ? "confirm-eligibility"
-              : "acknowledge-instructions"
-          )
-        }
+        onClick={async () => {
+          if (attempt.state === "created") {
+            await advance.mutateAsync("confirm-eligibility");
+          }
+          await advance.mutateAsync("acknowledge-instructions");
+        }}
         disabled={advance.isPending}
       >
-        {t("confirm")}
+        {advance.isPending ? t("confirming") : t("confirm")}
       </Button>
+      {advance.isError ? (
+        <p className="text-[13px] text-[var(--color-error)]" role="alert">
+          {t("advanceFailed")}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -381,6 +387,10 @@ function InstructionsScreen({
   const t = useTranslations("placement.instructions");
   const advance = useAdvancePlacementAttempt(attempt.id);
   const [audioChecked, setAudioChecked] = useState(false);
+  // No approved recordings means nothing to check, and gating the exam on a
+  // headphone confirmation would lock out precisely the learners it claims to
+  // protect.
+  const needsAudioCheck = attempt.audio_available;
 
   return (
     <div className="space-y-5">
@@ -390,7 +400,7 @@ function InstructionsScreen({
         </h2>
         <ul className="mt-3 space-y-2 text-[14px] leading-relaxed text-[var(--color-text-secondary)]">
           <li>{t("rule1", { minutes: intro.duration_minutes })}</li>
-          <li>{t("rule2")}</li>
+          <li>{needsAudioCheck ? t("rule2") : t("rule2Proctor")}</li>
           <li>{t("rule3")}</li>
           <li>{t("rule4")}</li>
         </ul>
@@ -398,6 +408,7 @@ function InstructionsScreen({
 
       {/* Audio readiness runs before the timer, never during it: a learner must
           not lose exam minutes discovering their headphones are muted. */}
+      {needsAudioCheck ? (
       <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
         <div className="flex items-start gap-3">
           <Headphones
@@ -426,6 +437,25 @@ function InstructionsScreen({
           </div>
         </div>
       </div>
+      ) : (
+        <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+          <div className="flex items-start gap-3">
+            <Headphones
+              aria-hidden="true"
+              className="mt-0.5 size-5 shrink-0 text-[var(--color-text-secondary)]"
+              strokeWidth={1.9}
+            />
+            <div>
+              <h2 className="text-[15px] font-semibold text-[var(--color-text)]">
+                {t("proctorTitle")}
+              </h2>
+              <p className="mt-1 text-[14px] leading-relaxed text-[var(--color-text-secondary)]">
+                {t("proctorReason")}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <StateBanner tone="warning" title={t("timerTitle")} reason={t("timerReason")} />
 
@@ -433,10 +463,15 @@ function InstructionsScreen({
         type="button"
         size="lg"
         onClick={() => advance.mutate("begin")}
-        disabled={!audioChecked || advance.isPending}
+        disabled={(needsAudioCheck && !audioChecked) || advance.isPending}
       >
         {advance.isPending ? t("starting") : t("begin")}
       </Button>
+      {advance.isError ? (
+        <p className="text-[13px] text-[var(--color-error)]" role="alert">
+          {t("advanceFailed")}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -457,10 +492,30 @@ function ResultScreen({
   const t = useTranslations("placement.result");
   const tRoot = useTranslations("placement");
   const result = usePlacementResult(attemptId);
+  const [confirmingRetake, setConfirmingRetake] = useState(false);
   const start = useStartPlacementAttempt();
 
-  if (result.isLoading || !result.data) {
-    return <Skeleton className="h-48 w-full" />;
+  if (result.isLoading) {
+    return (
+      <div aria-busy="true">
+        <Skeleton className="h-48 w-full" />
+        <span className="sr-only">{tRoot("loading")}</span>
+      </div>
+    );
+  }
+  if (result.isError || !result.data) {
+    return (
+      <div className="space-y-4">
+        <StateBanner
+          tone="warning"
+          title={tRoot("lostContactTitle")}
+          reason={tRoot("lostContactReason")}
+        />
+        <Button type="button" size="lg" onClick={() => result.refetch()}>
+          {tRoot("retry")}
+        </Button>
+      </div>
+    );
   }
 
   const { released, recommended_course: course, state } = result.data;
@@ -562,18 +617,49 @@ function ResultScreen({
       </p>
 
       {intro.attempts_remaining > 0 ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          onClick={async () => {
-            const created = await start.mutateAsync();
-            onRestart(created.id);
-          }}
-          disabled={start.isPending}
-        >
-          {t("retake", { remaining: intro.attempts_remaining })}
-        </Button>
+        confirmingRetake ? (
+          // Spending an attempt is irreversible, so it gets the same treatment
+          // as submitting: say what it costs, then ask.
+          <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+            <p className="text-[15px] font-semibold text-[var(--color-text)]">
+              {t("retakeConfirmTitle")}
+            </p>
+            <p className="mt-1 text-[14px] leading-relaxed text-[var(--color-text-secondary)]">
+              {t("retakeConfirmReason", { remaining: intro.attempts_remaining })}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Button
+                type="button"
+                size="lg"
+                onClick={async () => {
+                  const created = await start.mutateAsync();
+                  onRestart(created.id);
+                }}
+                disabled={start.isPending}
+              >
+                {start.isPending ? t("retakeStarting") : t("retakeConfirm")}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={() => setConfirmingRetake(false)}
+                disabled={start.isPending}
+              >
+                {t("retakeCancel")}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            onClick={() => setConfirmingRetake(true)}
+          >
+            {t("retake", { remaining: intro.attempts_remaining })}
+          </Button>
+        )
       ) : null}
     </div>
   );

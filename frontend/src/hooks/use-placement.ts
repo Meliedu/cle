@@ -165,6 +165,8 @@ export interface PlacementEvidence {
   readonly form_code: string;
   readonly raw_score: number | null;
   readonly answered_count: number | null;
+  /** Items that carried a defensible key; below 30 when one is disputed. */
+  readonly scorable_count: number | null;
   readonly band_scores: Readonly<Record<string, number>> | null;
   readonly skill_scores: Readonly<
     Record<string, { correct: number; total: number }>
@@ -447,7 +449,9 @@ export interface PlacementDecisionInput {
     | "override"
     | "request_advising"
     | "invalidate"
-    | "release";
+    | "release"
+    // Returns a technical_review attempt to the ordinary queue.
+    | "resume_review";
   readonly final_course?: string | null;
   readonly reason_code?: string | null;
   readonly reason_text?: string | null;

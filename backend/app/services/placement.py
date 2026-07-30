@@ -35,7 +35,11 @@ from app.models.placement import (
 from app.models.user import User
 from app.services import placement_bank, placement_scoring, placement_state
 from app.services.placement_scoring import ScoredResponse, ScoringPolicy
+import logging
+
 from app.services.placement_state import PlacementStateError
+
+logger = logging.getLogger(__name__)
 
 #: Grace beyond the published duration before the server stops accepting saves.
 #: A learner whose last answer lands two seconds after the timer should not lose
@@ -649,7 +653,10 @@ async def score_attempt(
                 (PlacementResponse.item_id == PlacementItem.id)
                 & (PlacementResponse.attempt_id == attempt.id),
             )
-            .where(PlacementItem.form_id == attempt.form_id)
+            .where(
+                PlacementItem.form_id == attempt.form_id,
+                PlacementItem.is_active.is_(True),
+            )
             .order_by(PlacementItem.question_number)
         )
     ).all()
@@ -709,6 +716,7 @@ async def score_attempt(
 
     attempt.raw_score = result.raw_score
     attempt.answered_count = result.answered_count
+    attempt.scorable_count = result.scorable_count
     attempt.band_scores = {str(k): v for k, v in result.band_scores.items()}
     attempt.skill_scores = result.skill_scores
     attempt.highest_sustained_band = result.highest_sustained_band
@@ -802,6 +810,7 @@ async def sweep_stale_attempts(db: AsyncSession) -> dict[str, int]:
     )
 
     for attempt in running:
+      try:
         answered = int(
             (
                 await db.execute(
@@ -842,6 +851,11 @@ async def sweep_stale_attempts(db: AsyncSession) -> dict[str, int]:
         await score_attempt(db, attempt=attempt, actor=None)
         counts["submitted"] += 1
         await _audit_sweep(db, attempt, "auto_submitted", answered)
+      except Exception:  # noqa: BLE001
+        # One learner's bad row must not void the sweep for everyone else. The
+        # cron retries in five minutes; a permanently bad row shows up in the
+        # log rather than silently blocking every other expiry.
+        logger.exception("placement sweep failed for attempt %s", attempt.id)
 
     stale_before = now - timedelta(hours=ABANDON_AFTER_HOURS)
     waiting = (
@@ -1128,6 +1142,7 @@ class AttemptEvidence:
             "form_code": self.form_code,
             "raw_score": self.attempt.raw_score,
             "answered_count": self.attempt.answered_count,
+            "scorable_count": self.attempt.scorable_count,
             "band_scores": self.attempt.band_scores,
             "skill_scores": self.attempt.skill_scores,
             "highest_sustained_band": self.attempt.highest_sustained_band,

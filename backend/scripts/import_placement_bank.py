@@ -54,7 +54,15 @@ def _report(result: placement_bank.PreflightResult) -> None:
 
 async def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version-code", default=DEFAULT_VERSION)
+    parser.add_argument(
+        "--version-code",
+        default=DEFAULT_VERSION,
+        help=(
+            "Names the bank FILE to read. The version recorded in the "
+            "database is the `version_code` inside that file, which is not "
+            "the same string."
+        ),
+    )
     parser.add_argument("--file", type=Path, default=None)
     parser.add_argument(
         "--preflight-only",

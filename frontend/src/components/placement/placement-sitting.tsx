@@ -55,6 +55,8 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
   const [saveFailed, setSaveFailed] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [expired, setExpired] = useState(false);
+  const [offline, setOffline] = useState(false);
+  const [expiryFailed, setExpiryFailed] = useState(false);
   /** Question numbers whose answer could not be saved, blocking submission. */
   const [unsavedQuestions, setUnsavedQuestions] = useState<number[]>([]);
 
@@ -144,13 +146,47 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
   useEffect(() => {
     // A learner who loses connectivity mid-sitting produces evidence a reviewer
     // needs; recording it is what turns "their score looks odd" into "their
-    // network dropped for four minutes".
+    // network dropped for four minutes". It is also shown to the learner, who
+    // otherwise finds out only when a write fails.
     const onOffline = () => {
+      setOffline(true);
       reportInterruption.mutate({ kind: "offline" });
     };
+    const onOnline = () => setOffline(false);
     window.addEventListener("offline", onOffline);
-    return () => window.removeEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+    };
   }, [reportInterruption]);
+
+  // A real retry loop. Without this the copy promising retries was false: the
+  // only drain was the learner happening to change another answer.
+  useEffect(() => {
+    if (!saveFailed) return;
+    const id = window.setInterval(() => {
+      for (const [itemId, queued] of [...pending.current]) {
+        void persist(itemId, queued);
+      }
+    }, 8000);
+    return () => window.clearInterval(id);
+  }, [persist, saveFailed]);
+
+  // Nothing else guards navigation, and a partial ordering answer lives only in
+  // memory, so a refresh or a closed tab discards work with no warning.
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      const partial = items.some(
+        (item) => answers[item.id] && !isSubmittable(item.id, answers[item.id])
+      );
+      if (pending.current.size === 0 && !partial) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [answers, isSubmittable, items]);
 
   /**
    * @param force submit even if an answer could not be saved.
@@ -186,6 +222,9 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
       onSubmitted();
     } catch {
       setConfirming(false);
+      // On the timer path there is no dialog to fall back to, so surface a
+      // retry the learner can actually press.
+      if (force) setExpiryFailed(true);
     }
   }, [items, onSubmitted, persist, submit]);
 
@@ -255,13 +294,39 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
         />
       ) : null}
 
-      {expired ? (
-        <StateBanner tone="blocked" title={t("expiredTitle")} reason={t("expiredReason")} />
+      {offline && !expired ? (
+        <StateBanner tone="warning" title={t("offlineTitle")} reason={t("offlineReason")} />
       ) : null}
 
+      {expired ? (
+        <div className="space-y-3">
+          <StateBanner
+            tone="blocked"
+            title={t("expiredTitle")}
+            reason={expiryFailed ? t("expiredFailedReason") : t("expiredReason")}
+          />
+          {expiryFailed ? (
+            <Button
+              type="button"
+              size="lg"
+              onClick={() => {
+                setExpiryFailed(false);
+                void handleSubmit(true);
+              }}
+              disabled={submit.isPending}
+            >
+              {submit.isPending ? t("submitting") : t("expiredRetry")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* role="group": a generic element cannot be named, so aria-labelledby
+          on a plain div was a no-op for assistive tech. */}
       <div
         ref={questionRef}
         tabIndex={-1}
+        role="group"
         className="outline-none"
         aria-labelledby="placement-question-heading"
       >
@@ -271,6 +336,10 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
         >
           {t("questionHeading", { number: current.question_number })}
         </h2>
+        {/* Disabled once the clock stops: the server rejects every write past
+            the grace period, so leaving it live only produces failures the
+            learner cannot act on. */}
+        <fieldset disabled={expired} className="contents">
         <PlacementQuestion
           item={current}
           value={answers[current.id] ?? null}
@@ -279,6 +348,7 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
           onPlay={handlePlay}
           audioAvailable={attempt.audio_available}
         />
+        </fieldset>
       </div>
 
 
@@ -297,14 +367,14 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
         {index < items.length - 1 ? (
           <Button
             type="button"
-            size="lg"
+            size="xl"
             onClick={() => setIndex((value) => Math.min(items.length - 1, value + 1))}
           >
             {t("next")}
             <ChevronRight aria-hidden="true" />
           </Button>
         ) : (
-          <Button type="button" size="lg" onClick={() => setConfirming(true)}>
+          <Button type="button" size="xl" onClick={() => setConfirming(true)}>
             {t("reviewAndSubmit")}
           </Button>
         )}

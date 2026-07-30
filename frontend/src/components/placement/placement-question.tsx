@@ -246,7 +246,9 @@ function SequenceQuestion({
 
       <Stimulus item={item} />
 
-      <ol className="space-y-2">
+      {/* Unordered: an <ol> would assert the very sequence the learner is
+          being asked to work out. */}
+      <ul className="space-y-2">
         {item.options.map((option) => (
           <li
             key={option.letter}
@@ -263,7 +265,7 @@ function SequenceQuestion({
             </span>
           </li>
         ))}
-      </ol>
+      </ul>
 
       <div className="flex flex-wrap items-end gap-3">
         {item.option_letters.map((_, index) => {
@@ -284,13 +286,15 @@ function SequenceQuestion({
                 className="h-11 min-w-20 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[15px] text-[var(--color-text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
               >
                 <option value="">{t("orderEmpty")}</option>
-                {item.option_letters.map((letter) => (
+                {item.options.map((option) => (
                   <option
-                    key={letter}
-                    value={letter}
-                    disabled={current !== letter && letters.includes(letter)}
+                    key={option.letter}
+                    value={option.letter}
+                    disabled={
+                      current !== option.letter && letters.includes(option.letter)
+                    }
                   >
-                    {letter}
+                    {option.letter}. {option.text}
                   </option>
                 ))}
               </select>

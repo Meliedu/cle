@@ -468,8 +468,17 @@ def upgrade() -> None:
         "ON placement_audit_events (created_at DESC)"
     )
 
-    # RLS on the student-owned tables (pattern 28236be3d7b3). Enforcement runs
-    # under the non-superuser meli_app role; postgres has BYPASSRLS.
+    # RLS on the student-owned tables (pattern 28236be3d7b3): defence in depth
+    # against a query that forgets its own ownership filter.
+    #
+    # It is NOT the reviewer's authorisation. The policy matches on the CALLER's
+    # `app.current_user_id`, and a reviewer is never the owner, so under a
+    # non-BYPASSRLS role the CLE review surface would return zero rows and every
+    # attempt would 404 -- a silent under-fetch on a decision surface. Reviewer
+    # access is authorised in the application layer by `require_instructor`,
+    # exactly as it is for reports and checkpoint_responses. Granting the
+    # reviewer role a policy here is the change to make if the app is ever moved
+    # off a BYPASSRLS role; until then this comment is the honest description.
     for table, owner_col in RLS_TABLES:
         policy = f"{table}_owner_isolation"
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")

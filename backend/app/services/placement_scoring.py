@@ -66,8 +66,10 @@ SECTION_TOTALS: Mapping[str, int] = {
 #: it is genuinely useful, since this test cannot discriminate above band 5 --
 #: without overriding a signed-off result.
 #:
-#: This costs nothing in safety: no attempt reaches a learner without a CLE
-#: release either way. It only changes the confidence label and queue ordering.
+#: This costs nothing in safety. ``ScoreResult.requires_review`` is true for
+#: ANY flag, so a band-5/6 attempt still routes to ``review_pending`` and the
+#: spec's mandatory-review rule is honoured; what stays advisory is only the
+#: confidence LABEL, which is what the verified workbook scenario pins.
 REVIEW_FORCING_FLAGS: frozenset[str] = frozenset(
     {
         "incomplete_answers",
@@ -111,9 +113,12 @@ class ScoringPolicy:
     #: Minutes. Strictly below is "too fast"; strictly above is "too long".
     fast_duration_minutes: int = 12
     long_duration_minutes: int = 45
-    #: Declared-vs-measured band difference that triggers review.
+    #: Largest declared-vs-measured band difference that is TOLERATED.
+    #: A difference of exactly this many bands does not trigger review;
+    #: anything greater does.
     background_mismatch_bands: int = 1
-    #: Course-band spread across a learner's attempts that triggers review.
+    #: Largest spread across a learner's attempts that is TOLERATED. Adjacent
+    #: bands are normal; anything wider goes to review.
     attempt_spread_bands: int = 1
     #: Share of answered items on one letter that reads as a response pattern.
     repeated_answer_share: float = 0.8
@@ -232,8 +237,10 @@ def highest_sustained_band(scores: Mapping[int, int], policy: ScoringPolicy) -> 
     * at least ``band_minimum`` correct **at** that band; and
     * at least ``cumulative_threshold`` accuracy **through** that band.
 
-    Band 1 is the interesting case: 3/5 satisfies the minimum but 3/5 = 0.6 is
-    below 0.7, so band 1 in practice needs 4/5. The workbook notes this
+    Band 1 is the interesting case: its cumulative denominator is its own five
+    items, so 3/5 = 0.6 falls below the cumulative threshold that every other
+    band can clear with help from below. Band 1 therefore needs 4/5 in
+    practice. The workbook notes this
     explicitly ("Requires 4/5 at Band 1") and it is a property of the two rules
     interacting, not a special case.
     """
@@ -464,9 +471,10 @@ def _review_flags(
     if form_compromised:
         flags.append("form_compromised")
 
-    # 6. Cross-attempt instability, measured in course bands rather than raw
-    #    score: two attempts differing by one band map to adjacent courses,
-    #    which is normal; more than one is not.
+    # 6. Cross-attempt instability, measured in REFERENCE bands. Note this is
+    #    slightly stricter than the documents' "course" wording, because the
+    #    map collapses {0,1} and {5,6}: bands 0 and 2 differ by two but are
+    #    only one course apart. Erring toward more review, never less.
     if prior_attempt_bands:
         spread = max([sustained, *prior_attempt_bands]) - min([sustained, *prior_attempt_bands])
         if spread > policy.attempt_spread_bands:

@@ -18,6 +18,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, require_instructor
@@ -156,7 +157,10 @@ async def _attempt_out(
         (
             await db.execute(
                 select(func.count(PlacementItem.id)).where(
-                    PlacementItem.form_id == attempt.form_id
+                    PlacementItem.form_id == attempt.form_id,
+                    # Must match delivery_items, or the progress bar can never
+                    # reach its own denominator.
+                    PlacementItem.is_active.is_(True),
                 )
             )
         ).scalar_one()
@@ -211,28 +215,31 @@ async def get_intro(
             ),
         )
 
+    # Counted on ONE form, not divided across all of them: the learner sits a
+    # single form, and integer-dividing a non-uniform bank reported section
+    # counts that were simply wrong.
+    sample_form = (
+        await db.execute(
+            select(PlacementForm.id)
+            .where(
+                PlacementForm.test_version_id == version.id,
+                PlacementForm.status == "active",
+            )
+            .order_by(PlacementForm.form_code)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
     counts = (
         await db.execute(
             select(PlacementItem.section, func.count(PlacementItem.id))
-            .join(PlacementForm, PlacementForm.id == PlacementItem.form_id)
-            .where(PlacementForm.test_version_id == version.id)
+            .where(
+                PlacementItem.form_id == sample_form,
+                PlacementItem.is_active.is_(True),
+            )
             .group_by(PlacementItem.section)
         )
     ).all()
-    # Per-form counts, not the whole bank: the learner sits one form.
-    form_count = max(
-        1,
-        int(
-            (
-                await db.execute(
-                    select(func.count(PlacementForm.id)).where(
-                        PlacementForm.test_version_id == version.id
-                    )
-                )
-            ).scalar_one()
-        ),
-    )
-    section_counts = {section: total // form_count for section, total in counts}
+    section_counts = {section: total for section, total in counts}
 
     prior = await svc._prior_attempts(db, user_id=user.id, version_id=version.id)
     used = sum(1 for a in prior if a.state in placement_state.CONSUMING_STATES)
@@ -283,9 +290,10 @@ async def _advance(
 ) -> APIResponse[AttemptOut]:
     """Move an attempt one step, idempotently.
 
-    Re-posting a step the attempt has already passed returns it unchanged
-    rather than erroring: a client retry after a dropped response must not
-    strand the learner mid-flow.
+    Re-posting the step the attempt is CURRENTLY on returns it unchanged, so a
+    client retry after a dropped response does not strand the learner. Posting a
+    step the attempt has already moved past is a genuine conflict and still
+    errors -- it means the client's idea of the flow is stale.
     """
     attempt = await _load_own_attempt(attempt_id, user, db)
     if attempt.state == target:
@@ -509,8 +517,11 @@ async def list_my_attempts(
 
 @review_router.get("/queue", response_model=APIResponse[ReviewQueueOut])
 async def review_queue(
+    request: Request,
     state: str | None = Query(default=None),
-    _: User = Depends(require_instructor),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=50, ge=1, le=200),
+    reviewer: User = Depends(require_instructor),
     db: AsyncSession = Depends(get_db),
 ):
     """Attempts awaiting a CLE decision, most recently submitted first.
@@ -529,14 +540,29 @@ async def review_queue(
     ]
     wanted = [state] if state else open_states
 
+    total = int(
+        (
+            await db.execute(
+                select(func.count(PlacementAttempt.id)).where(
+                    PlacementAttempt.state.in_(wanted)
+                )
+            )
+        ).scalar_one()
+    )
     rows = (
         await db.execute(
             select(PlacementAttempt, PlacementForm.form_code, User.full_name, User.email)
             .join(PlacementForm, PlacementForm.id == PlacementAttempt.form_id)
             .join(User, User.id == PlacementAttempt.user_id)
             .where(PlacementAttempt.state.in_(wanted))
-            .order_by(PlacementAttempt.submitted_at.desc().nullslast())
-            .limit(200)
+            # created_at breaks the tie so an expired attempt, which has no
+            # submitted_at, does not sink below everything else and vanish.
+            .order_by(
+                PlacementAttempt.submitted_at.desc().nullslast(),
+                PlacementAttempt.created_at.desc(),
+            )
+            .offset((page - 1) * limit)
+            .limit(limit)
         )
     ).all()
 
@@ -573,12 +599,26 @@ async def review_queue(
     )
     ready = sum(1 for i in items if i.state in {"scored", "approved", "overridden"})
 
+    await svc.record_audit(
+        db,
+        actor=reviewer,
+        actor_role="instructor",
+        event_type="placement.review.queue.read",
+        entity_kind="placement_review_queue",
+        entity_id=reviewer.id,
+        request_id=request.headers.get("x-request-id"),
+        metadata={"returned": len(items), "total": total, "page": page},
+    )
+    await db.commit()
+
     return APIResponse(
         success=True,
         data=ReviewQueueOut(
             needs_review=needs_review,
             ready_to_approve=ready,
             blocked=blocked,
+            total=total,
+            page=page,
             items=items,
         ),
     )
@@ -589,7 +629,8 @@ async def review_queue(
 )
 async def attempt_evidence(
     attempt_id: uuid.UUID,
-    _: User = Depends(require_instructor),
+    request: Request,
+    reviewer: User = Depends(require_instructor),
     db: AsyncSession = Depends(get_db),
 ):
     """The full evidence bundle, including keys. Instructor-only."""
@@ -603,6 +644,20 @@ async def attempt_evidence(
     evidence = await svc.build_evidence(db, attempt=attempt)
     payload = evidence.as_dict()
     digest = placement_state.evidence_snapshot_hash(payload)
+
+    # Reading a learner's full answer sheet, keys and PII is an act worth
+    # recording. Without this there is no answer to "who looked at this".
+    await svc.record_audit(
+        db,
+        actor=reviewer,
+        actor_role="instructor",
+        event_type="placement.review.evidence.read",
+        entity_kind="placement_attempt",
+        entity_id=attempt.id,
+        request_id=request.headers.get("x-request-id"),
+        after_hash=digest,
+    )
+    await db.commit()
 
     return APIResponse(
         success=True,
@@ -791,7 +846,18 @@ async def publish_version(
     version.status = "published"
     version.published_by = reviewer.id
     version.published_at = datetime.now(timezone.utc)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as error:
+        # uq_placement_versions_single_published: another publish won the race
+        # between our check and our write.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "VERSION_ALREADY_PUBLISHED",
+                "message": "Another version was published while this request was in flight.",
+            },
+        ) from error
     await svc.record_audit(
         db,
         actor=reviewer,
@@ -824,6 +890,40 @@ async def retire_version(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "VERSION_NOT_FOUND", "message": "Version not found."},
         )
+    if version.status == "retired":
+        return APIResponse(success=True, data=await _version_out(db, version))
+
+    live = int(
+        (
+            await db.execute(
+                select(func.count(PlacementAttempt.id)).where(
+                    PlacementAttempt.test_version_id == version.id,
+                    PlacementAttempt.state.in_(
+                        [
+                            "created",
+                            "eligibility_confirmed",
+                            "instructions_acknowledged",
+                            "in_progress",
+                        ]
+                    ),
+                )
+            )
+        ).scalar_one()
+    )
+    if live:
+        # Retiring under a live sitting strands the learner with a running
+        # clock and no way back into their own attempt.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "VERSION_HAS_LIVE_ATTEMPTS",
+                "message": (
+                    f"{live} learner(s) are part-way through this version. "
+                    "Retiring it now would strand them."
+                ),
+            },
+        )
+
     version.status = "retired"
     version.retired_at = datetime.now(timezone.utc)
     await db.flush()

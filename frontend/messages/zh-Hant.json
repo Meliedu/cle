@@ -514,7 +514,7 @@
         "flagsTitle": "須審核的原因",
         "priorAttemptsTitle": "該學生的其他作答",
         "priorAttemptLabel": "第 {number} 次",
-        "priorAttemptValue": "{course} · 答對 {score} 題 · {state}",
+        "priorAttemptValue": "{course} · 答對 {score} 題 · 可信度 {confidence} · {state}",
         "answerSheetTitle": "作答明細",
         "answerSheetCaption": "逐題列出學生的答案、標準答案，以及是否計分。",
         "colQuestion": "題號",
@@ -544,14 +544,16 @@
           "override": "更改",
           "request_advising": "安排面談",
           "invalidate": "作廢",
-          "release": "向學生發放"
+          "release": "向學生發放",
+          "resume_review": "退回一般審核"
         },
         "actionHint": {
           "approve": "接受暫定課程，不作更改。",
           "override": "改選其他課程，並註明原因。",
           "request_advising": "先與學生面談再作決定。",
           "invalidate": "將此次作答擱置，不會佔用學生的可測次數。",
-          "release": "公布已核准的決定，學生會即時看到。"
+          "release": "公布已核准的決定，學生會即時看到。",
+          "resume_review": "技術問題已釐清，將此作答放回一般審核隊列。"
         },
         "finalCourseLabel": "課程",
         "reasonCodeLabel": "原因",
@@ -568,7 +570,17 @@
         "staleEvidence": "你閱讀期間此作答已有變動。請重新載入頁面，依最新資料作決定。",
         "record": "記錄決定",
         "recording": "正在記錄",
-        "blockedActionHint": "本卷仍有爭議題目時，只能選擇作廢。"
+        "blockedActionHint": "本卷仍有爭議題目時，只能選擇作廢。",
+        "failReleaseNotApproved": "此結果須先經核准或更改，才能發放。",
+        "failIllegalTransition": "此作答目前為「{state}」，無法執行該操作。",
+        "failBlockedByContent": "本卷仍有未解決的內容問題，此作答無法核准。",
+        "failGeneric": "無法記錄該決定，資料未有變動，請再試一次。",
+        "bandNoneSustained": "未達任何級別",
+        "scoreValueReduced": "答對 {score} 題，已作答 {answered} 題，實際計分題數 {scorable}",
+        "underAMinute": "不足一分鐘",
+        "reasonTextLabelRequired": "備註（必填）",
+        "reasonTextHintRequired": "請以你自己的文字說明原因。會與決定一併保存以供稽核，學生不會看到。",
+        "decisionsSoFarTitle": "已記錄的決定"
       },
       "linkTitle": "分級審核",
       "linkReason": "有 {waiting} 份分級結果待決定。",
@@ -875,21 +887,27 @@
       "point1": "開始後會啟動 {minutes} 分鐘計時，中途不會暫停。",
       "point2": "不可使用字典、翻譯工具，也不可由他人協助作答。",
       "point3": "請作答每一題。猜答不會被扣分。",
-      "confirm": "我明白，繼續"
+      "confirm": "我明白，繼續",
+      "confirming": "處理中",
+      "advanceFailed": "無法繼續。資料未有遺失，請再試一次。"
     },
     "instructions": {
       "title": "測驗方式",
       "rule1": "全部題目共有 {minutes} 分鐘作答時間。",
       "rule2": "聽力錄音的播放次數有限，超過次數後不能再播放。",
       "rule3": "你可以自由前後切換題目，並在提交前修改答案。",
-      "rule4": "作答會自動儲存。若連線中斷，請繼續作答，系統會自動重試。",
+      "rule4": "作答會自動儲存；若連線中斷，系統會在背景持續嘗試送出。請繼續作答。",
       "audioTitle": "請先檢查音訊",
       "audioReason": "計時開始後隨即進入聽力部分。先行檢查可避免因耳機靜音而浪費作答時間。",
       "audioConfirm": "我在此裝置上可以聽到聲音",
       "timerTitle": "計時將於下一頁開始",
       "timerReason": "計時不會暫停，關閉分頁亦不會停止計時。",
       "begin": "開始計時並作答",
-      "starting": "正在開始"
+      "starting": "正在開始",
+      "rule2Proctor": "聽力內容由監考人員朗讀，每題兩次，沒有錄音可供播放。",
+      "proctorTitle": "聽力由人員朗讀",
+      "proctorReason": "本卷尚未有錄音，聽力內容由監考人員朗讀兩次。你不需要耳機。",
+      "advanceFailed": "無法繼續。資料未有遺失，請再試一次。"
     },
     "sitting": {
       "section": {
@@ -934,7 +952,11 @@
       "startedSuffix": "已開始但未完成",
       "goToQuestion": "前往第 {number} 題",
       "unsavedTitle": "部分答案未能儲存",
-      "unsavedReason": "第 {questions} 題的答案尚未送達，現在提交會遺失該答案。請檢查網絡連線，系統會持續嘗試。請勿關閉此分頁。"
+      "unsavedReason": "第 {questions} 題的答案尚未送達，現在提交會遺失該答案。請檢查網絡連線，系統會持續嘗試。請勿關閉此分頁。",
+      "offlineTitle": "目前離線",
+      "offlineReason": "你的答案暫存於此裝置，連線恢復後會自動送出。請繼續作答，不要關閉此分頁。",
+      "expiredFailedReason": "時間已到，但未能提交你的作答。答案仍然保存中。請再試一次，或保持此頁開啟，語文教育中心會接手處理。",
+      "expiredRetry": "再試一次提交"
     },
     "result": {
       "pendingTitle": "你的作答已送交語文教育中心",
@@ -954,7 +976,12 @@
       "abandonedReason": "你開始了一次測驗但未進入題目，系統已自動關閉。此次不會佔用你的可測次數。",
       "technical_reviewTitle": "我們正在檢查技術問題",
       "technical_reviewReason": "測驗過程中出現中斷，語文教育中心會先了解情況再作決定。你不需要採取任何行動，他們會與你聯絡。",
-      "startAgain": "重新開始測驗（尚餘 {remaining} 次）"
+      "startAgain": "重新開始測驗（尚餘 {remaining} 次）",
+      "retakeConfirmTitle": "確定要再測一次？",
+      "retakeConfirmReason": "這會開始新一次測驗，並用掉你尚餘 {remaining} 次中的一次。已發放的推薦結果仍會保留。",
+      "retakeConfirm": "是，開始新一次測驗",
+      "retakeCancel": "暫時不要",
+      "retakeStarting": "正在開始"
     },
     "lostContactTitle": "與伺服器失去連線",
     "lostContactReason": "你的測驗仍在進行，已儲存的答案安全無虞。這是連線問題，並非測驗本身出錯。",

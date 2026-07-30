@@ -90,10 +90,12 @@ export function PlacementTimer({ expiresAt, onExpire }: PlacementTimerProps) {
           "text-[15px] font-medium tabular-nums",
           warning ? "text-[var(--color-error)]" : "text-[var(--color-text)]"
         )}
+        // Labelled, not suffixed: a trailing sr-only span reads as
+        // "12:34, time remaining" instead of naming the value.
+        aria-label={`${t("timeRemainingLabel")}: ${format(remaining)}`}
       >
         {format(remaining)}
       </span>
-      <span className="sr-only">{t("timeRemainingLabel")}</span>
       {/* Milestone announcements only, so assistive tech is not flooded. */}
       <span role="status" aria-live="polite" className="sr-only">
         {announcement}

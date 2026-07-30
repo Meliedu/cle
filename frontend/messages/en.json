@@ -2467,7 +2467,7 @@
         "flagsTitle": "Why this needs review",
         "priorAttemptsTitle": "Other attempts by this student",
         "priorAttemptLabel": "Attempt {number}",
-        "priorAttemptValue": "{course} · {score} correct · {state}",
+        "priorAttemptValue": "{course} · {score} correct · {confidence} confidence · {state}",
         "answerSheetTitle": "Answer sheet",
         "answerSheetCaption": "Every question with the student's answer, the key, and whether it scored.",
         "colQuestion": "Q",
@@ -2497,14 +2497,16 @@
           "override": "Override",
           "request_advising": "Request advising",
           "invalidate": "Invalidate",
-          "release": "Release to the student"
+          "release": "Release to the student",
+          "resume_review": "Return to normal review"
         },
         "actionHint": {
           "approve": "Accept the provisional course as it stands.",
           "override": "Choose a different course, with a reason.",
           "request_advising": "Ask to speak with the student before deciding.",
           "invalidate": "Set this attempt aside. It does not use up one of the student's attempts.",
-          "release": "Publish the approved decision. The student sees it immediately."
+          "release": "Publish the approved decision. The student sees it immediately.",
+          "resume_review": "The technical problem is understood. Put this back in the ordinary queue."
         },
         "finalCourseLabel": "Course",
         "reasonCodeLabel": "Reason",
@@ -2521,10 +2523,20 @@
         "staleEvidence": "This attempt changed while you were reading it. Reload the page and decide on the current evidence.",
         "record": "Record decision",
         "recording": "Recording",
-        "blockedActionHint": "Only invalidation is available while a question on this form is disputed."
+        "blockedActionHint": "Only invalidation is available while a question on this form is disputed.",
+        "failReleaseNotApproved": "This result has to be approved or overridden before it can be released.",
+        "failIllegalTransition": "That action is not available while this attempt is {state}.",
+        "failBlockedByContent": "This attempt cannot be approved while its form has an unresolved content problem.",
+        "failGeneric": "We could not record that decision. Nothing has changed; please try again.",
+        "bandNoneSustained": "None sustained",
+        "scoreValueReduced": "{score} correct, {answered} answered, scored out of {scorable}",
+        "underAMinute": "Under a minute",
+        "reasonTextLabelRequired": "Note (required)",
+        "reasonTextHintRequired": "Say why, in your own words. Kept with the decision for audit; the student does not see it.",
+        "decisionsSoFarTitle": "Decisions so far"
       },
       "linkTitle": "Placement review",
-      "linkReason": "{waiting} placement result(s) waiting for a decision.",
+      "linkReason": "{waiting, plural, one {# placement result is} other {# placement results are}} waiting for a decision.",
       "linkReasonBlocked": "{waiting} waiting, {blocked} blocked by a content problem."
     }
   },
@@ -3606,7 +3618,7 @@
       "timeLabel": "Time",
       "timeValue": "{minutes} minutes",
       "itemsLabel": "Questions",
-      "itemsValue": "{count} questions",
+      "itemsValue": "{count, plural, one {# question} other {# questions}}",
       "attemptsLabel": "Attempts",
       "attemptsValue": "{remaining} of {total} left",
       "structureTitle": "What you will be asked",
@@ -3615,7 +3627,7 @@
         "language_use": "Language use",
         "reading": "Reading"
       },
-      "questionCount": "{count} questions",
+      "questionCount": "{count, plural, one {# question} other {# questions}}",
       "privacyTitle": "How your answers are used",
       "accommodation": "If you need an accommodation, such as extra time or an alternative format, contact CLE before you start rather than during the test.",
       "exhaustedTitle": "You have used all your attempts",
@@ -3631,21 +3643,27 @@
       "point1": "Once you start, a {minutes}-minute timer runs and does not pause.",
       "point2": "Do not use a dictionary, a translation tool, or help from another person.",
       "point3": "Answer every question. There is no penalty for guessing.",
-      "confirm": "I understand, continue"
+      "confirm": "I understand, continue",
+      "confirming": "Continuing",
+      "advanceFailed": "We could not continue. Nothing has been lost; please try again."
     },
     "instructions": {
       "title": "How the screener works",
       "rule1": "You have {minutes} minutes for all questions.",
       "rule2": "Listening recordings play a set number of times. You cannot replay them beyond that limit.",
       "rule3": "You can move between questions freely and change an answer before you submit.",
-      "rule4": "Your answers save as you go. If your connection drops, keep going; we will retry.",
+      "rule4": "Your answers save as you go, and we keep trying in the background if the connection drops. Keep going.",
       "audioTitle": "Check your audio now",
       "audioReason": "The listening section starts immediately after the timer does. Checking now means you do not lose exam time to a muted headset.",
       "audioConfirm": "I can hear audio on this device",
       "timerTitle": "The timer starts on the next screen",
       "timerReason": "It does not pause, and closing the tab does not stop it.",
       "begin": "Start the timer and begin",
-      "starting": "Starting"
+      "starting": "Starting",
+      "rule2Proctor": "The listening scripts are read aloud by the person supervising your test, twice each. There is nothing to play.",
+      "proctorTitle": "Listening is read aloud",
+      "proctorReason": "There are no recordings for this paper yet, so the person supervising reads each listening script twice. You do not need headphones.",
+      "advanceFailed": "We could not continue. Nothing has been lost; please try again."
     },
     "sitting": {
       "section": {
@@ -3664,7 +3682,7 @@
       "next": "Next",
       "reviewAndSubmit": "Review and submit",
       "confirmTitle": "Submit your answers?",
-      "confirmUnanswered": "{unanswered} questions are still unanswered. Unanswered questions are marked wrong, and there is no penalty for guessing.",
+      "confirmUnanswered": "{unanswered, plural, one {# question is} other {# questions are}} still unanswered. Unanswered questions are marked wrong, and there is no penalty for guessing.",
       "confirmAll": "You have answered every question.",
       "confirmFinal": "You cannot change your answers after you submit.",
       "submitConfirm": "Submit",
@@ -3678,19 +3696,23 @@
       "loadingTitle": "Loading your questions",
       "loadingReason": "This takes a moment.",
       "playAudio": "Play audio",
-      "playsLeft": "{count} of {total} plays left",
+      "playsLeft": "{count, plural, one {# play} other {# plays}} left of {total}",
       "orderPosition": "Position {position}",
       "orderEmpty": "Choose",
       "timeRemainingLabel": "Time remaining",
-      "minutesLeft": "{minutes} minutes remaining",
+      "minutesLeft": "{minutes, plural, one {# minute} other {# minutes}} remaining",
       "timeUp": "Time is up. Your answers are being submitted.",
       "sectionProgress": "{section}, section {index} of {total}",
-      "proctorRead": "The listening script for this question is read aloud {plays} times by the person supervising your test. There is no recording to play.",
+      "proctorRead": "The listening script for this question is read aloud {plays, plural, one {once} other {# times}} by the person supervising your test. There is no recording to play.",
       "goToStarted": "Question {number}, started but not finished",
       "startedSuffix": "started but not finished",
       "goToQuestion": "Go to {number}",
       "unsavedTitle": "We could not save every answer",
-      "unsavedReason": "Question {questions} has not reached us yet, so submitting now would lose it. Check your connection; we will keep trying. Do not close this tab."
+      "unsavedReason": "Question {questions} has not reached us yet, so submitting now would lose it. Check your connection; we will keep trying. Do not close this tab.",
+      "offlineTitle": "You are offline",
+      "offlineReason": "Your answers are held on this device and will be sent when the connection comes back. Keep answering; do not close this tab.",
+      "expiredFailedReason": "Time is up, but we could not submit your answers. They are still saved. Try again, or leave this page open and CLE will pick it up.",
+      "expiredRetry": "Try submitting again"
     },
     "result": {
       "pendingTitle": "Your answers are with CLE",
@@ -3710,7 +3732,12 @@
       "abandonedReason": "You started an attempt but did not begin the questions, so it was closed automatically. It did not use up one of your attempts.",
       "technical_reviewTitle": "We are checking a technical problem",
       "technical_reviewReason": "Something interrupted your test, so CLE is looking at what happened before deciding anything. You do not need to do anything; they will be in touch.",
-      "startAgain": "Start the screener again ({remaining} left)"
+      "startAgain": "Start the screener again ({remaining} left)",
+      "retakeConfirmTitle": "Take the screener again?",
+      "retakeConfirmReason": "This starts a new attempt and uses one of the {remaining} you have left. Your released recommendation stays on file.",
+      "retakeConfirm": "Yes, start a new attempt",
+      "retakeCancel": "Not now",
+      "retakeStarting": "Starting"
     },
     "lostContactTitle": "We lost contact with the server",
     "lostContactReason": "Your attempt is still running and your saved answers are safe. This is a connection problem, not a problem with your test.",
