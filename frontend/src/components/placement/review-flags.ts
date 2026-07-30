@@ -20,6 +20,7 @@ export const REVIEW_FLAG_CODES = [
   "response_pattern_anomaly",
   "item_key_disputed",
   "high_band_ceiling",
+  "timing_inconsistent",
 ] as const;
 
 export type ReviewFlagCode = (typeof REVIEW_FLAG_CODES)[number];
@@ -45,6 +46,7 @@ export const REVIEW_FLAG_SEVERITY: Readonly<
   technical_interruption: "review",
   attempt_spread: "review",
   response_pattern_anomaly: "review",
+  timing_inconsistent: "review",
   high_band_ceiling: "advisory",
 };
 

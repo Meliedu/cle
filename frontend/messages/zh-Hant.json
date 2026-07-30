@@ -470,7 +470,9 @@
         "item_key_disputed": "題目答案有爭議",
         "item_key_disputedDetail": "本卷有題目未有共識答案，已不計入分數，因此總分並非以 30 題計算。",
         "high_band_ceiling": "已達測驗上限",
-        "high_band_ceilingDetail": "結果已達本測驗可分辨的上限，因此無法為更高一級的分界提供證據。"
+        "high_band_ceilingDetail": "結果已達本測驗可分辨的上限，因此無法為更高一級的分界提供證據。",
+        "timing_inconsistent": "回報的作答時間不合理",
+        "timing_inconsistentDetail": "瀏覽器回報的各題作答時間總和超過整場測驗的長度。這在事實上不可能發生，因此本次作答的時間證據不可採信。"
       },
       "review": {
         "loading": "正在載入作答紀錄",

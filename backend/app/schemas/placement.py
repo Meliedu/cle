@@ -111,8 +111,11 @@ class AttemptDetailOut(AttemptOut):
 class ResponseSaveIn(BaseModel):
     item_id: str
     response: str | None = None
-    time_spent_ms: int | None = Field(default=None, ge=0)
-    audio_play_count: int | None = Field(default=None, ge=0)
+    #: Bounded, not just non-negative. An int4 overflow here raised out of
+    #: the INSERT as an uncaught DataError. 24h is far beyond any real item
+    #: dwell and still safely inside the column.
+    time_spent_ms: int | None = Field(default=None, ge=0, le=86_400_000)
+    audio_play_count: int | None = Field(default=None, ge=0, le=1_000)
     connection_state: str | None = None
 
     @field_validator("response")

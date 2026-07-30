@@ -324,3 +324,74 @@ async def test_an_approved_accommodation_does_not_produce_an_unexplained_review(
     assert "duration_too_long" not in result.review_flags
     # The point: no flag AND no unexplained review.
     assert result.confidence != "review" or result.review_flags
+
+
+async def test_an_unbounded_response_field_does_not_500(
+    client, published, db_session, student
+):
+    """One unprivileged request could poison the session on a timed exam.
+
+    `ge=0` with no upper bound let a value above int4 range through Pydantic,
+    and the INSERT then raised out of the route as an uncaught DataError.
+    """
+    detail = await _begin(client, student)
+    response = await client.put(
+        f"/api/placement/attempts/{detail['id']}/responses",
+        json={
+            "item_id": detail["items"][0]["id"],
+            "response": "A",
+            "time_spent_ms": 3_000_000_000,
+        },
+    )
+    # Rejected as invalid input, not a server error.
+    assert response.status_code == 422, response.text
+
+    # And the endpoint still works afterwards, i.e. nothing was poisoned.
+    ok = await client.put(
+        f"/api/placement/attempts/{detail['id']}/responses",
+        json={"item_id": detail["items"][0]["id"], "response": "A"},
+    )
+    assert ok.status_code == 200, ok.text
+
+
+async def test_reported_item_time_exceeding_the_sitting_is_flagged():
+    """Per-item timing is client-reported; the wall clock is not.
+
+    Inflating it muted the fast-item half of the response-pattern trigger. The
+    total cannot exceed the sitting, and the sitting is timed server-side, so
+    the inconsistency is detectable even though the numbers are not trustworthy.
+    """
+    from app.services.placement_scoring import ScoredResponse, score_attempt
+
+    inflated = [
+        ScoredResponse(
+            question_number=i + 1,
+            legacy_band=(i // 5) + 1,
+            section="reading",
+            response="A",
+            correct_answer="A",
+            time_spent_ms=999_999,
+        )
+        for i in range(30)
+    ]
+    result = score_attempt(inflated, duration_seconds=30 * 60)
+    assert "timing_inconsistent" in result.review_flags
+    assert result.confidence == "review"
+
+
+async def test_honest_item_timing_is_not_flagged():
+    from app.services.placement_scoring import ScoredResponse, score_attempt
+
+    honest = [
+        ScoredResponse(
+            question_number=i + 1,
+            legacy_band=(i // 5) + 1,
+            section="reading",
+            response=chr(65 + i % 4),
+            correct_answer="A",
+            time_spent_ms=30_000,
+        )
+        for i in range(30)
+    ]
+    result = score_attempt(honest, duration_seconds=30 * 60)
+    assert "timing_inconsistent" not in result.review_flags

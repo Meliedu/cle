@@ -41,6 +41,13 @@ export function PlacementTimer({ expiresAt, onExpire }: PlacementTimerProps) {
     Math.max(0, Math.round((deadline - Date.now()) / 1000))
   );
   const fired = useRef(false);
+  // Held in a ref so the interval below does not depend on a callback whose
+  // identity changes on every parent render. Assigned in an effect, because
+  // writing a ref during render is not allowed.
+  const onExpireRef = useRef(onExpire);
+  useEffect(() => {
+    onExpireRef.current = onExpire;
+  }, [onExpire]);
   // Announce at 10 and 5 minutes and at zero, not continuously.
   const announced = useRef<Set<number>>(new Set());
   const [announcement, setAnnouncement] = useState("");
@@ -63,13 +70,13 @@ export function PlacementTimer({ expiresAt, onExpire }: PlacementTimerProps) {
 
       if (next === 0 && !fired.current) {
         fired.current = true;
-        onExpire();
+        onExpireRef.current();
       }
     };
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  }, [deadline, onExpire, t]);
+  }, [deadline, t]);
 
   const warning = remaining <= WARN_AT_SECONDS;
 

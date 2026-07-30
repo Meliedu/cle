@@ -2423,7 +2423,9 @@
         "item_key_disputed": "Disputed question",
         "item_key_disputedDetail": "A question on this form has no agreed answer. It was excluded from the score, so the total is out of fewer than 30.",
         "high_band_ceiling": "At the test ceiling",
-        "high_band_ceilingDetail": "The result sits at the top of what this screener can distinguish, so the boundary above it is not evidenced here."
+        "high_band_ceilingDetail": "The result sits at the top of what this screener can distinguish, so the boundary above it is not evidenced here.",
+        "timing_inconsistent": "Reported time does not add up",
+        "timing_inconsistentDetail": "The per-question times the browser reported add up to more than the sitting itself lasted. That is impossible, so treat the timing evidence on this attempt as unreliable."
       },
       "review": {
         "loading": "Loading the attempt",

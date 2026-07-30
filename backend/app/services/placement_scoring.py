@@ -82,6 +82,9 @@ REVIEW_FORCING_FLAGS: frozenset[str] = frozenset(
         "attempt_spread",
         "response_pattern_anomaly",
         "item_key_disputed",
+        # Reported item time exceeding the sitting is impossible, so it is
+        # evidence of a manipulated client rather than a judgement call.
+        "timing_inconsistent",
     }
 )
 
@@ -483,6 +486,15 @@ def _review_flags(
     # 7. Response-pattern anomalies.
     if _has_response_pattern_anomaly(responses, policy):
         flags.append("response_pattern_anomaly")
+
+    #    Per-item timing is reported by the client, so inflating it mutes the
+    #    fast-item half of the check above. The total cannot exceed the sitting
+    #    itself, and the sitting is timed by the server, so the inconsistency is
+    #    detectable even though the individual numbers are not trustworthy.
+    if duration_seconds:
+        reported = sum(item.time_spent_ms or 0 for item in responses)
+        if reported > duration_seconds * 1000:
+            flags.append("timing_inconsistent")
 
     # 8. A legacy HSK5/6 result maps to the ceiling course, so the boundary
     #    cannot be evidenced by this test and needs a human look.

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import messages from "../../../messages/en.json";
@@ -103,5 +106,38 @@ describe("flag copy", () => {
     for (const word of ["cheat", "cheating", "dishonest", "fraud"]) {
       expect(detail).not.toContain(word);
     }
+  });
+});
+
+describe("mirror of the backend trigger list", () => {
+  it("knows every flag the scorer can emit", () => {
+    // REVIEW_FLAG_CODES is hand-maintained, and the header used to claim an
+    // exhaustiveness check that did not exist. This is that check: it reads the
+    // real Python source, so a trigger added on the backend fails here instead
+    // of reaching next-intl as a missing key in front of a reviewer.
+    const source = readFileSync(
+      resolve(__dirname, "../../../../backend/app/services/placement_scoring.py"),
+      "utf8"
+    );
+    const emitted = new Set(
+      [...source.matchAll(/flags\.append\(\s*"([a-z_]+)"\s*\)/g)].map((m) => m[1])
+    );
+    expect(emitted.size).toBeGreaterThan(5);
+
+    const known = new Set<string>(REVIEW_FLAG_CODES);
+    const missing = [...emitted].filter((code) => !known.has(code));
+    expect(missing, `backend emits flags the UI cannot render: ${missing}`).toEqual([]);
+  });
+
+  it("does not carry codes the backend no longer emits", () => {
+    const source = readFileSync(
+      resolve(__dirname, "../../../../backend/app/services/placement_scoring.py"),
+      "utf8"
+    );
+    const emitted = new Set(
+      [...source.matchAll(/flags\.append\(\s*"([a-z_]+)"\s*\)/g)].map((m) => m[1])
+    );
+    const stale = REVIEW_FLAG_CODES.filter((code) => !emitted.has(code));
+    expect(stale, `UI carries dead flag codes: ${stale}`).toEqual([]);
   });
 });
