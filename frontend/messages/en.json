@@ -3698,7 +3698,14 @@
       "releasedReason": "CLE has reviewed your result and released this recommendation. Course registration is handled separately.",
       "retake": "Take the screener again ({remaining} left)",
       "invalidatedTitle": "This attempt was set aside",
-      "invalidatedReason": "CLE has invalidated this attempt. Contact CLE to find out what to do next."
+      "invalidatedReason": "CLE has invalidated this attempt. Contact CLE to find out what to do next.",
+      "expiredTitle": "Your time ran out before you answered anything",
+      "expiredReason": "The screener closed when the time limit passed. Nothing was recorded, so there is no result to review. If something stopped you from starting, contact CLE and they can give this attempt back.",
+      "abandonedTitle": "This attempt was closed",
+      "abandonedReason": "You started an attempt but did not begin the questions, so it was closed automatically. It did not use up one of your attempts.",
+      "technical_reviewTitle": "We are checking a technical problem",
+      "technical_reviewReason": "Something interrupted your test, so CLE is looking at what happened before deciding anything. You do not need to do anything; they will be in touch.",
+      "startAgain": "Start the screener again ({remaining} left)"
     }
   }
 }

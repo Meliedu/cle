@@ -440,6 +440,38 @@ function ResultScreen({
     );
   }
 
+  // The states the expiry sweep produces. Each needs its own screen: falling
+  // through to "your answers are with CLE" would tell a learner who answered
+  // nothing, or who never began, that work they did not do is being reviewed.
+  if (state === "expired" || state === "abandoned" || state === "technical_review") {
+    const canRetry = state !== "technical_review" && intro.attempts_remaining > 0;
+    return (
+      <div className="space-y-5">
+        <StateBanner
+          tone={state === "technical_review" ? "waiting" : "warning"}
+          title={t(`${state}Title`)}
+          reason={t(`${state}Reason`)}
+        />
+        {canRetry ? (
+          <Button
+            type="button"
+            size="lg"
+            onClick={async () => {
+              const created = await start.mutateAsync();
+              onRestart(created.id);
+            }}
+            disabled={start.isPending}
+          >
+            {t("startAgain", { remaining: intro.attempts_remaining })}
+          </Button>
+        ) : null}
+        <p className="text-[13px] leading-relaxed text-[var(--color-text-muted)]">
+          {claimLimit}
+        </p>
+      </div>
+    );
+  }
+
   if (!released) {
     return (
       <div className="space-y-5">

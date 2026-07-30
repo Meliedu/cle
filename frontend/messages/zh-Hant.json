@@ -942,7 +942,14 @@
       "releasedReason": "語文教育中心已完成審核並發放此推薦。選課手續需另行辦理。",
       "retake": "再測一次（尚餘 {remaining} 次）",
       "invalidatedTitle": "此次作答已被作廢",
-      "invalidatedReason": "語文教育中心已將此次作答作廢。請聯絡中心了解後續安排。"
+      "invalidatedReason": "語文教育中心已將此次作答作廢。請聯絡中心了解後續安排。",
+      "expiredTitle": "作答時間已到，你尚未作答任何題目",
+      "expiredReason": "測驗已於時限結束時關閉。由於沒有任何紀錄，因此沒有結果可供審核。若有事情令你無法開始，請聯絡語文教育中心，他們可為你恢復此次機會。",
+      "abandonedTitle": "此次作答已關閉",
+      "abandonedReason": "你開始了一次測驗但未進入題目，系統已自動關閉。此次不會佔用你的可測次數。",
+      "technical_reviewTitle": "我們正在檢查技術問題",
+      "technical_reviewReason": "測驗過程中出現中斷，語文教育中心會先了解情況再作決定。你不需要採取任何行動，他們會與你聯絡。",
+      "startAgain": "重新開始測驗（尚餘 {remaining} 次）"
     }
   }
 }
