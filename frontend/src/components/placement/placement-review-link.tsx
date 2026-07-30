@@ -36,7 +36,7 @@ export function PlacementReviewLink() {
         "flex items-center gap-4 rounded-[var(--radius-xl)] border bg-[var(--color-surface)] p-5",
         "outline-none transition-colors duration-150",
         "hover:bg-[var(--color-surface-hover)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40",
-        blocked ? "border-[var(--color-danger)]/40" : "border-[var(--color-border)]"
+        blocked ? "border-[var(--color-error)]/40" : "border-[var(--color-border)]"
       )}
     >
       <span

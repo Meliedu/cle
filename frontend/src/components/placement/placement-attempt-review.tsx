@@ -47,7 +47,7 @@ export function PlacementAttemptReview({ attemptId }: { readonly attemptId: stri
 
   if (evidence.isLoading) {
     return (
-      <div className="mx-auto w-full max-w-4xl space-y-6 py-2" aria-busy="true">
+      <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-2 sm:px-6" aria-busy="true">
         <Skeleton className="h-10 w-2/3" />
         <Skeleton className="h-64 w-full" />
         <span className="sr-only">{t("loading")}</span>
@@ -102,10 +102,10 @@ function ReviewBody({ evidence }: { readonly evidence: PlacementEvidence }) {
   }, [action, decide, evidence.evidence_hash, finalCourse, reasonCode, reasonText]);
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 py-2">
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-2 sm:px-6">
       <Link
         href="/teacher/placement"
-        className="inline-flex items-center gap-1 text-[14px] font-medium text-[var(--color-primary-hover)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 pointer-coarse:min-h-11"
+        className="inline-flex items-center gap-1 text-[14px] font-medium text-[var(--color-text)] underline underline-offset-4 outline-none hover:no-underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 pointer-coarse:min-h-11"
       >
         <ChevronLeft aria-hidden="true" className="size-4" />
         {t("backToQueue")}
@@ -177,7 +177,7 @@ function ReviewBody({ evidence }: { readonly evidence: PlacementEvidence }) {
               }
             />
           </dl>
-          <p className="mt-4 text-[12px] text-[var(--color-text-muted)]">
+          <p className="mt-4 text-[12px] text-[var(--color-text-secondary)]">
             {t("versionFootnote", {
               key: evidence.key_version ?? "—",
               rule: evidence.rule_version ?? "—",
@@ -252,7 +252,7 @@ function ReviewBody({ evidence }: { readonly evidence: PlacementEvidence }) {
                     : "border-[var(--color-border)]"
                 )}
               >
-                <p className="text-[12px] uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
+                <p className="text-[12px] uppercase tracking-[0.1em] text-[var(--color-text-secondary)]">
                   {t("bandLabel", { band })}
                 </p>
                 <p className="mt-1 text-[18px] font-semibold tabular-nums text-[var(--color-text)]">
@@ -263,7 +263,7 @@ function ReviewBody({ evidence }: { readonly evidence: PlacementEvidence }) {
           })}
         </ul>
         {evidence.lower_band_break ? (
-          <p className="mt-3 text-[13px] text-[var(--color-warning)]">
+          <p className="mt-3 text-[13px] text-[var(--color-text)]">
             {t("lowerBandBreakNote")}
           </p>
         ) : null}
@@ -285,10 +285,10 @@ function ReviewBody({ evidence }: { readonly evidence: PlacementEvidence }) {
                     className={cn(
                       "mt-0.5 size-4 shrink-0",
                       severity === "blocking"
-                        ? "text-[var(--color-danger)]"
+                        ? "text-[var(--color-error)]"
                         : severity === "review"
-                          ? "text-[var(--color-warning)]"
-                          : "text-[var(--color-text-muted)]"
+                          ? "text-[var(--color-text-secondary)]"
+                          : "text-[var(--color-text-secondary)]"
                     )}
                     strokeWidth={1.9}
                   />
@@ -344,7 +344,7 @@ function ReviewBody({ evidence }: { readonly evidence: PlacementEvidence }) {
           <table className="w-full min-w-[36rem] text-[14px]">
             <caption className="sr-only">{t("answerSheetCaption")}</caption>
             <thead>
-              <tr className="border-b border-[var(--color-border)] text-left text-[12px] uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
+              <tr className="border-b border-[var(--color-border)] text-left text-[12px] uppercase tracking-[0.1em] text-[var(--color-text-secondary)]">
                 <th scope="col" className="px-5 py-2.5">{t("colQuestion")}</th>
                 <th scope="col" className="px-3 py-2.5">{t("colBand")}</th>
                 <th scope="col" className="px-3 py-2.5">{t("colAnswer")}</th>
@@ -366,7 +366,7 @@ function ReviewBody({ evidence }: { readonly evidence: PlacementEvidence }) {
                     {row.question_number}
                     {row.teacher_flags.length > 0 ? (
                       <span
-                        className="ml-2 rounded-[var(--radius-pill)] bg-[var(--color-danger)]/12 px-1.5 py-0.5 text-[11px] text-[var(--color-danger)]"
+                        className="ml-2 rounded-[var(--radius-pill)] bg-[var(--color-error)]/12 px-1.5 py-0.5 text-[11px] text-[var(--color-error)]"
                         title={row.teacher_flags.map((f) => f.detail).join(" · ")}
                       >
                         {t("itemFlagged")}
@@ -387,7 +387,7 @@ function ReviewBody({ evidence }: { readonly evidence: PlacementEvidence }) {
                     <span
                       className={
                         row.is_correct
-                          ? "text-[var(--color-success)]"
+                          ? "text-[var(--color-text)] font-medium"
                           : "text-[var(--color-text-secondary)]"
                       }
                     >
@@ -526,13 +526,13 @@ function ReviewBody({ evidence }: { readonly evidence: PlacementEvidence }) {
             maxLength={2000}
             className="mt-1 block w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-[15px] leading-relaxed text-[var(--color-text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
           />
-          <p className="mt-1 text-[12px] text-[var(--color-text-muted)]">
+          <p className="mt-1 text-[12px] text-[var(--color-text-secondary)]">
             {t("reasonTextHint")}
           </p>
         </div>
 
         {stale ? (
-          <p className="mt-3 text-[13px] text-[var(--color-danger)]" role="alert">
+          <p className="mt-3 text-[13px] text-[var(--color-error)]" role="alert">
             {t("staleEvidence")}
           </p>
         ) : null}

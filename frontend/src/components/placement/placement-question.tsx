@@ -105,7 +105,7 @@ export function PlacementQuestion({
                 "focus-within:ring-2 focus-within:ring-[var(--color-primary)]/40",
                 selected
                   ? "border-[var(--color-primary)] bg-[var(--color-primary)]/8"
-                  : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]"
+                  : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-hover)]"
               )}
             >
               <input

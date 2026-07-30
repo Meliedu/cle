@@ -55,6 +55,8 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
   const [saveFailed, setSaveFailed] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [expired, setExpired] = useState(false);
+  /** Question numbers whose answer could not be saved, blocking submission. */
+  const [unsavedQuestions, setUnsavedQuestions] = useState<number[]>([]);
 
   const items = attempt.items;
   const current = items[index];
@@ -93,8 +95,9 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
     questionRef.current?.focus();
   }, [index]);
 
+  /** Returns whether the answer actually reached the server. */
   const persist = useCallback(
-    async (itemId: string, value: string | null) => {
+    async (itemId: string, value: string | null): Promise<boolean> => {
       try {
         await save.mutateAsync({
           item_id: itemId,
@@ -104,11 +107,13 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
         });
         pending.current.delete(itemId);
         if (pending.current.size === 0) setSaveFailed(false);
+        return true;
       } catch {
         // Keep the answer locally and flag it. Losing a learner's response to a
         // dropped packet is the worst failure this screen has.
         pending.current.set(itemId, value);
         setSaveFailed(true);
+        return false;
       }
     },
     [plays, save]
@@ -148,17 +153,32 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
   }, [reportInterruption]);
 
   const handleSubmit = useCallback(async () => {
-    // Flush anything the autosave never landed before closing the attempt.
+    // Flush anything the autosave never landed, and CHECK whether it landed.
+    // `persist` swallows its own errors so the sitting keeps working, which
+    // meant this loop used to complete identically whether the flush succeeded
+    // or not -- and submission would then close the attempt without a learner's
+    // answer, while the banner saying so unmounted with the screen.
+    const stillUnsaved: number[] = [];
     for (const [itemId, queued] of [...pending.current]) {
-      await persist(itemId, queued);
+      const ok = await persist(itemId, queued);
+      if (!ok) {
+        const item = items.find((candidate) => candidate.id === itemId);
+        if (item) stillUnsaved.push(item.question_number);
+      }
     }
+    if (stillUnsaved.length > 0) {
+      setUnsavedQuestions(stillUnsaved.sort((a, b) => a - b));
+      return;
+    }
+    setUnsavedQuestions([]);
+
     try {
       await submit.mutateAsync();
       onSubmitted();
     } catch {
       setConfirming(false);
     }
-  }, [onSubmitted, persist, submit]);
+  }, [items, onSubmitted, persist, submit]);
 
   const handleExpire = useCallback(() => {
     setExpired(true);
@@ -180,10 +200,10 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
   return (
     <div className="space-y-6">
       {/* Sticky header: which section, how far, how long left. */}
-      <header className="sticky top-0 z-10 -mx-4 border-b border-[var(--color-border)] bg-[var(--color-bg)]/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+      <header className="sticky top-0 z-10 border-b border-[var(--color-border)] bg-[var(--color-bg)]/95 py-3 backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <span className="text-[13px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+            <span className="text-[13px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">
               {t(`section.${current.section}`)}
             </span>
             <span className="text-[13px] text-[var(--color-text-secondary)]">
@@ -250,41 +270,6 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
         />
       </div>
 
-      {/* Question map: every question reachable in one action, and unanswered
-          ones are visibly distinct so nothing is missed by accident. */}
-      <nav aria-label={t("questionMapLabel")}>
-        <ul className="flex flex-wrap gap-1.5">
-          {items.map((item, itemIndex) => {
-            const answered = Boolean(answers[item.id]);
-            const isCurrent = itemIndex === index;
-            return (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={() => setIndex(itemIndex)}
-                  aria-current={isCurrent ? "true" : undefined}
-                  aria-label={t(
-                    answered ? "goToAnswered" : "goToUnanswered",
-                    { number: item.question_number }
-                  )}
-                  className={cn(
-                    "size-9 rounded-[var(--radius-md)] border text-[13px] font-medium tabular-nums",
-                    "pointer-coarse:size-11 transition-colors duration-150",
-                    "outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40",
-                    isCurrent
-                      ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"
-                      : answered
-                        ? "border-[var(--color-border-strong)] bg-[var(--color-surface-hover)] text-[var(--color-text)]"
-                        : "border-dashed border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)]"
-                  )}
-                >
-                  {item.question_number}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] pt-5">
         <Button
@@ -314,12 +299,63 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
         )}
       </div>
 
+      {/* Question map: every question reachable in one action, and unanswered
+          ones are visibly distinct so nothing is missed by accident. */}
+      <nav aria-label={t("questionMapLabel")}>
+        <ul className="flex flex-wrap gap-1.5">
+          {items.map((item, itemIndex) => {
+            // `isSubmittable`, not `Boolean`: a half-filled ordering item is on
+            // screen but is not an answer. Marking it answered here (while the
+            // counter disagrees) would tell a learner every question is done
+            // and give them no way to find the one that is not.
+            const held = answers[item.id];
+            const answered = isSubmittable(item.id, held);
+            const started = Boolean(held) && !answered;
+            const isCurrent = itemIndex === index;
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  onClick={() => setIndex(itemIndex)}
+                  aria-current={isCurrent ? "true" : undefined}
+                  aria-label={t(
+                    answered
+                      ? "goToAnswered"
+                      : started
+                        ? "goToStarted"
+                        : "goToUnanswered",
+                    { number: item.question_number }
+                  )}
+                  className={cn(
+                    "size-9 rounded-[var(--radius-md)] border text-[13px] font-medium tabular-nums",
+                    "pointer-coarse:size-11 transition-colors duration-150",
+                    "outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40",
+                    isCurrent
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"
+                      : answered
+                        ? "border-[var(--color-border-hover)] bg-[var(--color-surface-hover)] text-[var(--color-text)]"
+                        : started
+                          // Started but not finishable: its own treatment, so
+                          // the one ordering item left half-done is findable.
+                          ? "border-[var(--color-warning)] bg-[var(--color-warning-light)] text-[var(--color-text)]"
+                          : "border-dashed border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)]"
+                  )}
+                >
+                  {item.question_number}
+                  {started ? <span className="sr-only"> {t("startedSuffix")}</span> : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
       {confirming ? (
         <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
           <div className="flex items-start gap-3">
             <AlertTriangle
               aria-hidden="true"
-              className="mt-0.5 size-5 shrink-0 text-[var(--color-warning)]"
+              className="mt-0.5 size-5 shrink-0 text-[var(--color-text-secondary)]"
               strokeWidth={1.9}
             />
             <div className="flex-1">
@@ -333,11 +369,50 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
                     })
                   : t("confirmAll")}
               </p>
-              <p className="mt-2 text-[13px] text-[var(--color-text-muted)]">
+              {/* Which ones, not just how many: this is the last screen before
+                  an irreversible submit, and "3 unanswered" gives a learner no
+                  way to find them on a clock. */}
+              {answeredCount < items.length ? (
+                <ul className="mt-2 flex flex-wrap gap-1.5">
+                  {items
+                    .filter((item) => !isSubmittable(item.id, answers[item.id]))
+                    .map((item) => (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIndex(items.indexOf(item));
+                            setConfirming(false);
+                          }}
+                          className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-2 py-1 text-[13px] tabular-nums text-[var(--color-text)] outline-none hover:bg-[var(--color-surface-hover)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 pointer-coarse:min-h-11"
+                        >
+                          {t("goToQuestion", { number: item.question_number })}
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              ) : null}
+              <p className="mt-2 text-[13px] text-[var(--color-text-secondary)]">
                 {t("confirmFinal")}
               </p>
             </div>
           </div>
+
+          {/* Submission is blocked, not merely warned about: closing the
+              attempt now would discard an answer the learner gave. */}
+          {unsavedQuestions.length > 0 ? (
+            <div
+              role="alert"
+              className="mt-4 rounded-[var(--radius-lg)] border border-[var(--color-error)]/40 bg-[var(--color-error)]/8 p-3"
+            >
+              <p className="text-[14px] font-medium text-[var(--color-error)]">
+                {t("unsavedTitle")}
+              </p>
+              <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
+                {t("unsavedReason", { questions: unsavedQuestions.join(", ") })}
+              </p>
+            </div>
+          ) : null}
           <div className="mt-4 flex flex-wrap gap-3">
             <Button
               type="button"
@@ -358,7 +433,7 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
             </Button>
           </div>
           {submit.isError ? (
-            <p className="mt-3 text-[13px] text-[var(--color-danger)]" role="alert">
+            <p className="mt-3 text-[13px] text-[var(--color-error)]" role="alert">
               {t("submitFailed")}
             </p>
           ) : null}
@@ -366,7 +441,7 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
       ) : null}
 
       {/* Section context, last so it never competes with the question. */}
-      <p className="text-[12px] text-[var(--color-text-muted)]">
+      <p className="text-[12px] text-[var(--color-text-secondary)]">
         {t("sectionProgress", {
           section: t(`section.${current.section}`),
           index: sectionIndex + 1,

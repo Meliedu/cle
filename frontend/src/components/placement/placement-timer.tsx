@@ -80,7 +80,7 @@ export function PlacementTimer({ expiresAt, onExpire }: PlacementTimerProps) {
         className={cn(
           "size-4",
           warning
-            ? "text-[var(--color-danger)]"
+            ? "text-[var(--color-error)]"
             : "text-[var(--color-text-secondary)]"
         )}
         strokeWidth={1.9}
@@ -88,7 +88,7 @@ export function PlacementTimer({ expiresAt, onExpire }: PlacementTimerProps) {
       <span
         className={cn(
           "text-[15px] font-medium tabular-nums",
-          warning ? "text-[var(--color-danger)]" : "text-[var(--color-text)]"
+          warning ? "text-[var(--color-error)]" : "text-[var(--color-text)]"
         )}
       >
         {format(remaining)}

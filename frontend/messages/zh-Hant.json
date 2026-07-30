@@ -572,7 +572,7 @@
       },
       "linkTitle": "分級審核",
       "linkReason": "有 {waiting} 份分級結果待決定。",
-      "linkReasonBlocked": "有 {waiting} 份待處理，其中 {blocked} 份因內容問題受阻。"
+      "linkReasonBlocked": "有 {waiting} 份待處理，另有 {blocked} 份因內容問題受阻。"
     }
   },
   "student": {
@@ -914,22 +914,27 @@
       "submitConfirm": "提交",
       "submitting": "正在提交",
       "keepAnswering": "繼續作答",
-      "submitFailed": "無法提交。你的作答已儲存，請再試一次。",
+      "submitFailed": "無法提交。目前尚未送出任何內容，請保持此分頁開啟並再試一次。",
       "saveFailedTitle": "有答案尚未儲存",
-      "saveFailedReason": "你的答案暫存於此裝置，系統會持續重試。儲存完成前請勿關閉分頁。",
+      "saveFailedReason": "你的答案暫存於此裝置，系統會持續嘗試送出。儲存完成前請勿關閉分頁。",
       "expiredTitle": "時間到",
       "expiredReason": "系統正在自動提交你的作答。",
       "loadingTitle": "正在載入題目",
       "loadingReason": "請稍候片刻。",
       "playAudio": "播放錄音",
       "playsLeft": "尚可播放 {count} 次，共 {total} 次",
-      "orderPosition": "第 {position} 位",
+      "orderPosition": "第 {position} 句",
       "orderEmpty": "請選擇",
       "timeRemainingLabel": "剩餘時間",
       "minutesLeft": "尚餘 {minutes} 分鐘",
       "timeUp": "時間到，系統正在提交你的作答。",
       "sectionProgress": "{section}，第 {index} 部分，共 {total} 部分",
-      "proctorRead": "本題的聽力內容由監考人員朗讀 {plays} 次，沒有錄音可供播放。"
+      "proctorRead": "本題的聽力內容由監考人員朗讀 {plays} 次，沒有錄音可供播放。",
+      "goToStarted": "第 {number} 題，已開始但未完成",
+      "startedSuffix": "已開始但未完成",
+      "goToQuestion": "前往第 {number} 題",
+      "unsavedTitle": "部分答案未能儲存",
+      "unsavedReason": "第 {questions} 題的答案尚未送達，現在提交會遺失該答案。請檢查網絡連線，系統會持續嘗試。請勿關閉此分頁。"
     },
     "result": {
       "pendingTitle": "你的作答已送交語文教育中心",
@@ -950,6 +955,13 @@
       "technical_reviewTitle": "我們正在檢查技術問題",
       "technical_reviewReason": "測驗過程中出現中斷，語文教育中心會先了解情況再作決定。你不需要採取任何行動，他們會與你聯絡。",
       "startAgain": "重新開始測驗（尚餘 {remaining} 次）"
-    }
+    },
+    "lostContactTitle": "與伺服器失去連線",
+    "lostContactReason": "你的測驗仍在進行，已儲存的答案安全無虞。這是連線問題，並非測驗本身出錯。",
+    "retry": "再試一次",
+    "purposeText": "這是 Meli 與語文教育中心的內部分級測驗，並非官方 HSK 考試或成績報告。",
+    "privacyText": "測驗結果用於課程推薦及語文教育中心審核，不構成官方語文能力證明。",
+    "claimLimit": "這是 Meli 與語文教育中心的內部分級測驗，並非官方 HSK 考試或成績報告；課程須經語文教育中心審核後方可確認。",
+    "comparabilityNote": "各卷涵蓋相同的技能與參考級別，並依相同藍圖編製，但未經統計等化，因此不會跨卷比較成績。"
   }
 }

@@ -70,7 +70,7 @@ export function PlacementFlow() {
 
   if (intro.isLoading) {
     return (
-      <div className="mx-auto w-full max-w-2xl space-y-6 py-2" aria-busy="true">
+      <div className="mx-auto w-full max-w-2xl space-y-6 px-4 py-2 sm:px-6" aria-busy="true">
         <Skeleton className="h-10 w-2/3" />
         <Skeleton className="h-40 w-full" />
         <span className="sr-only">{t("loading")}</span>
@@ -79,13 +79,18 @@ export function PlacementFlow() {
   }
 
   // A closed test is data, not an error; a genuine fetch failure is the error.
-  const closed = intro.isError || intro.data?.available === false;
+  //
+  // Never applied while the learner has an attempt in hand. The window can shut
+  // mid-sitting, and a refocus refetch would otherwise replace a running exam
+  // with "the screener is not open yet" while the server clock keeps going. A
+  // learner who is already in only leaves through their own attempt's states.
+  const closed = (intro.isError || intro.data?.available === false) && !attemptId;
   if (closed) {
     const notOpen =
       intro.data?.unavailable_reason === "not_published" ||
       intro.data?.unavailable_reason === "window_closed";
     return (
-      <div className="mx-auto w-full max-w-2xl py-2">
+      <div className="mx-auto w-full max-w-2xl px-4 py-2 sm:px-6">
         <PageHeader title={t("title")} description={t("subtitle")} />
         <div className="mt-6">
           <EmptyState
@@ -102,7 +107,7 @@ export function PlacementFlow() {
   if (!intro.data) return null;
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6 py-2">
+    <div className="mx-auto w-full max-w-2xl space-y-6 px-4 py-2 sm:px-6">
       <PageHeader title={t("title")} description={t("subtitle")} />
       <PlacementStage
         intro={intro.data}
@@ -121,10 +126,35 @@ interface PlacementStageProps {
 
 function PlacementStage({ intro, attemptId, onAttempt }: PlacementStageProps) {
   const attempt = usePlacementAttempt(attemptId);
+  const tShared = useTranslations("placement");
 
   if (!attemptId) return <IntroScreen intro={intro} onAttempt={onAttempt} />;
-  if (attempt.isLoading) return <Skeleton className="h-64 w-full" />;
-  if (!attempt.data) return <IntroScreen intro={intro} onAttempt={onAttempt} />;
+  if (attempt.isLoading) {
+    return (
+      <div aria-busy="true">
+        <Skeleton className="h-64 w-full" />
+        <span className="sr-only">{tShared("loading")}</span>
+      </div>
+    );
+  }
+  // NEVER fall through to the intro when we merely failed to load the attempt.
+  // Its primary action starts a new attempt, and attempts are strictly limited,
+  // so one flaky request during an exam could cost a learner a third of their
+  // allowance. Say we lost contact and offer a retry instead.
+  if (attempt.isError || !attempt.data) {
+    return (
+      <div className="space-y-4">
+        <StateBanner
+          tone="warning"
+          title={tShared("lostContactTitle")}
+          reason={tShared("lostContactReason")}
+        />
+        <Button type="button" size="lg" onClick={() => attempt.refetch()}>
+          {tShared("retry")}
+        </Button>
+      </div>
+    );
+  }
 
   const state = attempt.data.state;
 
@@ -157,6 +187,11 @@ function IntroScreen({
   readonly onAttempt: (id: string) => void;
 }) {
   const t = useTranslations("placement.intro");
+  // The claim boundary is the most consequential text on this page. The API
+  // returns it as English prose from the booklet; it is rendered from the
+  // message files instead so a zh-Hant learner does not meet the one thing
+  // they most need to understand in a language they may struggle with.
+  const tRoot = useTranslations("placement");
   const start = useStartPlacementAttempt();
 
   const handleStart = useCallback(async () => {
@@ -182,7 +217,7 @@ function IntroScreen({
               {t("purposeTitle")}
             </h2>
             <p className="mt-1 text-[14px] leading-relaxed text-[var(--color-text-secondary)]">
-              {intro.purpose}
+              {tRoot("purposeText")}
             </p>
           </div>
         </div>
@@ -201,7 +236,7 @@ function IntroScreen({
       </dl>
 
       <section>
-        <h2 className="text-[13px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
+        <h2 className="text-[13px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
           {t("structureTitle")}
         </h2>
         <ul className="mt-3 space-y-2">
@@ -219,8 +254,8 @@ function IntroScreen({
             </li>
           ))}
         </ul>
-        <p className="mt-3 text-[13px] leading-relaxed text-[var(--color-text-muted)]">
-          {intro.comparability_note}
+        <p className="mt-3 text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
+          {tRoot("comparabilityNote")}
         </p>
       </section>
 
@@ -236,7 +271,7 @@ function IntroScreen({
               {t("privacyTitle")}
             </h2>
             <p className="mt-1 text-[14px] leading-relaxed text-[var(--color-text-secondary)]">
-              {intro.privacy}
+              {tRoot("privacyText")}
             </p>
             <p className="mt-2 text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
               {t("accommodation")}
@@ -262,7 +297,7 @@ function IntroScreen({
             {start.isPending ? t("starting") : t("start")}
           </Button>
           {start.isError ? (
-            <p className="text-[13px] text-[var(--color-danger)]" role="alert">
+            <p className="text-[13px] text-[var(--color-error)]" role="alert">
               {t("startFailed")}
             </p>
           ) : null}
@@ -275,7 +310,7 @@ function IntroScreen({
 function Fact({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <dt className="text-[12px] font-medium uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+      <dt className="text-[12px] font-medium uppercase tracking-[0.12em] text-[var(--color-text-secondary)]">
         {label}
       </dt>
       <dd className="mt-1 text-[15px] font-medium text-[var(--color-text)]">{value}</dd>
@@ -420,6 +455,7 @@ function ResultScreen({
   readonly onRestart: (id: string) => void;
 }) {
   const t = useTranslations("placement.result");
+  const tRoot = useTranslations("placement");
   const result = usePlacementResult(attemptId);
   const start = useStartPlacementAttempt();
 
@@ -427,8 +463,8 @@ function ResultScreen({
     return <Skeleton className="h-48 w-full" />;
   }
 
-  const { released, recommended_course: course, state, claim_limit: claimLimit } =
-    result.data;
+  const { released, recommended_course: course, state } = result.data;
+  const claimLimit = tRoot("claimLimit");
 
   if (state === "invalidated") {
     return (
@@ -465,7 +501,7 @@ function ResultScreen({
             {t("startAgain", { remaining: intro.attempts_remaining })}
           </Button>
         ) : null}
-        <p className="text-[13px] leading-relaxed text-[var(--color-text-muted)]">
+        <p className="text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
           {claimLimit}
         </p>
       </div>
@@ -491,7 +527,7 @@ function ResultScreen({
             <li>{t("whatHappens3")}</li>
           </ol>
         </div>
-        <p className="text-[13px] leading-relaxed text-[var(--color-text-muted)]">
+        <p className="text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
           {claimLimit}
         </p>
       </div>
@@ -508,7 +544,7 @@ function ResultScreen({
             strokeWidth={1.9}
           />
           <div>
-            <p className="text-[13px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
+            <p className="text-[13px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
               {t("releasedEyebrow")}
             </p>
             <h2 className="mt-2 font-display text-[1.75rem] font-semibold text-[var(--color-text)]">
@@ -521,7 +557,7 @@ function ResultScreen({
         </div>
       </div>
 
-      <p className="text-[13px] leading-relaxed text-[var(--color-text-muted)]">
+      <p className="text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
         {claimLimit}
       </p>
 

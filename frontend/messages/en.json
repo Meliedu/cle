@@ -3670,9 +3670,9 @@
       "submitConfirm": "Submit",
       "submitting": "Submitting",
       "keepAnswering": "Keep answering",
-      "submitFailed": "We could not submit. Your answers are saved; please try again.",
+      "submitFailed": "We could not submit. Nothing has been sent yet, so keep this tab open and try again.",
       "saveFailedTitle": "An answer has not saved yet",
-      "saveFailedReason": "Your answer is kept on this device and we keep retrying. Do not close the tab until it saves.",
+      "saveFailedReason": "Your answer is kept on this device and we keep trying to send it. Do not close the tab until it saves.",
       "expiredTitle": "Time is up",
       "expiredReason": "Your answers are being submitted automatically.",
       "loadingTitle": "Loading your questions",
@@ -3685,7 +3685,12 @@
       "minutesLeft": "{minutes} minutes remaining",
       "timeUp": "Time is up. Your answers are being submitted.",
       "sectionProgress": "{section}, section {index} of {total}",
-      "proctorRead": "The listening script for this question is read aloud {plays} times by the person supervising your test. There is no recording to play."
+      "proctorRead": "The listening script for this question is read aloud {plays} times by the person supervising your test. There is no recording to play.",
+      "goToStarted": "Question {number}, started but not finished",
+      "startedSuffix": "started but not finished",
+      "goToQuestion": "Go to {number}",
+      "unsavedTitle": "We could not save every answer",
+      "unsavedReason": "Question {questions} has not reached us yet, so submitting now would lose it. Check your connection; we will keep trying. Do not close this tab."
     },
     "result": {
       "pendingTitle": "Your answers are with CLE",
@@ -3706,6 +3711,13 @@
       "technical_reviewTitle": "We are checking a technical problem",
       "technical_reviewReason": "Something interrupted your test, so CLE is looking at what happened before deciding anything. You do not need to do anything; they will be in touch.",
       "startAgain": "Start the screener again ({remaining} left)"
-    }
+    },
+    "lostContactTitle": "We lost contact with the server",
+    "lostContactReason": "Your attempt is still running and your saved answers are safe. This is a connection problem, not a problem with your test.",
+    "retry": "Try again",
+    "purposeText": "This is an internal Meli/CLE placement screener. It is not an official HSK examination or score report.",
+    "privacyText": "Results support a course recommendation and CLE review. They do not create an official proficiency credential.",
+    "claimLimit": "This is an internal Meli/CLE placement screener. It is not an official HSK examination or score report, and a course is confirmed only after CLE review.",
+    "comparabilityNote": "All forms cover the same skills and reference levels. They are built to the same blueprint but are not statistically equated, so results are not compared between forms."
   }
 }

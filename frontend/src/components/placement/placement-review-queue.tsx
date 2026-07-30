@@ -25,7 +25,7 @@ export function PlacementReviewQueue() {
 
   if (queue.isLoading) {
     return (
-      <div className="mx-auto w-full max-w-4xl space-y-6 py-2" aria-busy="true">
+      <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-2 sm:px-6" aria-busy="true">
         <PageHeader title={t("title")} description={t("subtitle")} />
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-64 w-full" />
@@ -37,7 +37,7 @@ export function PlacementReviewQueue() {
   const data = queue.data;
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 py-2">
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-2 sm:px-6">
       <PageHeader title={t("title")} description={t("subtitle")} />
 
       <dl className="grid gap-3 sm:grid-cols-3">
@@ -88,7 +88,7 @@ function Count({
         className={cn(
           "mt-1 font-display text-[2rem] font-semibold tabular-nums",
           tone === "danger" && value > 0
-            ? "text-[var(--color-danger)]"
+            ? "text-[var(--color-error)]"
             : "text-[var(--color-text)]"
         )}
       >
@@ -127,9 +127,9 @@ function QueueRow({ item }: { readonly item: PlacementQueueItem }) {
                   className={cn(
                     "rounded-[var(--radius-pill)] px-2 py-0.5 text-[12px]",
                     severity === "blocking"
-                      ? "bg-[var(--color-danger)]/12 text-[var(--color-danger)]"
+                      ? "bg-[var(--color-error)]/12 text-[var(--color-error)]"
                       : severity === "review"
-                        ? "bg-[var(--color-warning)]/14 text-[var(--color-warning-strong,var(--color-text))]"
+                        ? "bg-[var(--color-warning)]/20 text-[var(--color-text)]"
                         : "bg-[var(--color-surface-hover)] text-[var(--color-text-secondary)]"
                   )}
                 >
@@ -148,7 +148,7 @@ function QueueRow({ item }: { readonly item: PlacementQueueItem }) {
           "h-11 pointer-coarse:min-h-11 outline-none transition-colors duration-150",
           "focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40",
           blocked
-            ? "border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/8"
+            ? "border-[var(--color-error)]/40 text-[var(--color-error)] hover:bg-[var(--color-error)]/8"
             : "border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]"
         )}
       >
