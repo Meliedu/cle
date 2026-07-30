@@ -185,11 +185,30 @@ async def _attempt_out(
 async def get_intro(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    """Purpose, privacy, structure and attempt policy, before any timer."""
+    """Purpose, privacy, structure and attempt policy, before any timer.
+
+    Always 200. "The test is not open" is an answer to this question, not a
+    fault, so it comes back as data the closed screen renders from.
+    """
     try:
         version = await svc.active_version(db)
-    except svc.PlacementError as error:
-        raise _fail(error) from error
+    except svc.PlacementError:
+        return APIResponse(
+            success=True,
+            data=PlacementIntroOut(available=False, unavailable_reason="not_published"),
+        )
+
+    if not svc._window_open(version, datetime.now(timezone.utc)):
+        return APIResponse(
+            success=True,
+            data=PlacementIntroOut(
+                available=False,
+                unavailable_reason="window_closed",
+                version_code=version.version_code,
+                window_opens_at=_iso(version.window_opens_at),
+                window_closes_at=_iso(version.window_closes_at),
+            ),
+        )
 
     counts = (
         await db.execute(
@@ -221,6 +240,7 @@ async def get_intro(
     return APIResponse(
         success=True,
         data=PlacementIntroOut(
+            available=True,
             version_code=version.version_code,
             duration_minutes=version.duration_minutes,
             section_counts=section_counts,

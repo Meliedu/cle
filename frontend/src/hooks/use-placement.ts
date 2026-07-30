@@ -43,7 +43,10 @@ export interface PlacementItem {
 }
 
 export interface PlacementIntro {
-  readonly version_code: string;
+  /** False when no version is published or the window is shut. */
+  readonly available: boolean;
+  readonly unavailable_reason: "not_published" | "window_closed" | null;
+  readonly version_code: string | null;
   readonly duration_minutes: number;
   readonly section_counts: Readonly<Record<string, number>>;
   readonly total_items: number;

@@ -260,11 +260,39 @@ async def test_intro_states_the_claim_boundary_and_attempt_policy(
     assert "not statistically equated" in data["comparability_note"]
 
 
-async def test_no_published_version_is_a_clean_503(client, db_session, student):
+async def test_no_published_version_is_a_state_not_an_error(client, db_session, student):
+    """"The test is not open" answers the question; it is not a failure.
+
+    A 5xx here would log a console error on a page that is working correctly and
+    would tell monitoring the service is down when it is merely between windows.
+    """
     _as(student)
     response = await client.get("/api/placement")
-    assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "NO_PUBLISHED_VERSION"
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["available"] is False
+    assert data["unavailable_reason"] == "not_published"
+
+
+async def test_a_closed_window_is_reported_as_unavailable(
+    client, db_session, published, student
+):
+    published.window_opens_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db_session.commit()
+
+    _as(student)
+    data = (await client.get("/api/placement")).json()["data"]
+    assert data["available"] is False
+    assert data["unavailable_reason"] == "window_closed"
+    # The learner is told when it opens rather than just that it is shut.
+    assert data["window_opens_at"] is not None
+
+
+async def test_an_open_test_reports_itself_available(client, published, student):
+    _as(student)
+    data = (await client.get("/api/placement")).json()["data"]
+    assert data["available"] is True
+    assert data["unavailable_reason"] is None
 
 
 async def test_starting_an_attempt_allocates_a_form(client, published, student):
@@ -301,6 +329,37 @@ async def test_items_are_withheld_until_instructions_are_acknowledged(
 
     detail = (await client.get(f"/api/placement/attempts/{attempt['id']}")).json()["data"]
     assert len(detail["items"]) == 30
+
+
+async def test_audio_is_reported_unavailable_until_a_form_has_a_manifest(
+    client, published, student
+):
+    """No approved recordings yet, so the client must not offer a play control.
+
+    The package is explicit that a proctor reads each script twice until CLE
+    approves audio. A play button that produces silence costs a learner their
+    own exam minutes working out that nothing is broken.
+    """
+    _as(student)
+    attempt = (await client.post("/api/placement/attempts", json={})).json()["data"]
+    assert attempt["audio_available"] is False
+
+
+async def test_audio_is_reported_available_once_a_manifest_exists(
+    client, published, db_session, student
+):
+    forms = (
+        await db_session.execute(
+            select(PlacementForm).where(PlacementForm.test_version_id == published.id)
+        )
+    ).scalars().all()
+    for form in forms:
+        form.audio_manifest = {"1": "https://example.invalid/a.mp3"}
+    await db_session.commit()
+
+    _as(student)
+    attempt = (await client.post("/api/placement/attempts", json={})).json()["data"]
+    assert attempt["audio_available"] is True
 
 
 async def test_the_delivered_payload_contains_no_restricted_field(

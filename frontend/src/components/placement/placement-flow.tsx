@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PlacementSitting } from "@/components/placement/placement-sitting";
 import {
-  placementErrorCode,
   useAdvancePlacementAttempt,
   useMyPlacementAttempts,
   usePlacementAttempt,
@@ -79,8 +78,12 @@ export function PlacementFlow() {
     );
   }
 
-  if (intro.isError) {
-    const code = placementErrorCode(intro.error);
+  // A closed test is data, not an error; a genuine fetch failure is the error.
+  const closed = intro.isError || intro.data?.available === false;
+  if (closed) {
+    const notOpen =
+      intro.data?.unavailable_reason === "not_published" ||
+      intro.data?.unavailable_reason === "window_closed";
     return (
       <div className="mx-auto w-full max-w-2xl py-2">
         <PageHeader title={t("title")} description={t("subtitle")} />
@@ -88,16 +91,8 @@ export function PlacementFlow() {
           <EmptyState
             variant="waiting"
             icon={Lock}
-            title={
-              code === "NO_PUBLISHED_VERSION"
-                ? t("closed.notOpenTitle")
-                : t("closed.unavailableTitle")
-            }
-            reason={
-              code === "NO_PUBLISHED_VERSION"
-                ? t("closed.notOpenReason")
-                : t("closed.unavailableReason")
-            }
+            title={notOpen ? t("closed.notOpenTitle") : t("closed.unavailableTitle")}
+            reason={notOpen ? t("closed.notOpenReason") : t("closed.unavailableReason")}
           />
         </div>
       </div>

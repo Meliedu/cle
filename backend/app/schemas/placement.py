@@ -40,21 +40,34 @@ class PlacementItemOut(BaseModel):
 
 
 class PlacementIntroOut(BaseModel):
-    """Everything shown before the timer starts (spec student flow, step 1)."""
+    """Everything shown before the timer starts (spec student flow, step 1).
 
-    version_code: str
-    duration_minutes: int
-    section_counts: dict[str, int]
-    total_items: int
-    max_attempts: int
-    attempts_used: int
-    attempts_remaining: int
-    purpose: str
-    privacy: str
+    A closed or unpublished test is a *state*, not a failure: this returns 200
+    with ``available: false`` rather than an error status. Answering "is the
+    placement test open for me" with a 5xx would log a console error on a page
+    that is working correctly, and would tell monitoring the service is down
+    when it is merely between windows.
+    """
+
+    available: bool
+    #: Why it is unavailable. ``not_published`` | ``window_closed``.
+    unavailable_reason: str | None = None
+
+    # Everything below describes a published test and is absent when there is
+    # none, which is why each field carries a default.
+    version_code: str | None = None
+    duration_minutes: int = 30
+    section_counts: dict[str, int] = {}
+    total_items: int = 0
+    max_attempts: int = 0
+    attempts_used: int = 0
+    attempts_remaining: int = 0
+    purpose: str = ""
+    privacy: str = ""
     window_opens_at: str | None = None
     window_closes_at: str | None = None
     #: Forms are blueprint-parallel, not equated. Surfaced so the UI can say so.
-    comparability_note: str
+    comparability_note: str = ""
 
 
 class AttemptStartIn(BaseModel):
