@@ -36,6 +36,7 @@ def _blank_rls_guc(dbapi_conn) -> None:
     cursor = dbapi_conn.cursor()
     try:
         cursor.execute("SELECT set_config('app.current_user_id', '', false)")
+        cursor.execute("SELECT set_config('app.current_user_role', '', false)")
     finally:
         cursor.close()
 

@@ -85,7 +85,7 @@ export function LearningQueue({ actions }: LearningQueueProps) {
                       ? "border-[var(--color-accent)]/35 bg-[var(--color-accent-light)] text-[var(--color-accent-hover)]"
                       : action.work === "submitted" || action.work === "reviewed"
                         ? "border-[var(--color-success)]/40 bg-[var(--color-success-light)] text-[var(--color-success)]"
-                        : "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-hover)]"
+                        : "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-text)]"
                   )}
                 >
                   {t(`chip.${verb}`)}

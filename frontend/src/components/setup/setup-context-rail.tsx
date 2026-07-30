@@ -75,7 +75,7 @@ export function SetupContextRail({
                       ? "text-[var(--color-success)]"
                       : source.readiness === "processing" ||
                           source.readiness === "uploading"
-                        ? "text-[var(--color-primary-hover)]"
+                        ? "text-[var(--color-primary-text)]"
                         : source.readiness === "idle"
                           ? "text-[var(--color-text-muted)]"
                           : "text-[var(--color-error)]"
@@ -139,7 +139,7 @@ export function SetupContextRail({
             overall === "warning"
               ? "bg-[var(--color-primary-hover)] text-white"
               : overall === "working"
-                ? "bg-[var(--color-cream)] text-[var(--color-primary-hover)]"
+                ? "bg-[var(--color-cream)] text-[var(--color-primary-text)]"
                 : "bg-[var(--color-success-light)] text-[var(--color-success)]"
           )}
         >

@@ -119,7 +119,7 @@ export function StepAnalyzer({ courseId, onComplete, onNavigate }: StepAnalyzerP
       {!started && !hasResult ? (
         <div className="flex flex-col items-start gap-4 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
           <div className="flex gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary-hover)]">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary-text)]">
               <Sparkles aria-hidden="true" strokeWidth={1.85} className="size-4.5" />
             </span>
             <div className="space-y-1">
@@ -172,7 +172,7 @@ export function StepAnalyzer({ courseId, onComplete, onNavigate }: StepAnalyzerP
                 key={key}
                 className="space-y-2 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
               >
-                <span className="flex size-8 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary-hover)]">
+                <span className="flex size-8 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary-text)]">
                   <Icon aria-hidden="true" strokeWidth={1.85} className="size-4" />
                 </span>
                 <p className="text-[24px] font-semibold leading-none tracking-tight text-[var(--color-text)]">

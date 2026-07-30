@@ -64,7 +64,7 @@ export function NextTeachingHero({
 
       <div className="flex flex-col gap-6 px-6 py-6 md:px-8 md:py-7 lg:flex-row lg:items-start lg:justify-between lg:gap-10">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold tracking-tight text-[var(--color-primary-hover)]">
+          <p className="text-[13px] font-semibold tracking-tight text-[var(--color-primary-text)]">
             {t(`lead.${lead.key}`, leadValues(lead, locale))}
           </p>
 
@@ -171,7 +171,7 @@ function SourceReadinessBlock({ rollup, isLoading }: SourceReadinessBlockProps) 
             tone === "attention"
               ? "text-[var(--color-error)]"
               : tone === "processing"
-                ? "text-[var(--color-primary-hover)]"
+                ? "text-[var(--color-primary-text)]"
                 : "text-[var(--color-success)]"
           )}
         >
@@ -213,7 +213,7 @@ function NoClassAhead() {
       </p>
       <Link
         href="/teacher/courses"
-        className="mt-5 inline-flex h-11 items-center gap-1.5 rounded-[var(--radius-lg)] px-4 text-[14px] font-medium text-[var(--color-primary-hover)] outline-none transition-colors hover:bg-[var(--color-primary-light)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none"
+        className="mt-5 inline-flex h-11 items-center gap-1.5 rounded-[var(--radius-lg)] px-4 text-[14px] font-medium text-[var(--color-primary-text)] outline-none transition-colors hover:bg-[var(--color-primary-light)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none"
       >
         {t("empty.action")}
         <ArrowRight aria-hidden="true" className="size-4" />

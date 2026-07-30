@@ -35,7 +35,7 @@ export const toneStyles: Record<StateTone, ToneStyle> = {
     Icon: Clock,
     container: "border-[var(--color-gold)]/45 bg-[var(--color-cream)]",
     // Darker honey-family gold: --color-gold on cream is too faint for a glyph.
-    icon: "text-[var(--color-primary-hover)]",
+    icon: "text-[var(--color-primary-text)]",
   },
   warning: {
     Icon: AlertTriangle,

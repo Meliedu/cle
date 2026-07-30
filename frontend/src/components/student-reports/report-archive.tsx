@@ -148,7 +148,7 @@ function ReportRow({
         href={`/student/courses/${courseId}/reports/${report.id}`}
         className="flex items-center gap-3 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-hover)]"
       >
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-cream)] text-[var(--color-primary-hover)]">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-cream)] text-[var(--color-primary-text)]">
           <Icon aria-hidden="true" className="size-5" />
         </span>
 

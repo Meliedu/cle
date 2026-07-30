@@ -45,7 +45,7 @@ export function PlacementEvidence({ evidence }: PlacementEvidenceProps) {
     ready:
       "border-[var(--color-success)]/40 bg-[var(--color-success-light)] text-[var(--color-success)]",
     developing:
-      "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-hover)]",
+      "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-text)]",
     needs_support:
       "border-[var(--color-error)]/35 bg-[var(--color-error-light)] text-[var(--color-error)]",
   };
@@ -77,7 +77,7 @@ export function PlacementEvidence({ evidence }: PlacementEvidenceProps) {
                   row.state === "ready"
                     ? "text-[var(--color-success)]"
                     : row.state === "developing"
-                      ? "text-[var(--color-primary-hover)]"
+                      ? "text-[var(--color-primary-text)]"
                       : "text-[var(--color-error)]"
                 )}
               >

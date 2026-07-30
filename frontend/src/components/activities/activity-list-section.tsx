@@ -42,7 +42,7 @@ export function ActivityListSection({ courseId, onNew, onSelect }: ActivityListS
                 variant="outline"
                 size="sm"
                 onClick={() => onNew(format)}
-                className="border-[var(--color-primary-muted)] bg-[var(--color-primary-light)] text-[var(--color-primary-hover)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-muted)] hover:text-[var(--color-primary-hover)]"
+                className="border-[var(--color-primary-muted)] bg-[var(--color-primary-light)] text-[var(--color-primary-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-muted)] hover:text-[var(--color-primary-text)]"
               >
                 <Plus />
                 {t("newFormat", { format: tf(meta.labelKey) })}
@@ -93,7 +93,7 @@ export function ActivityListSection({ courseId, onNew, onSelect }: ActivityListS
                   </span>
                 </span>
                 {activity.score_bearing ? (
-                  <span className="shrink-0 rounded-[var(--radius-pill)] border border-[var(--color-primary)]/40 bg-[var(--color-accent-light)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-hover)]">
+                  <span className="shrink-0 rounded-[var(--radius-pill)] border border-[var(--color-primary)]/40 bg-[var(--color-accent-light)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-text)]">
                     {t("scoreBearing")}
                   </span>
                 ) : (
@@ -121,10 +121,10 @@ function StatusBadge({ status, label }: StatusBadgeProps) {
     status === "live"
       ? "border-[var(--color-success)]/40 bg-[var(--color-success-light)] text-[var(--color-success)]"
       : status === "published"
-        ? "border-[var(--color-primary)]/40 bg-[var(--color-accent-light)] text-[var(--color-primary-hover)]"
+        ? "border-[var(--color-primary)]/40 bg-[var(--color-accent-light)] text-[var(--color-primary-text)]"
         : status === "closed" || status === "archived"
           ? "border-[var(--color-border)] bg-[var(--color-surface-hover)] text-[var(--color-text-muted)]"
-          : "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-hover)]";
+          : "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-text)]";
   return (
     <span
       className={`shrink-0 rounded-[var(--radius-pill)] border px-2 py-0.5 text-[11px] font-medium ${tone}`}

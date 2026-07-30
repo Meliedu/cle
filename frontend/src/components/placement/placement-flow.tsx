@@ -209,7 +209,7 @@ function IntroScreen({
         <div className="flex items-start gap-3">
           <Info
             aria-hidden="true"
-            className="mt-0.5 size-5 shrink-0 text-[var(--color-primary-hover)]"
+            className="mt-0.5 size-5 shrink-0 text-[var(--color-primary-text)]"
             strokeWidth={1.9}
           />
           <div>

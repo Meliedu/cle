@@ -123,7 +123,7 @@ function StudentCourses({ courses }: StudentCoursesProps) {
           </p>
           <Link
             href="/student/join"
-            className="mt-3 inline-flex h-11 items-center rounded-[var(--radius-md)] text-[14px] font-medium text-[var(--color-primary-hover)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+            className="mt-3 inline-flex h-11 items-center rounded-[var(--radius-md)] text-[14px] font-medium text-[var(--color-primary-text)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
           >
             {t("joinCourse")}
           </Link>

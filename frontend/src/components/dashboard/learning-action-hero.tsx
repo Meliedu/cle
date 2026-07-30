@@ -75,7 +75,7 @@ export function LearningActionHero({ action }: LearningActionHeroProps) {
 
       <div className="flex flex-col gap-6 px-6 py-6 md:px-8 md:py-7 lg:flex-row lg:items-center lg:justify-between lg:gap-10">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold tracking-tight text-[var(--color-primary-hover)]">
+          <p className="text-[13px] font-semibold tracking-tight text-[var(--color-primary-text)]">
             {lead}
           </p>
 

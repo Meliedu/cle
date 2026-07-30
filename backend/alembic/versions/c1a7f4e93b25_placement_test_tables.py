@@ -468,17 +468,11 @@ def upgrade() -> None:
         "ON placement_audit_events (created_at DESC)"
     )
 
-    # RLS on the student-owned tables (pattern 28236be3d7b3): defence in depth
-    # against a query that forgets its own ownership filter.
-    #
-    # It is NOT the reviewer's authorisation. The policy matches on the CALLER's
-    # `app.current_user_id`, and a reviewer is never the owner, so under a
-    # non-BYPASSRLS role the CLE review surface would return zero rows and every
-    # attempt would 404 -- a silent under-fetch on a decision surface. Reviewer
-    # access is authorised in the application layer by `require_instructor`,
-    # exactly as it is for reports and checkpoint_responses. Granting the
-    # reviewer role a policy here is the change to make if the app is ever moved
-    # off a BYPASSRLS role; until then this comment is the honest description.
+    # RLS on the student-owned tables (pattern 28236be3d7b3). Owner isolation
+    # only: this policy answers "is this my row". It deliberately does NOT admit
+    # a reviewer, who is never the owner -- that is a separate question and gets
+    # a separate SELECT-only policy in a9e5c2f74d18, so the review surface works
+    # under a non-BYPASSRLS role while the write path stays owner-only.
     for table, owner_col in RLS_TABLES:
         policy = f"{table}_owner_isolation"
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")

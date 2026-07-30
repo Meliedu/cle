@@ -89,7 +89,7 @@ function KindChip({ kind }: { readonly kind: TeachingEntry["kind"] }) {
 
   const tone: Record<TeachingEntry["kind"], string> = {
     class:
-      "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-hover)]",
+      "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-text)]",
     generated_release:
       "border-[var(--color-accent)]/35 bg-[var(--color-accent-light)] text-[var(--color-accent-hover)]",
     deadline:

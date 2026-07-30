@@ -215,7 +215,7 @@ function ImportStatus({ imp, counts, onApply, isApplying, t }: ImportStatusProps
         <ListChecks
           aria-hidden="true"
           strokeWidth={1.85}
-          className="mt-0.5 size-[18px] shrink-0 text-[var(--color-primary-hover)]"
+          className="mt-0.5 size-[18px] shrink-0 text-[var(--color-primary-text)]"
         />
         <div className="min-w-0 flex-1 space-y-0.5">
           <p className="text-[14px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
@@ -268,7 +268,7 @@ function UsedDuringSetupAside({ t }: { t: ReturnType<typeof useTranslations> }) 
       <ul className="mt-4 space-y-4">
         {items.map(({ icon: Icon, key }) => (
           <li key={key} className="flex gap-3">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary-hover)]">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary-text)]">
               <Icon aria-hidden="true" strokeWidth={1.85} className="size-4" />
             </span>
             <div className="min-w-0 space-y-0.5">

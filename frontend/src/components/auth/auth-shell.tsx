@@ -107,7 +107,7 @@ export function AuthShell({ children, tagline }: AuthShellProps) {
                   <li key={key} className="flex gap-3">
                     <span
                       aria-hidden="true"
-                      className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-surface)] text-[var(--color-primary-hover)] ring-1 ring-[var(--color-border)]"
+                      className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-surface)] text-[var(--color-primary-text)] ring-1 ring-[var(--color-border)]"
                     >
                       <Icon className="size-4" strokeWidth={1.9} />
                     </span>

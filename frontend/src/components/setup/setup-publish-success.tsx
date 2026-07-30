@@ -63,7 +63,7 @@ export function SetupPublishSuccess({ courseId, onShowCode }: SetupPublishSucces
         <div className="flex items-center gap-4">
           <span
             aria-hidden="true"
-            className="flex size-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-primary-light)] text-[16px] font-semibold text-[var(--color-primary-hover)]"
+            className="flex size-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-primary-light)] text-[16px] font-semibold text-[var(--color-primary-text)]"
           >
             {courseInitials(name)}
           </span>
@@ -140,7 +140,7 @@ function TileInner({ icon: Icon, title, hint }: NextActionProps) {
         <Icon
           aria-hidden="true"
           strokeWidth={1.85}
-          className="size-4.5 text-[var(--color-primary-hover)]"
+          className="size-4.5 text-[var(--color-primary-text)]"
         />
         <ArrowUpRight
           aria-hidden="true"

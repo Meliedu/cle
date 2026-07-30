@@ -85,7 +85,7 @@ export function StageStepper({
                     status === "complete"
                       ? "border-[var(--color-success)] bg-[var(--color-success)] text-white"
                       : status === "current"
-                        ? "border-[3px] border-[var(--color-primary)] bg-[var(--color-surface)] text-[var(--color-primary-hover)]"
+                        ? "border-[3px] border-[var(--color-primary)] bg-[var(--color-surface)] text-[var(--color-primary-text)]"
                         : "border-[var(--color-border-hover)] bg-[var(--color-surface)] text-[var(--color-text-muted)]"
                   )}
                 >

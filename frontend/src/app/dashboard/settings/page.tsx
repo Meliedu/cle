@@ -4,7 +4,7 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto w-full max-w-4xl space-y-10 px-6 pb-24 pt-10 sm:px-8 md:px-12 md:pt-14">
       <header className="space-y-1.5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-primary-hover)]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-primary-text)]">
           Account
         </p>
         <h1 className="text-[clamp(1.5rem,1.2rem+1vw,2rem)] font-semibold tracking-tight text-[var(--color-text)]">

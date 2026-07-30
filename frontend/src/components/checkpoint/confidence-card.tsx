@@ -79,7 +79,7 @@ export function ConfidenceCard({
         <div className="flex items-start gap-3">
           <span
             aria-hidden="true"
-            className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-light)] text-[13px] font-semibold text-[var(--color-primary-hover)]"
+            className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-light)] text-[13px] font-semibold text-[var(--color-primary-text)]"
           >
             {current}
           </span>

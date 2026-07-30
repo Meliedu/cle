@@ -152,7 +152,7 @@ function LanguageChip({
         "inline-flex items-center gap-2 rounded-[var(--radius-pill)] border px-3 py-1.5 text-xs font-medium transition-all duration-[var(--duration-fast)]",
         "pointer-coarse:min-h-11",
         active
-          ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-hover)]"
+          ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-text)]"
           : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)] hover:text-[var(--color-text)]"
       )}
     >
@@ -170,7 +170,7 @@ function LanguageChip({
         className={cn(
           "tabular-nums text-[10px]",
           active
-            ? "text-[var(--color-primary-hover)]/70"
+            ? "text-[var(--color-primary-text)]/70"
             : "text-[var(--color-text-muted)]"
         )}
       >

@@ -30,7 +30,7 @@ export function AuthCard({
   return (
     <article className="auth-card relative rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-7 shadow-[var(--shadow-shell)] sm:px-8 sm:py-8">
       <header className="space-y-2.5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-primary-hover)]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-primary-text)]">
           {eyebrow}
         </p>
         <h1 className="text-[clamp(1.625rem,1.25rem+1vw,2rem)] font-semibold leading-[1.1] tracking-tight text-[var(--color-text)]">

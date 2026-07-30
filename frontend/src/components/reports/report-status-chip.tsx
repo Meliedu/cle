@@ -29,7 +29,7 @@ const TONE: Record<ReportStatusTone, ToneTreatment> = {
   draft: {
     Icon: PencilLine,
     className:
-      "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-hover)]",
+      "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-text)]",
   },
   // Reviewed — approved, staged to send (accent/info).
   reviewed: {

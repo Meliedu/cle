@@ -74,7 +74,7 @@ export function SourceStatusList({
                 className="flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-cream)]"
               >
                 <FileText
-                  className="size-4 text-[var(--color-primary-hover)]"
+                  className="size-4 text-[var(--color-primary-text)]"
                   strokeWidth={1.85}
                   aria-hidden="true"
                 />
@@ -148,7 +148,7 @@ function ReadinessLabel({ readiness }: { readonly readiness: SourceReadiness }) 
     uploading: { key: "queued", className: "text-[var(--color-text-secondary)]" },
     processing: {
       key: "processing",
-      className: "text-[var(--color-primary-hover)]",
+      className: "text-[var(--color-primary-text)]",
     },
     ready: { key: "grounded", className: "text-[var(--color-success)]" },
     recoverable_error: { key: "failed", className: "text-[var(--color-error)]" },
@@ -203,7 +203,7 @@ function RecoveryBanner({
       <h3 className="text-[14px] font-semibold text-[var(--color-text)]">
         {error.title}
       </h3>
-      <p className="mt-1 text-[14px] leading-relaxed text-[var(--color-primary-hover)]">
+      <p className="mt-1 text-[14px] leading-relaxed text-[var(--color-primary-text)]">
         {savedLabel} {error.nextAction}
       </p>
       <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-text-secondary)]">

@@ -51,7 +51,7 @@ const LIFECYCLE_BADGE: Record<
   setup: {
     key: "status.setup",
     className:
-      "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-hover)]",
+      "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-text)]",
   },
   published: {
     key: "status.published",
@@ -132,7 +132,7 @@ export function CourseWorkspaceShell({
           action={
             <Link
               href={coursesHref}
-              className="rounded-[var(--radius-sm)] text-[13px] font-medium text-[var(--color-primary-hover)] underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+              className="rounded-[var(--radius-sm)] text-[13px] font-medium text-[var(--color-primary-text)] underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
             >
               {t("breadcrumb")}
             </Link>

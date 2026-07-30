@@ -41,7 +41,7 @@ export function TeachingRoster({ courses, limit = 3 }: TeachingRosterProps) {
         {courses.length > shown.length ? (
           <Link
             href="/teacher/courses"
-            className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] text-[13px] font-medium text-[var(--color-primary-hover)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 pointer-coarse:min-h-11"
+            className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] text-[13px] font-medium text-[var(--color-primary-text)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 pointer-coarse:min-h-11"
           >
             {t("roster.viewAll")}
             <ArrowRight aria-hidden="true" className="size-3.5" />

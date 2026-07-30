@@ -290,7 +290,7 @@ function CardRow({ courseId, checkpointId, card, position, onError, t }: CardRow
 
   return (
     <li className="flex gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-hover)] p-3">
-      <span className="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-light)] text-[12px] font-semibold text-[var(--color-primary-hover)]">
+      <span className="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-light)] text-[12px] font-semibold text-[var(--color-primary-text)]">
         {position}
       </span>
 

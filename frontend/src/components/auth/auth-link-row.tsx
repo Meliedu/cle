@@ -19,7 +19,7 @@ export function AuthLinkRow({ question, href, cta }: AuthLinkRowProps) {
       </span>
       <Link
         href={href}
-        className="font-semibold text-[var(--color-text)] underline-offset-[3px] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-primary-hover)] hover:underline focus-visible:rounded-sm focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
+        className="font-semibold text-[var(--color-text)] underline-offset-[3px] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-primary-text)] hover:underline focus-visible:rounded-sm focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
       >
         {cta}
       </Link>

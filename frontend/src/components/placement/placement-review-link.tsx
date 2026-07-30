@@ -41,7 +41,7 @@ export function PlacementReviewLink() {
     >
       <span
         aria-hidden="true"
-        className="inline-flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-primary)]/10 text-[var(--color-primary-hover)]"
+        className="inline-flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"
       >
         <ClipboardCheck className="size-5" strokeWidth={1.9} />
       </span>

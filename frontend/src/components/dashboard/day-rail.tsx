@@ -140,7 +140,7 @@ export function DayRail({
                         isFocus
                           ? "bg-[var(--color-primary)] font-semibold text-[var(--color-text-on-primary)]"
                           : isToday
-                            ? "font-semibold text-[var(--color-primary-hover)] ring-1 ring-[var(--color-primary)]/40"
+                            ? "font-semibold text-[var(--color-primary-text)] ring-1 ring-[var(--color-primary)]/40"
                             : "text-[var(--color-text-secondary)]"
                       )}
                     >

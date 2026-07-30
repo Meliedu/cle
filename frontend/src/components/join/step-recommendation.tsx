@@ -168,7 +168,7 @@ export function StepRecommendation({
                 safeBand === "high"
                   ? "text-[var(--color-success)]"
                   : safeBand === "medium"
-                    ? "text-[var(--color-primary-hover)]"
+                    ? "text-[var(--color-primary-text)]"
                     : "text-[var(--color-text-secondary)]"
               )}
             >

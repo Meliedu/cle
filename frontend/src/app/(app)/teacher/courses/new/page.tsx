@@ -147,7 +147,7 @@ export default function NewCoursePage() {
           <ul className="mt-4 space-y-4">
             {creates.map(({ key, Icon }) => (
               <li key={key} className="flex gap-3">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary-hover)]">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary-text)]">
                   <Icon aria-hidden="true" className="size-[18px]" strokeWidth={1.85} />
                 </span>
                 <span className="space-y-0.5">

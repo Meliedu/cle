@@ -90,7 +90,7 @@ export function StepDiagnostic({
         </p>
         <Link
           href="/student/placement"
-          className="mt-2 inline-flex items-center rounded-[var(--radius-sm)] text-[14px] font-medium text-[var(--color-primary-hover)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 pointer-coarse:min-h-11"
+          className="mt-2 inline-flex items-center rounded-[var(--radius-sm)] text-[14px] font-medium text-[var(--color-primary-text)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 pointer-coarse:min-h-11"
         >
           {t("diagnostic.placementLink")}
         </Link>

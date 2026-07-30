@@ -86,7 +86,7 @@ export function FollowUpSuggested({
                 <Sparkles
                   aria-hidden="true"
                   strokeWidth={1.85}
-                  className="mt-0.5 size-4 shrink-0 text-[var(--color-primary-hover)]"
+                  className="mt-0.5 size-4 shrink-0 text-[var(--color-primary-text)]"
                 />
                 <p className="text-[14px] font-medium leading-snug tracking-tight text-[var(--color-text)]">
                   {card.prompt}

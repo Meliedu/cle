@@ -63,7 +63,7 @@ const STATUS_MARKER: Record<WizardStepStatus, string> = {
   complete:
     "border-transparent bg-[var(--color-success)] text-[var(--color-on-accent)]",
   current:
-    "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-hover)]",
+    "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-text)]",
   blocked:
     "border-[var(--color-error)]/45 bg-[var(--color-error-light)] text-[var(--color-error)]",
   upcoming:

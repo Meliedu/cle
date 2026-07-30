@@ -55,7 +55,7 @@ export function reviewStatusToneClass(status: string): string {
       return "bg-[var(--color-surface-hover)] text-[var(--color-text-muted)]";
     default:
       // draft | queued | in_review — waiting on the instructor.
-      return "bg-[var(--color-cream)] text-[var(--color-primary-hover)]";
+      return "bg-[var(--color-cream)] text-[var(--color-primary-text)]";
   }
 }
 

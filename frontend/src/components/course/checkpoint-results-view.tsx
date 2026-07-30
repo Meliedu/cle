@@ -91,7 +91,7 @@ function CardResult({ card, position }: CardResultProps) {
   return (
     <li className="space-y-3 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <div className="flex items-start gap-3">
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-light)] text-[12px] font-semibold text-[var(--color-primary-hover)]">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-light)] text-[12px] font-semibold text-[var(--color-primary-text)]">
           {position}
         </span>
         <div className="min-w-0 flex-1 space-y-1.5">

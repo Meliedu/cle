@@ -20,7 +20,7 @@ const STATUS_TONE: Record<CourseLifecycle, string> = {
   published:
     "border-[var(--color-success)]/40 bg-[var(--color-success-light)] text-[var(--color-success)]",
   setup:
-    "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-hover)]",
+    "border-[var(--color-gold)]/45 bg-[var(--color-cream)] text-[var(--color-primary-text)]",
   draft:
     "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)]",
   archived:
@@ -156,7 +156,7 @@ export function RosterRowItem({
             <Link
               href={href}
               aria-label={`${t(`verb.${verb}`)}: ${label}`}
-              className="inline-flex h-11 items-center rounded-[var(--radius-md)] px-2 text-[14px] font-medium text-[var(--color-primary-hover)] underline-offset-4 outline-none transition-colors hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none"
+              className="inline-flex h-11 items-center rounded-[var(--radius-md)] px-2 text-[14px] font-medium text-[var(--color-primary-text)] underline-offset-4 outline-none transition-colors hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none"
             >
               {t(`verb.${verb}`)}
             </Link>

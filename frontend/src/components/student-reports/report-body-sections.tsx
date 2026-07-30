@@ -77,7 +77,7 @@ export function ReportBodySections({ body }: ReportBodySectionsProps) {
                 key={i}
                 className="flex items-start gap-3 text-[14px] leading-relaxed text-[var(--color-text)]"
               >
-                <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/12 text-[11px] font-semibold tabular-nums text-[var(--color-primary-hover)]">
+                <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/12 text-[11px] font-semibold tabular-nums text-[var(--color-primary-text)]">
                   {i + 1}
                 </span>
                 <span>{action}</span>

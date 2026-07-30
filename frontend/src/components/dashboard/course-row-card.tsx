@@ -54,7 +54,7 @@ export function CourseRowCard({ course, className, href }: CourseRowCardProps) {
           ) : null}
         </div>
 
-        <h3 className="mt-1 text-[15px] font-semibold leading-snug text-[var(--color-text)] line-clamp-2 transition-colors duration-[var(--duration-fast)] group-hover:text-[var(--color-primary-hover)]">
+        <h3 className="mt-1 text-[15px] font-semibold leading-snug text-[var(--color-text)] line-clamp-2 transition-colors duration-[var(--duration-fast)] group-hover:text-[var(--color-primary-text)]">
           {course.name}
         </h3>
 

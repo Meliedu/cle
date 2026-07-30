@@ -18,11 +18,11 @@ tables. Three properties make it different in kind:
 
 RLS follows the established owner-isolation pattern (``28236be3d7b3``):
 ``placement_attempts`` and ``placement_responses`` are student-owned and carry
-an ``app.current_user_id`` policy. That policy is defence in depth for the
-STUDENT path only -- it matches the caller's own id, so it would exclude a
-reviewer too. Reviewer access is authorised in the application layer by
-``require_instructor``, exactly as it is for ``reports`` and
-``checkpoint_responses``.
+an ``app.current_user_id`` policy. Because a reviewer is never the owner, they
+also carry a second, SELECT-only policy keyed on ``app.current_user_role``
+(``a9e5c2f74d18``), so the CLE review surface still reads under a
+non-BYPASSRLS role while the write path stays owner-only. Both GUCs are set
+server-side in ``deps.py`` from the ``User`` row.
 """
 from __future__ import annotations
 

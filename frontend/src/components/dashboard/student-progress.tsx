@@ -125,7 +125,7 @@ export function StudentProgress() {
             // treatment for this exact action.
             <Link
               href="/student/join"
-              className="inline-flex h-11 items-center rounded-[var(--radius-md)] text-[14px] font-medium text-[var(--color-primary-hover)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+              className="inline-flex h-11 items-center rounded-[var(--radius-md)] text-[14px] font-medium text-[var(--color-primary-text)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
             >
               {t("emptyAction")}
             </Link>
@@ -189,7 +189,7 @@ export function StudentProgress() {
               <div className="mt-4 flex flex-wrap gap-3">
                 <Link
                   href={`/student/courses/${course.courseId}`}
-                  className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] text-[14px] font-medium text-[var(--color-primary-hover)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 pointer-coarse:min-h-11"
+                  className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] text-[14px] font-medium text-[var(--color-primary-text)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 pointer-coarse:min-h-11"
                 >
                   {t("openCourse")}
                   <ArrowRight aria-hidden="true" className="size-3.5" />

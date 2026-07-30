@@ -2,6 +2,10 @@
   /* Brand — Honey & Salt palette */
   --color-primary: oklch(70% 0.16 80);
   --color-primary-hover: oklch(63% 0.18 80);
+  /* Interactive TEXT in the brand hue. --color-primary-hover is a fill
+     colour and measures 2.88:1 as text, below AA; this clears 4.5:1 while
+     leaving every existing hover surface untouched. */
+  --color-primary-text: oklch(52% 0.18 80);
   --color-primary-light: oklch(95% 0.04 80);
   --color-primary-muted: oklch(85% 0.08 80);
 
@@ -42,7 +46,10 @@
   /* Text — warm dark, not harsh black */
   --color-text: oklch(20% 0.01 50);
   --color-text-secondary: oklch(40% 0.01 50);
-  --color-text-muted: oklch(58% 0.01 50);
+  /* 51.5% clears WCAG AA (4.5:1) against both --color-bg and
+     --color-surface. At the previous 58% it measured 3.49:1, which failed
+     on the token used for the smallest, most easily missed copy. */
+  --color-text-muted: oklch(51.5% 0.01 50);
   --color-text-on-primary: oklch(18% 0.02 60);
 
   /* Semantic */

@@ -170,6 +170,16 @@ async def get_current_user(
     await db.execute(
         text("SELECT set_config('app.current_user_id', :uid, false)").bindparams(uid=str(user.id))
     )
+    # The caller's role, for policies that must distinguish "the owner" from
+    # "someone authorised to review the owner's work". Owner-isolation alone
+    # cannot express that: it matches the caller's own id, so under a
+    # non-BYPASSRLS role it would exclude a reviewer as surely as a stranger.
+    # Set from the server-side User row, never from anything client-supplied.
+    await db.execute(
+        text("SELECT set_config('app.current_user_role', :role, false)").bindparams(
+            role=str(user.role or "")
+        )
+    )
     return user
 
 

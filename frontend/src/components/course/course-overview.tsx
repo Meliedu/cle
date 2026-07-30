@@ -183,7 +183,7 @@ export function CourseOverview({ courseId }: CourseOverviewProps) {
           </p>
           <Link
             href={`/teacher/courses/${courseId}/students`}
-            className="mt-3 inline-flex h-11 items-center gap-1.5 rounded-[var(--radius-md)] text-[13px] font-medium text-[var(--color-primary-hover)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+            className="mt-3 inline-flex h-11 items-center gap-1.5 rounded-[var(--radius-md)] text-[13px] font-medium text-[var(--color-primary-text)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
           >
             {t("openStudents")}
             <ArrowRight aria-hidden="true" className="size-3.5" />
@@ -255,7 +255,7 @@ function SessionHero({
       />
       <div className="flex flex-col gap-6 px-6 py-6 md:px-7 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold tracking-tight text-[var(--color-primary-hover)]">
+          <p className="text-[13px] font-semibold tracking-tight text-[var(--color-primary-text)]">
             {lead}
           </p>
           <h2
@@ -369,7 +369,7 @@ function NoSessionHero({ courseId }: { readonly courseId: string }) {
       </p>
       <Link
         href={`/teacher/courses/${courseId}/schedule`}
-        className="mt-5 inline-flex h-11 items-center gap-1.5 rounded-[var(--radius-lg)] px-4 text-[14px] font-medium text-[var(--color-primary-hover)] outline-none transition-colors hover:bg-[var(--color-primary-light)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none"
+        className="mt-5 inline-flex h-11 items-center gap-1.5 rounded-[var(--radius-lg)] px-4 text-[14px] font-medium text-[var(--color-primary-text)] outline-none transition-colors hover:bg-[var(--color-primary-light)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none"
       >
         {t("noSessionAction")}
         <ArrowRight aria-hidden="true" className="size-4" />
@@ -562,7 +562,7 @@ function ReadinessStat({ value, label, tone = "neutral" }: ReadinessStatProps) {
           tone === "ready"
             ? "text-[var(--color-success)]"
             : tone === "attention"
-              ? "text-[var(--color-primary-hover)]"
+              ? "text-[var(--color-primary-text)]"
               : "text-[var(--color-text)]"
         )}
       >

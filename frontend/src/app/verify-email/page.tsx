@@ -57,7 +57,7 @@ function Step({ n }: { readonly n: number }) {
   return (
     <span
       aria-hidden="true"
-      className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-[var(--color-primary-muted)] bg-[var(--color-primary-light)] text-[10px] font-semibold text-[var(--color-primary-hover)]"
+      className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-[var(--color-primary-muted)] bg-[var(--color-primary-light)] text-[10px] font-semibold text-[var(--color-primary-text)]"
     >
       {n}
     </span>

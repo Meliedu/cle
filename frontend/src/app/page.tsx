@@ -107,7 +107,7 @@ export default function HomePage() {
 
             <h1 className="mt-6 font-display text-[clamp(2.5rem,1.6rem+4vw,4.25rem)] font-semibold leading-[1.02] tracking-[-0.02em] text-[var(--color-text)]">
               Turn course materials into a{" "}
-              <span className="text-[var(--color-primary-hover)]">
+              <span className="text-[var(--color-primary-text)]">
                 reviewed learning habit
               </span>
               .
@@ -146,7 +146,7 @@ export default function HomePage() {
         <section className="border-t border-[var(--color-border)]/70 bg-[var(--color-surface)]/60 backdrop-blur">
           <div className="mx-auto w-full max-w-6xl px-6 py-16 md:px-10 md:py-20">
             <div className="max-w-2xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary-hover)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary-text)]">
                 One loop, two lanes
               </p>
               <h2 className="mt-3 font-display text-[clamp(1.75rem,1.3rem+1.6vw,2.5rem)] font-semibold leading-[1.1] text-[var(--color-text)]">
@@ -165,7 +165,7 @@ export default function HomePage() {
                   className="hover-lift group rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 hover:border-[var(--color-border-hover)] hover:shadow-[var(--shadow-md)]"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="grid size-10 place-items-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary-hover)] transition-colors duration-[var(--duration-fast)] group-hover:bg-[var(--color-primary)] group-hover:text-[var(--color-text-on-primary)]">
+                    <span className="grid size-10 place-items-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[var(--color-primary-text)] transition-colors duration-[var(--duration-fast)] group-hover:bg-[var(--color-primary)] group-hover:text-[var(--color-text-on-primary)]">
                       <step.icon className="size-5" strokeWidth={2} />
                     </span>
                     <span className="font-display text-[1.4rem] font-semibold text-[var(--color-border-hover)]">
@@ -215,7 +215,7 @@ export default function HomePage() {
             <div className="stagger grid gap-6 sm:grid-cols-3">
               {PRINCIPLES.map((p) => (
                 <div key={p.title} className="flex flex-col gap-3">
-                  <span className="grid size-10 place-items-center rounded-[var(--radius-md)] bg-[var(--color-surface)] text-[var(--color-primary-hover)] shadow-[var(--shadow-sm)] ring-1 ring-[var(--color-border)]">
+                  <span className="grid size-10 place-items-center rounded-[var(--radius-md)] bg-[var(--color-surface)] text-[var(--color-primary-text)] shadow-[var(--shadow-sm)] ring-1 ring-[var(--color-border)]">
                     <p.icon className="size-5" strokeWidth={2} />
                   </span>
                   <h3 className="text-[15px] font-semibold leading-snug text-[var(--color-text)]">
@@ -267,7 +267,7 @@ function LaneCard({
       <p
         className={cn(
           "text-[11px] font-semibold uppercase tracking-[0.2em]",
-          accent ? "text-[var(--color-primary)]" : "text-[var(--color-primary-hover)]"
+          accent ? "text-[var(--color-primary)]" : "text-[var(--color-primary-text)]"
         )}
       >
         {tag}
@@ -286,7 +286,7 @@ function LaneCard({
             <CircleCheckBig
               className={cn(
                 "mt-0.5 size-4 shrink-0",
-                accent ? "text-[var(--color-primary)]" : "text-[var(--color-primary-hover)]"
+                accent ? "text-[var(--color-primary)]" : "text-[var(--color-primary-text)]"
               )}
               strokeWidth={2.2}
             />

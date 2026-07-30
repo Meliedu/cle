@@ -348,7 +348,7 @@ function CourseLegend({
         <button
           type="button"
           onClick={onShowAll}
-          className="ml-1 inline-flex h-11 items-center rounded-[var(--radius-md)] px-2 text-[13px] font-medium text-[var(--color-primary-hover)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+          className="ml-1 inline-flex h-11 items-center rounded-[var(--radius-md)] px-2 text-[13px] font-medium text-[var(--color-primary-text)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
         >
           {t("showAll")}
           <span className="sr-only">

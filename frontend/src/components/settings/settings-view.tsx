@@ -62,7 +62,7 @@ function SectionShell({
             "text-[11px] font-semibold uppercase tracking-[0.22em]",
             tone === "danger"
               ? "text-[var(--color-error)]"
-              : "text-[var(--color-primary-hover)]",
+              : "text-[var(--color-primary-text)]",
           )}
         >
           {eyebrow}

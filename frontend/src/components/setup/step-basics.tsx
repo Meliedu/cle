@@ -148,7 +148,7 @@ function BasicsForm({ courseId, course, onComplete }: BasicsFormProps) {
           {t("preview.title")}
         </p>
         <div className="mt-4 flex gap-3">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[15px] font-semibold text-[var(--color-primary-hover)]">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-light)] text-[15px] font-semibold text-[var(--color-primary-text)]">
             {initials}
           </span>
           <div className="min-w-0 space-y-0.5">
