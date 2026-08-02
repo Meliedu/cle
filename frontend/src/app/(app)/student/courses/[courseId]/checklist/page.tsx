@@ -16,7 +16,7 @@ export default async function StudentChecklistPage({
 }: StudentChecklistPageProps) {
   const { courseId } = await params;
   return (
-    <StudentCourseShell courseId={courseId} activeTab="checklist">
+    <StudentCourseShell courseId={courseId}>
       <StudentChecklist courseId={courseId} />
     </StudentCourseShell>
   );

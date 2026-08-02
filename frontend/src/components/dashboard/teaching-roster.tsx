@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { ArrowRight } from "lucide-react";
 
-import { formatRelativeTime } from "@/lib/format";
+import { courseTitle, formatRelativeTime } from "@/lib/format";
 import { courseLifecycle } from "@/lib/contracts/state";
 import type { CourseResponse } from "@/hooks/use-courses";
 
@@ -41,7 +41,7 @@ export function TeachingRoster({ courses, limit = 3 }: TeachingRosterProps) {
         {courses.length > shown.length ? (
           <Link
             href="/teacher/courses"
-            className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] text-[13px] font-medium text-[var(--color-primary-text)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 pointer-coarse:min-h-11"
+            className="inline-flex min-h-6 items-center gap-1 rounded-[var(--radius-sm)] text-[13px] font-medium text-[var(--color-primary-text)] underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 pointer-coarse:min-h-11"
           >
             {t("roster.viewAll")}
             <ArrowRight aria-hidden="true" className="size-3.5" />
@@ -65,7 +65,7 @@ export function TeachingRoster({ courses, limit = 3 }: TeachingRosterProps) {
                   {course.code ?? course.name}
                 </p>
                 <p className="mt-0.5 truncate text-[14px] text-[var(--color-text-secondary)]">
-                  {course.code ? course.name : ""}
+                  {course.code ? courseTitle(course.code, course.name) : ""}
                 </p>
                 <p className="mt-1.5 text-[12px] text-[var(--color-text-muted)]">
                   {courseLifecycle(course) === "published"

@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { CheckCircle2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { courseTitle } from "@/lib/format";
 import { actionVerbKey, type LearningAction } from "@/lib/learning-path";
 
 interface LearningActionHeroProps {
@@ -29,11 +30,20 @@ export function LearningActionHero({ action }: LearningActionHeroProps) {
 
   const { item } = action;
   const verb = actionVerbKey(action);
+  const now = new Date();
   const due = item.due_at ? new Date(item.due_at) : null;
-  const isToday = due ? isSameDay(due, new Date()) : false;
+  const isToday = due ? isSameDay(due, now) : false;
+  // The hero only holds actionable work, so a past due date means "still
+  // open, but late" and must be said in words, not left as a stale date
+  // dressed up as a plan.
+  const overdue = Boolean(due && due < now);
 
-  const lead =
-    action.work === "in_progress"
+  const lead = overdue
+    ? t("leadOverdue", {
+        date: formatDate(due as Date, locale),
+        time: formatTime(due as Date, locale),
+      })
+    : action.work === "in_progress"
       ? due
         ? isToday
           ? t("leadDueToday", { time: formatTime(due, locale) })
@@ -60,7 +70,12 @@ export function LearningActionHero({ action }: LearningActionHeroProps) {
     KNOWN_KINDS.includes(item.source_kind)
       ? t(`kind.${item.source_kind}`)
       : t("kind.other"),
-    due ? t("dueAt", { date: formatDate(due, locale), time: formatTime(due, locale) }) : t("noDue"),
+    due
+      ? t(overdue ? "wasDueAt" : "dueAt", {
+          date: formatDate(due, locale),
+          time: formatTime(due, locale),
+        })
+      : t("noDue"),
   ];
 
   return (
@@ -92,7 +107,7 @@ export function LearningActionHero({ action }: LearningActionHeroProps) {
           </h2>
 
           <p className="mt-1.5 text-[15px] text-[var(--color-text-secondary)]">
-            {action.courseCode} · {action.courseName}
+            {action.courseCode} · {courseTitle(action.courseCode, action.courseName)}
           </p>
 
           <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--color-gold)]/35 pt-4 text-[14px] text-[var(--color-text-secondary)]">

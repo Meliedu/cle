@@ -82,6 +82,38 @@ export function CourseOverview({ courseId }: CourseOverviewProps) {
     return resolveTeachingDay(events, now, { afterLimit: 6 });
   }, [calendar.data, course?.code, course?.name, courseId, now]);
 
+  // The calendar feed is windowed to WEEK_DAYS, so "no class this week" and
+  // "no schedule at all" arrive looking identical. The meetings list is not
+  // windowed, and this surface already fetches it, so the hero resolves the
+  // TRUE next session from it (same resolver, same semantics) rather than
+  // telling an instructor with a Sep 1 class to "add a schedule" in August.
+  const fallbackNext = useMemo(() => {
+    if (day.next || !meetings.data?.length) return null;
+    const events = meetings.data
+      .filter((meeting) => meeting.status !== "cancelled")
+      .map((meeting) => ({
+        event: {
+          id: meeting.id,
+          kind: "meeting" as const,
+          title: meeting.title ?? `Session ${meeting.meeting_index}`,
+          at: meeting.scheduled_at,
+          duration_minutes: meeting.duration_minutes,
+          location: meeting.location,
+          status: meeting.status,
+        },
+        courseId,
+        courseCode: course?.code ?? "",
+        courseName: course?.name ?? "",
+        colorIndex: 0,
+      }));
+    return resolveTeachingDay(events, now).next;
+  }, [day.next, meetings.data, course?.code, course?.name, courseId, now]);
+
+  const heroNext = day.next ?? fallbackNext;
+  const hasScheduledMeetings = (meetings.data ?? []).some(
+    (meeting) => meeting.status !== "cancelled" && Boolean(meeting.scheduled_at)
+  );
+
   const sources = useMemo(
     () =>
       rollUpSources(
@@ -142,17 +174,21 @@ export function CourseOverview({ courseId }: CourseOverviewProps) {
         */}
         {setupIsAvailable(lifecycle) ? (
           <SetupHero courseId={courseId} />
-        ) : calendar.isLoading ? (
+        ) : calendar.isLoading || meetings.isLoading ? (
           <Skeleton className="h-[220px] rounded-[var(--radius-2xl)]" />
-        ) : day.next ? (
+        ) : heroNext ? (
           <SessionHero
             courseId={courseId}
-            entry={day.next.entry}
-            inProgress={day.next.inProgress}
-            isToday={day.next.isToday}
+            entry={heroNext.entry}
+            inProgress={heroNext.inProgress}
+            isToday={heroNext.isToday}
             sourcesReady={sources.ready}
             sourcesTotal={sources.total}
           />
+        ) : hasScheduledMeetings ? (
+          // A schedule exists and has run its course. Saying "add a schedule"
+          // here would be a false claim; the honest state is "finished".
+          <ScheduleEndedHero courseId={courseId} />
         ) : (
           <NoSessionHero courseId={courseId} />
         )}
@@ -166,7 +202,7 @@ export function CourseOverview({ courseId }: CourseOverviewProps) {
 
       <aside className="space-y-8 lg:border-l lg:border-[var(--color-border)] lg:pl-8">
         <CourseReadiness
-          hasClass={day.next !== null}
+          hasClass={heroNext !== null}
           studentCount={studentCount}
           sessionCount={sessionCount}
           sourcesReady={sources.ready}
@@ -297,7 +333,7 @@ function SessionHero({
           </Button>
           <Link
             href={`/teacher/courses/${courseId}/schedule`}
-            className="rounded-[var(--radius-sm)] text-[13px] font-medium text-[var(--color-text-secondary)] underline-offset-4 outline-none transition-colors hover:text-[var(--color-text)] hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none"
+            className="inline-flex min-h-6 items-center rounded-[var(--radius-sm)] text-[13px] font-medium text-[var(--color-text-secondary)] underline-offset-4 outline-none transition-colors hover:text-[var(--color-text)] hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none pointer-coarse:min-h-11"
           >
             {t("editSession")}
           </Link>
@@ -350,6 +386,39 @@ function SetupHero({ courseId }: { readonly courseId: string }) {
 }
 
 /** Published course, nothing scheduled: an intentional state, not a blank. */
+/**
+ * All scheduled classes are over. Distinct from NoSessionHero on purpose:
+ * "add a schedule" is the wrong instruction for a course whose schedule
+ * simply finished, and a false claim erodes trust in every other state.
+ */
+function ScheduleEndedHero({ courseId }: { readonly courseId: string }) {
+  const t = useTranslations("teacher.course.overview");
+  return (
+    <section className="rounded-[var(--radius-2xl)] border border-dashed border-[var(--color-border-hover)] bg-[var(--color-surface)] px-6 py-10 text-center">
+      <span className="mx-auto flex size-11 items-center justify-center rounded-full bg-[var(--color-bg)]">
+        <CalendarX2
+          aria-hidden="true"
+          strokeWidth={1.6}
+          className="size-5 text-[var(--color-text-muted)]"
+        />
+      </span>
+      <h2 className="mt-4 text-[18px] font-semibold tracking-tight text-[var(--color-text)]">
+        {t("scheduleEndedTitle")}
+      </h2>
+      <p className="mx-auto mt-1.5 max-w-[52ch] text-[14px] leading-relaxed text-[var(--color-text-secondary)]">
+        {t("scheduleEndedReason")}
+      </p>
+      <Link
+        href={`/teacher/courses/${courseId}/schedule`}
+        className="mt-5 inline-flex h-11 items-center gap-1.5 rounded-[var(--radius-lg)] px-4 text-[14px] font-medium text-[var(--color-primary-text)] outline-none transition-colors hover:bg-[var(--color-primary-light)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none"
+      >
+        {t("scheduleEndedAction")}
+        <ArrowRight aria-hidden="true" className="size-4" />
+      </Link>
+    </section>
+  );
+}
+
 function NoSessionHero({ courseId }: { readonly courseId: string }) {
   const t = useTranslations("teacher.course.overview");
   return (

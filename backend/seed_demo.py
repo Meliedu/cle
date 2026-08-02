@@ -237,6 +237,7 @@ async def seed() -> None:
         session.add_all(
             [
                 Enrollment(course_id=published.id, user_id=teacher.id, role="instructor", status="active"),
+                Enrollment(course_id=draft.id, user_id=teacher.id, role="instructor", status="active"),
                 Enrollment(course_id=published.id, user_id=student.id, role="student", status="active"),
                 Enrollment(course_id=published.id, user_id=pending.id, role="student", status="pending"),
             ]

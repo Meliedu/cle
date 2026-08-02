@@ -8,6 +8,7 @@ import { LogOut, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
+import { courseTitle } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { roleHomePath, useRole } from "@/hooks/use-role";
 import { useCourses } from "@/hooks/use-courses";
@@ -153,9 +154,9 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
               {activeCourse?.name ? (
                 <p
                   className="mt-1 line-clamp-2 text-[14px] font-medium leading-snug text-[var(--color-rail-text)]"
-                  title={activeCourse.name}
+                  title={courseTitle(activeCourse.code, activeCourse.name)}
                 >
-                  {activeCourse.name}
+                  {courseTitle(activeCourse.code, activeCourse.name)}
                 </p>
               ) : null}
             </div>

@@ -77,12 +77,36 @@ function releaseEvent(day: number): CalendarEvent {
   };
 }
 
+interface MeetingRow {
+  readonly id: string;
+  readonly meeting_index: number;
+  readonly title: string | null;
+  readonly scheduled_at: string;
+  readonly duration_minutes: number;
+  readonly location: string | null;
+  readonly status: string;
+}
+
+function meetingRow(overrides: Partial<MeetingRow> = {}): MeetingRow {
+  return {
+    id: "mrow-1",
+    meeting_index: 1,
+    title: "Session 1 · Pinyin",
+    scheduled_at: new Date(2026, 7, 1, 9, 30).toISOString(),
+    duration_minutes: 80,
+    location: "Rm 2464",
+    status: "planned",
+    ...overrides,
+  };
+}
+
 function stub(options: {
   course?: Partial<CourseResponse>;
   events?: readonly CalendarEvent[];
   documents?: readonly { status: string }[];
   students?: number;
   meetings?: number;
+  meetingRows?: readonly MeetingRow[];
 } = {}) {
   mockUseCourse.mockReturnValue({
     data: makeCourse(options.course),
@@ -92,7 +116,9 @@ function stub(options: {
     isLoading: false,
   } as unknown as ReturnType<typeof useCalendar>);
   mockUseMeetings.mockReturnValue({
-    data: Array.from({ length: options.meetings ?? 0 }, (_, i) => ({ id: `m${i}` })),
+    data:
+      options.meetingRows ??
+      Array.from({ length: options.meetings ?? 0 }, (_, i) => ({ id: `m${i}` })),
     isLoading: false,
   } as unknown as ReturnType<typeof useMeetings>);
   mockUseRoster.mockReturnValue({
@@ -161,6 +187,71 @@ describe("CourseOverview: the next session is the hero (Plate 04, rule 3)", () =
     stub({ events: [] });
     renderOverview();
     expect(screen.getByText("No class scheduled yet")).toBeTruthy();
+  });
+
+  it("resolves the next session from meetings when it falls outside the weekly calendar window", () => {
+    // NOW is Jun 26; the next class is Aug 1 — beyond the 7-day feed, so the
+    // calendar arrives empty. The hero must state the real next class, not
+    // claim the course has no schedule.
+    stub({
+      events: [],
+      meetingRows: [
+        meetingRow({
+          id: "past",
+          meeting_index: 1,
+          title: "Session 1 · Intro",
+          scheduled_at: new Date(2026, 4, 1, 9, 30).toISOString(),
+        }),
+        meetingRow({
+          id: "future",
+          meeting_index: 5,
+          title: "Session 5 · Tones",
+          scheduled_at: new Date(2026, 7, 1, 9, 30).toISOString(),
+        }),
+      ],
+    });
+    renderOverview();
+
+    expect(screen.getByText("Session 5 · Tones")).toBeTruthy();
+    expect(screen.queryByText("No class scheduled yet")).toBeNull();
+  });
+
+  it("says the schedule has ended when every session is in the past", () => {
+    stub({
+      events: [],
+      meetingRows: [
+        meetingRow({
+          id: "past",
+          scheduled_at: new Date(2026, 3, 1, 9, 30).toISOString(),
+          status: "taught",
+        }),
+      ],
+    });
+    renderOverview();
+
+    expect(screen.getByText("All sessions have ended")).toBeTruthy();
+    // The false instruction is exactly what this state exists to remove.
+    expect(screen.queryByText("No class scheduled yet")).toBeNull();
+  });
+
+  it("ignores cancelled sessions when resolving the fallback hero", () => {
+    stub({
+      events: [],
+      meetingRows: [
+        meetingRow({
+          id: "cancelled",
+          scheduled_at: new Date(2026, 7, 1, 9, 30).toISOString(),
+          status: "cancelled",
+        }),
+        meetingRow({
+          id: "past",
+          scheduled_at: new Date(2026, 3, 1, 9, 30).toISOString(),
+          status: "taught",
+        }),
+      ],
+    });
+    renderOverview();
+    expect(screen.getByText("All sessions have ended")).toBeTruthy();
   });
 });
 

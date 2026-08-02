@@ -7,6 +7,14 @@ import { cn } from "@/lib/utils";
 import { actionVerbKey, type LearningAction } from "@/lib/learning-path";
 import { destinationFor } from "@/components/dashboard/learning-action-hero";
 
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
 interface LearningQueueProps {
   readonly actions: readonly LearningAction[];
 }
@@ -26,6 +34,7 @@ interface LearningQueueProps {
 export function LearningQueue({ actions }: LearningQueueProps) {
   const t = useTranslations("student.home");
   const locale = useLocale();
+  const now = new Date();
 
   return (
     <section aria-labelledby="learning-queue-title">
@@ -33,12 +42,12 @@ export function LearningQueue({ actions }: LearningQueueProps) {
         id="learning-queue-title"
         className="text-[13px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-muted)]"
       >
-        {t("laterToday")}
+        {t("upNext")}
       </h2>
 
       {actions.length === 0 ? (
         <p className="mt-3 border-t border-[var(--color-border)] pt-4 text-[14px] text-[var(--color-text-muted)]">
-          {t("laterTodayEmpty")}
+          {t("upNextEmpty")}
         </p>
       ) : (
         <ul className="mt-3 border-t border-[var(--color-border)]">
@@ -46,16 +55,33 @@ export function LearningQueue({ actions }: LearningQueueProps) {
             const verb = actionVerbKey(action);
             const blocked = action.availability.state !== "available";
             const due = action.item.due_at ? new Date(action.item.due_at) : null;
+            const done =
+              action.work === "submitted" || action.work === "reviewed";
+            // Only actionable rows are "overdue": a blocked or closed row
+            // already states its condition ("Closed", unlock reason), and
+            // overdue would wrongly imply the learner can still act.
+            const overdue = Boolean(due && due < now && !done && !blocked);
 
             const body = (
               <>
+                {/*
+                  The slot claims a TIME only for a due date that is today.
+                  Any other day shows its date, because a bare "09:30 AM" next
+                  to work due weeks ago reads as today and is a false claim.
+                  Undated work shows nothing rather than a fake "--:--".
+                */}
                 <span className="w-14 shrink-0 text-[14px] font-medium tabular-nums text-[var(--color-text-secondary)]">
                   {due
-                    ? due.toLocaleTimeString(locale, {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                    : "--:--"}
+                    ? isSameDay(due, now)
+                      ? due.toLocaleTimeString(locale, {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : due.toLocaleDateString(locale, {
+                          day: "numeric",
+                          month: "short",
+                        })
+                    : null}
                 </span>
 
                 <span className="min-w-0 flex-1">
@@ -65,13 +91,15 @@ export function LearningQueue({ actions }: LearningQueueProps) {
                   {/*
                     The unlock reason sits inline with the title, not in a
                     tooltip: it must be readable without hover and without
-                    color.
+                    color. Overdue is stated here in words for the same
+                    reason.
                   */}
                   <span className="mt-0.5 block truncate text-[13px] text-[var(--color-text-muted)]">
                     {[
                       action.courseCode,
                       t(`kind.${action.item.source_kind}`),
                       action.availability.reason,
+                      overdue ? t("overdueFlag") : null,
                     ]
                       .filter(Boolean)
                       .join(" · ")}

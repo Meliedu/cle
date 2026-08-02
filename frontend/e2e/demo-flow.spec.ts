@@ -94,44 +94,49 @@ test.describe("demo checkpoint-loop flow (live stack)", () => {
     await expect(page.getByText(COURSE_NAME).first()).toBeVisible();
   });
 
+  // The teacher workspace headlines the SURFACE (h1 = tab title) and carries
+  // course identity in the breadcrumb + supporting line (course-workspace-
+  // shell.tsx). Asserting the course name as the h1 was the pre-handoff
+  // contract and no longer holds.
+
   test("teacher: course overview workspace", async ({ page }) => {
     await signInAndLand(page, TEACHER_EMAIL, "teacher");
 
     await page.goto(`/teacher/courses/${COURSE_ID}`);
-    // Shared workspace shell renders the course name as the PageHeader title.
-    await expect(page.getByRole("heading", { name: COURSE_NAME })).toBeVisible({
-      timeout: VISIBLE_TIMEOUT,
-    });
-    // Tab nav is present.
     await expect(
-      page.getByRole("link", { name: "Enrollment" }).first()
+      page.getByRole("heading", { level: 1, name: "Overview" })
+    ).toBeVisible({ timeout: VISIBLE_TIMEOUT });
+    // Course identity: code in the breadcrumb, clean title in the supporting
+    // line (no repeated code — that duplication was a real defect).
+    await expect(page.getByText("LANG1511").first()).toBeVisible();
+    await expect(page.getByText(COURSE_NAME).first()).toBeVisible();
+    // The rail is the only course navigation system (removal rule 05).
+    await expect(
+      page.getByRole("link", { name: "Sessions" }).first()
     ).toBeVisible();
     await expectNoAppError(page);
   });
 
-  test("teacher: sessions (checkpoints) tab", async ({ page }) => {
+  test("teacher: sessions tab", async ({ page }) => {
     await signInAndLand(page, TEACHER_EMAIL, "teacher");
 
     await page.goto(`/teacher/courses/${COURSE_ID}/sessions`);
-    await expect(page.getByRole("heading", { name: COURSE_NAME })).toBeVisible({
-      timeout: VISIBLE_TIMEOUT,
-    });
-    // "Checkpoints" is the sessions tab label; the active tab link is present.
     await expect(
-      page.getByRole("link", { name: "Checkpoints" }).first()
-    ).toBeVisible();
+      page.getByRole("heading", { level: 1, name: "Sessions" })
+    ).toBeVisible({ timeout: VISIBLE_TIMEOUT });
     await expectNoAppError(page);
   });
 
-  test("teacher: enrollment tab shows the pending join request", async ({
+  test("teacher: enrollment surface shows the pending join request", async ({
     page,
   }) => {
     await signInAndLand(page, TEACHER_EMAIL, "teacher");
 
     await page.goto(`/teacher/courses/${COURSE_ID}/enrollment`);
-    await expect(page.getByRole("heading", { name: COURSE_NAME })).toBeVisible({
-      timeout: VISIBLE_TIMEOUT,
-    });
+    // Enrollment files under the Students tab (nav-config OWNED_BY).
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Students" })
+    ).toBeVisible({ timeout: VISIBLE_TIMEOUT });
 
     // The seeded pending student (Priya Nair) awaits approval.
     await expect(page.getByText(/awaiting approval/i)).toBeVisible({
@@ -148,12 +153,9 @@ test.describe("demo checkpoint-loop flow (live stack)", () => {
     await signInAndLand(page, TEACHER_EMAIL, "teacher");
 
     await page.goto(`/teacher/courses/${COURSE_ID}/activities`);
-    await expect(page.getByRole("heading", { name: COURSE_NAME })).toBeVisible({
-      timeout: VISIBLE_TIMEOUT,
-    });
     await expect(
-      page.getByRole("link", { name: "Activities" }).first()
-    ).toBeVisible();
+      page.getByRole("heading", { level: 1, name: "Activities" })
+    ).toBeVisible({ timeout: VISIBLE_TIMEOUT });
     await expectNoAppError(page);
   });
 
@@ -173,12 +175,9 @@ test.describe("demo checkpoint-loop flow (live stack)", () => {
     await signInAndLand(page, TEACHER_EMAIL, "teacher");
 
     await page.goto(`/teacher/courses/${COURSE_ID}/reports`);
-    await expect(page.getByRole("heading", { name: COURSE_NAME })).toBeVisible({
-      timeout: VISIBLE_TIMEOUT,
-    });
     await expect(
-      page.getByRole("link", { name: "Reports" }).first()
-    ).toBeVisible();
+      page.getByRole("heading", { level: 1, name: "Reports" })
+    ).toBeVisible({ timeout: VISIBLE_TIMEOUT });
     await expectNoAppError(page);
   });
 
@@ -208,9 +207,14 @@ test.describe("demo checkpoint-loop flow (live stack)", () => {
     await expect(page.getByRole("heading", { name: COURSE_NAME })).toBeVisible({
       timeout: VISIBLE_TIMEOUT,
     });
-    // Student tab nav (checklist / materials) is present.
+    // The tab row is gone (removal rule 05); the checklist stays reachable
+    // through the progress card's persistent link.
     await expect(
-      page.getByRole("link", { name: "Checklist" }).first()
+      page.getByRole("link", { name: /view checklist/i }).first()
+    ).toBeVisible();
+    // The course rail is the only course navigation system.
+    await expect(
+      page.getByRole("link", { name: "Materials" }).first()
     ).toBeVisible();
     await expectNoAppError(page);
   });
@@ -222,9 +226,6 @@ test.describe("demo checkpoint-loop flow (live stack)", () => {
     await expect(page.getByRole("heading", { name: COURSE_NAME })).toBeVisible({
       timeout: VISIBLE_TIMEOUT,
     });
-    await expect(
-      page.getByRole("link", { name: "Checklist" }).first()
-    ).toBeVisible();
     await expectNoAppError(page);
   });
 

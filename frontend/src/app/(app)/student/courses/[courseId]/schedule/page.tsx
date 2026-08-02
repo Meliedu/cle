@@ -16,7 +16,7 @@ export default async function StudentSchedulePage({
 }: StudentSchedulePageProps) {
   const { courseId } = await params;
   return (
-    <StudentCourseShell courseId={courseId} activeTab="schedule">
+    <StudentCourseShell courseId={courseId}>
       <StudentScheduleTable courseId={courseId} />
     </StudentCourseShell>
   );

@@ -16,7 +16,7 @@ export default async function StudentActivitiesPage({
 }: StudentActivitiesPageProps) {
   const { courseId } = await params;
   return (
-    <StudentCourseShell courseId={courseId} activeTab="activities">
+    <StudentCourseShell courseId={courseId}>
       <StudentActivities courseId={courseId} />
     </StudentCourseShell>
   );

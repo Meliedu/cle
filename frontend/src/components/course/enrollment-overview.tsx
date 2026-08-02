@@ -219,7 +219,7 @@ function NavCard({ icon: Icon, title, description, href, cta }: NavCardProps) {
       </p>
       <Link
         href={href}
-        className="inline-flex items-center gap-1 text-[13px] font-medium text-[var(--color-primary)] hover:underline pointer-coarse:min-h-11"
+        className="inline-flex min-h-6 items-center gap-1 text-[13px] font-medium text-[var(--color-primary)] hover:underline pointer-coarse:min-h-11"
       >
         {cta}
         <ArrowRight aria-hidden="true" className="size-3.5" />

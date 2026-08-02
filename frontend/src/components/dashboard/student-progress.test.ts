@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { courseTitle, rollUpByCourse } from "./student-progress";
+import { rollUpByCourse } from "./student-progress";
 import type { LearningAction } from "@/lib/learning-path";
 import type { StudentWork } from "@/lib/contracts/state";
 
@@ -20,26 +20,7 @@ function action(
   };
 }
 
-describe("courseTitle", () => {
-  it("drops a code prefix the name already repeats", () => {
-    expect(courseTitle("LANG1511", "LANG1511 · Chinese I")).toBe("Chinese I");
-    expect(courseTitle("LANG1511", "LANG1511 - Chinese I")).toBe("Chinese I");
-    expect(courseTitle("LANG1511", "LANG1511: Chinese I")).toBe("Chinese I");
-  });
-
-  it("leaves a name that does not repeat the code alone", () => {
-    expect(courseTitle("LANG1511", "Chinese I")).toBe("Chinese I");
-  });
-
-  it("never returns empty when the name is only the code", () => {
-    // Blanking the line would be worse than repeating it.
-    expect(courseTitle("LANG1511", "LANG1511")).toBe("LANG1511");
-  });
-
-  it("is case-insensitive about the prefix", () => {
-    expect(courseTitle("lang1511", "LANG1511 · Chinese I")).toBe("Chinese I");
-  });
-});
+// courseTitle's cases live in src/lib/format.test.ts, next to the helper.
 
 describe("rollUpByCourse", () => {
   it("counts submitted and reviewed as done, the rest as outstanding", () => {

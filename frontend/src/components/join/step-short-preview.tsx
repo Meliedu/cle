@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { StateBanner } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { displayLanguage } from "@/lib/format";
 import { useCoursePreview } from "@/hooks/use-readiness";
 
 interface StepShortPreviewProps {
@@ -71,7 +72,7 @@ export function StepShortPreview({
             {course.name}
           </h2>
           <p className="text-[13px] text-[var(--color-text-muted)]">
-            {t("shortPreview.language", { language: course.language })}
+            {t("shortPreview.language", { language: displayLanguage(course.language) })}
           </p>
         </div>
 

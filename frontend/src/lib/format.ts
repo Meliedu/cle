@@ -40,6 +40,42 @@ export function formatRelativeTime(isoDate: string): string {
 }
 
 /**
+ * The course name without a repeated code prefix.
+ *
+ * Course names in the wild often already start with the code
+ * ("LANG1511 · Chinese I for Non-Chinese Speakers"), so rendering the code as
+ * the heading and the raw name beneath it says the code twice. Every surface
+ * that renders "code · name" (or code above name) must pass the name through
+ * this first.
+ */
+export function courseTitle(code: string | null, name: string): string {
+  const trimmed = name.trim();
+  if (!code || !trimmed.toLowerCase().startsWith(code.toLowerCase())) {
+    return trimmed;
+  }
+  // The match must end on a token boundary: "LANG151" must not bite into
+  // "LANG1511 · Chinese I" and return "1 · Chinese I".
+  const rest = trimmed.slice(code.length);
+  if (rest.length > 0 && !/^[\s·:\-–—]/.test(rest)) {
+    return trimmed;
+  }
+  // Drop the code and any separator that followed it.
+  return rest.replace(/^\s*[·:\-–—]\s*/, "").trim() || trimmed;
+}
+
+/**
+ * A course's language for display. The column is free text ("chinese",
+ * "Chinese"), so title-case it rather than render raw metadata casing.
+ */
+export function displayLanguage(language: string): string {
+  return language
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+/**
  * Derive the file type label from a filename.
  */
 export function getFileTypeLabel(filename: string): string {

@@ -195,6 +195,31 @@ async function run() {
     report(`new course ${stage}`);
   }
 
+  // ---- cleanup: remove the QA course so repeated runs don't pollute -------
+  // Residue drafts displace real courses on the dashboard's recency-ordered
+  // roster glance and steer other harnesses (setup-flow resolves "the first
+  // course on the roster") onto an empty draft. Failing loudly here is what
+  // keeps that from silently coming back.
+  const createdId = (base.match(/\/teacher\/courses\/([^/]+)/) || [])[1];
+  if (createdId) {
+    const status = await page.evaluate(async (courseId) => {
+      const tokenRes = await fetch("/api/auth/token");
+      if (!tokenRes.ok) return `token:${tokenRes.status}`;
+      const { token } = await tokenRes.json();
+      const res = await fetch(`http://localhost:8000/api/courses/${courseId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return res.status;
+    }, createdId);
+    if (status === 200) {
+      console.log(`\n[cleanup] deleted QA course ${createdId}`);
+    } else {
+      console.log(`\n[cleanup] FAILED to delete QA course ${createdId}: ${status}`);
+      process.exitCode = 1;
+    }
+  }
+
   await browser.close();
   if (brokeCreate) process.exitCode = 1;
 }

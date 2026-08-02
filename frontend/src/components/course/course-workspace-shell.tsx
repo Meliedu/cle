@@ -7,8 +7,9 @@ import { useTranslations } from "next-intl";
 
 import { StateBanner } from "@/components/patterns";
 import { Skeleton } from "@/components/ui/skeleton";
+import { courseTitle, displayLanguage } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useCourse, type CourseResponse } from "@/hooks/use-courses";
+import { useCourse } from "@/hooks/use-courses";
 import {
   courseLifecycle,
   type CourseLifecycle,
@@ -144,7 +145,13 @@ export function CourseWorkspaceShell({
 
   const lifecycle = courseLifecycle(course);
   const badge = LIFECYCLE_BADGE[lifecycle];
-  const supporting = [course.name, course.semester, course.language]
+  // The breadcrumb already carries the code, so the supporting line must not
+  // repeat it (course names in the wild often embed their code).
+  const supporting = [
+    courseTitle(course.code, course.name),
+    course.semester,
+    course.language ? displayLanguage(course.language) : null,
+  ]
     .filter((value): value is string => Boolean(value))
     .join(" · ");
 

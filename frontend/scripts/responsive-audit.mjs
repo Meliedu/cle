@@ -59,12 +59,18 @@ const ROUTES = {
 /**
  * Measured in-page. Returns every violation of the rendered criteria.
  *
- * `44` is the CSS-px floor from the contract. A control smaller than that in
- * EITHER dimension is reported, with the exception of inline text links inside
- * a paragraph, which are not touch targets and whose hitbox is the line box.
+ * The target-size floor is pointer-aware, matching the contract's own scope
+ * ("high-frequency controls and TOUCH actions meet 44x44"):
+ *   - touch viewports: 44 CSS px (the contract floor; WCAG 2.5.5 AAA)
+ *   - fine-pointer viewports: 24 CSS px (WCAG 2.2 SC 2.5.8 Target Size AA)
+ * A flat 44 at desktop would fail every deliberately dense secondary control
+ * (size-sm buttons, filter chips) that the implementation doc records as
+ * accepted, drowning the real violations. Inline text links inside running
+ * text are exempt in both modes: they are not touch targets and their hitbox
+ * is the line box.
  */
-const AUDIT = `(() => {
-  const MIN = 44;
+const AUDIT = (touch) => `(() => {
+  const MIN = ${touch ? 44 : 24};
   const problems = [];
 
   // 1. Horizontal page scroll.
@@ -270,7 +276,7 @@ async function run() {
             continue;
           }
           audited += 1;
-          const problems = await page.evaluate(AUDIT);
+          const problems = await page.evaluate(AUDIT(viewport.touch));
           if (problems.length) {
             findings.push({ role, viewport: viewport.name, label, url, problems });
           }

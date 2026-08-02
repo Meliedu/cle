@@ -8,6 +8,7 @@ import { ArrowRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, PageHeader } from "@/components/patterns";
 import { useLearningPath } from "@/hooks/use-learning-path";
+import { courseTitle } from "@/lib/format";
 import type { LearningAction } from "@/lib/learning-path";
 import type { StudentWork } from "@/lib/contracts/state";
 
@@ -70,21 +71,6 @@ export function rollUpByCourse(
 }
 
 
-/**
- * The course name without a repeated code prefix.
- *
- * Course names in the wild often already start with the code
- * ("LANG1511 · Chinese I for Non-Chinese Speakers"), so rendering the code as
- * the heading and the raw name beneath it says the code twice.
- */
-export function courseTitle(code: string, name: string): string {
-  const trimmed = name.trim();
-  if (!code || !trimmed.toLowerCase().startsWith(code.toLowerCase())) {
-    return trimmed;
-  }
-  // Drop the code and any separator that followed it.
-  return trimmed.slice(code.length).replace(/^\s*[·:\-–—]\s*/, "").trim() || trimmed;
-}
 
 /**
  * The "My progress" destination.

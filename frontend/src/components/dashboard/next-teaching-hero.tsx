@@ -6,6 +6,7 @@ import { ArrowRight, CalendarX2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { courseTitle } from "@/lib/format";
 import type { NextTeachingAction } from "@/lib/teaching-day";
 import { describeLead } from "@/lib/teaching-day";
 import type { SourceRollup } from "@/lib/contracts/state";
@@ -76,7 +77,7 @@ export function NextTeachingHero({
           </h2>
 
           <p className="mt-1.5 text-[15px] text-[var(--color-text-secondary)]">
-            {entry.courseCode} · {entry.courseName}
+            {entry.courseCode} · {courseTitle(entry.courseCode, entry.courseName)}
           </p>
 
           {/* A plain list: these are unlabelled facts, and a <dl> whose items
@@ -109,7 +110,7 @@ export function NextTeachingHero({
             </Button>
             <Link
               href={`/teacher/courses/${entry.courseId}`}
-              className="rounded-[var(--radius-sm)] text-[13px] font-medium text-[var(--color-text-secondary)] underline-offset-4 outline-none transition-colors hover:text-[var(--color-text)] hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none"
+              className="inline-flex min-h-6 items-center rounded-[var(--radius-sm)] text-[13px] font-medium text-[var(--color-text-secondary)] underline-offset-4 outline-none transition-colors hover:text-[var(--color-text)] hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 motion-reduce:transition-none pointer-coarse:min-h-11"
             >
               {t("hero.editSession")}
             </Link>

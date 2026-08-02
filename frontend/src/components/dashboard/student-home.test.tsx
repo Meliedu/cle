@@ -21,6 +21,12 @@ const mockUseUser = vi.mocked(useUser);
 const mockUsePath = vi.mocked(useLearningPath);
 const mockUseDay = vi.mocked(useTeachingDay);
 
+// Due dates are relative to the real clock: the hero states overdue work in
+// words, so a fixed calendar date would silently flip these tests from "Due"
+// to "Was due" the day the fixture date passed.
+const TOMORROW = new Date(Date.now() + 24 * 60 * 60 * 1000);
+const YESTERDAY = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
 function item(overrides: Partial<ChecklistItem> = {}): ChecklistItem {
   return {
     id: "w1",
@@ -30,7 +36,7 @@ function item(overrides: Partial<ChecklistItem> = {}): ChecklistItem {
     title: "Session 4 checkpoint",
     required: true,
     score_bearing: false,
-    due_at: new Date(2026, 5, 26, 16, 20).toISOString(),
+    due_at: TOMORROW.toISOString(),
     close_at: null,
     visible_from: null,
     status: "in_progress",
@@ -108,7 +114,19 @@ describe("StudentHome: one recoverable next action (Student 01, note 01)", () =>
     expect(within(hero).getByText("Saved")).toBeTruthy();
     expect(within(hero).getByText("Checkpoint")).toBeTruthy();
     // Format is locale-driven; assert the parts, not the ordering.
-    expect(within(hero).getByText(/^Due .*Jun.*26/)).toBeTruthy();
+    expect(within(hero).getByText(/^Due /)).toBeTruthy();
+  });
+
+  it("states overdue work in words instead of a stale date", () => {
+    stubPath(action({ due_at: YESTERDAY.toISOString() }));
+    renderHome();
+
+    const hero = screen.getByRole("region", { name: /session 4 checkpoint/i });
+    // The lead says the work is late AND still open — an actionable truth,
+    // not a reproach and not a silently stale "Due".
+    expect(within(hero).getByText(/Still open · was due/)).toBeTruthy();
+    expect(within(hero).getByText(/^Was due /)).toBeTruthy();
+    expect(within(hero).queryByText(/^Due /)).toBeNull();
   });
 
   it("uses Resume for saved work and Start for unstarted work", () => {
@@ -169,7 +187,7 @@ describe("StudentHome: locked work explains its dependency (Student 02, note 03)
     ]);
     renderHome();
 
-    const queue = screen.getByRole("region", { name: /later today/i });
+    const queue = screen.getByRole("region", { name: /up next/i });
     const links = within(queue).queryAllByRole("link");
     expect(links).toHaveLength(0);
     // The row is still present and still explains itself.
@@ -182,7 +200,7 @@ describe("StudentHome: locked work explains its dependency (Student 02, note 03)
       action({ id: "w2", title: "Practice 2", source_kind: "material" }, undefined, "not_started"),
     ]);
     renderHome();
-    const queue = screen.getByRole("region", { name: /later today/i });
+    const queue = screen.getByRole("region", { name: /up next/i });
     expect(
       within(queue).getByRole("link").getAttribute("href")
     ).toBe("/student/courses/c1/materials");

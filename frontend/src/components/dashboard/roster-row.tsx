@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { courseTitle, displayLanguage } from "@/lib/format";
 import type { RosterRow } from "@/lib/course-roster";
 import type { CourseLifecycle } from "@/lib/contracts/state";
 
@@ -50,7 +51,7 @@ export function RosterRowItem({
   const href = destinationFor(row, returnSearch);
   const label = course.code ?? course.name;
 
-  const meta = [course.semester, "CLE", titleCase(course.language)]
+  const meta = [course.semester, "CLE", displayLanguage(course.language)]
     .filter((value): value is string => Boolean(value))
     .join(" · ");
 
@@ -94,7 +95,7 @@ export function RosterRowItem({
             </div>
             {course.code ? (
               <p className="mt-0.5 truncate text-[15px] text-[var(--color-text-secondary)]">
-                {course.name}
+                {courseTitle(course.code, course.name)}
               </p>
             ) : null}
             {meta ? (
@@ -191,10 +192,3 @@ function initials(label: string): string {
   return (letters.slice(0, 2) || label.slice(0, 2)).toUpperCase();
 }
 
-function titleCase(input: string): string {
-  return input
-    .trim()
-    .split(/\s+/)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
-}

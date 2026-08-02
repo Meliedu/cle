@@ -115,7 +115,7 @@ export function StudentCourseOverview({
     <div className="space-y-6">
       <NextActionCard courseId={courseId} next={next} />
 
-      <ProgressCard progress={progress} />
+      <ProgressCard progress={progress} checklistHref={`${base}/checklist`} />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <QuickLink
@@ -168,6 +168,9 @@ function NextActionCard({ courseId, next }: NextActionCardProps) {
   }
 
   const due = next.due_at ?? next.close_at;
+  // Work in this card is still actionable, so a past due date reads as
+  // "still open, but late" and is said in words rather than left implicit.
+  const overdue = Boolean(due && new Date(due) < new Date());
 
   return (
     <div className="flex flex-col gap-4 rounded-[var(--radius-xl)] border border-[var(--color-primary)]/30 bg-[var(--color-primary-light)] p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -187,7 +190,13 @@ function NextActionCard({ courseId, next }: NextActionCardProps) {
               tone={workItemTone(next.status)}
               label={tk(next.source_kind)}
             />
-            {due ? <span>{t("nextAction.due", { when: formatDue(due) })}</span> : null}
+            {due ? (
+              <span>
+                {t(overdue ? "nextAction.overdue" : "nextAction.due", {
+                  when: formatDue(due),
+                })}
+              </span>
+            ) : null}
           </p>
         </div>
       </div>
@@ -202,7 +211,13 @@ function NextActionCard({ courseId, next }: NextActionCardProps) {
   );
 }
 
-function ProgressCard({ progress }: { readonly progress: Progress }) {
+function ProgressCard({
+  progress,
+  checklistHref,
+}: {
+  readonly progress: Progress;
+  readonly checklistHref: string;
+}) {
   const t = useTranslations("student.workspace.overview");
   return (
     <div className="space-y-4 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
@@ -236,12 +251,24 @@ function ProgressCard({ progress }: { readonly progress: Progress }) {
         />
       </div>
 
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-[12px]">
-        <Stat label={t("progress.open")} value={progress.open} />
-        <Stat label={t("progress.done")} value={progress.done} />
-        {progress.missed > 0 ? (
-          <Stat label={t("progress.missed")} value={progress.missed} />
-        ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 text-[12px]">
+        <div className="flex flex-wrap gap-x-6 gap-y-1">
+          <Stat label={t("progress.open")} value={progress.open} />
+          <Stat label={t("progress.done")} value={progress.done} />
+          {progress.missed > 0 ? (
+            <Stat label={t("progress.missed")} value={progress.missed} />
+          ) : null}
+        </div>
+        {/* The persistent way into the checklist: with the tab row removed
+            (removal rule 05), this card must link to the surface it
+            summarizes even when there is no next action to start. */}
+        <Link
+          href={checklistHref}
+          className="inline-flex min-h-6 items-center gap-1 text-[13px] font-medium text-[var(--color-primary)] hover:underline pointer-coarse:min-h-11"
+        >
+          {t("progress.viewChecklist")}
+          <ArrowRight aria-hidden="true" className="size-3.5" />
+        </Link>
       </div>
     </div>
   );

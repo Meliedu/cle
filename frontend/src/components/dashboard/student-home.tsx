@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { courseTitle } from "@/lib/format";
 import { useUser } from "@/hooks/use-auth";
 import { useCourses } from "@/hooks/use-courses";
 import { useLearningPath } from "@/hooks/use-learning-path";
@@ -141,7 +142,7 @@ function StudentCourses({ courses }: StudentCoursesProps) {
                 </p>
                 {course.code ? (
                   <p className="mt-0.5 truncate text-[14px] text-[var(--color-text-secondary)]">
-                    {course.name}
+                    {courseTitle(course.code, course.name)}
                   </p>
                 ) : null}
               </Link>

@@ -53,7 +53,7 @@ export function ScoreCategoriesView({ courseId }: ScoreCategoriesViewProps) {
         </div>
         <Link
           href={editHref}
-          className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-primary)] hover:underline pointer-coarse:min-h-11"
+          className="inline-flex min-h-6 items-center gap-1.5 text-[13px] font-medium text-[var(--color-primary)] hover:underline pointer-coarse:min-h-11"
         >
           <SlidersHorizontal aria-hidden="true" className="size-3.5" />
           {t("edit")}

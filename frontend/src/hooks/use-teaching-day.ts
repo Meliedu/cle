@@ -17,11 +17,14 @@ import { rollUpSources, type SourceRollup } from "@/lib/contracts/state";
 /**
  * How far ahead the dashboard looks for the next class.
  *
- * Long enough that a course teaching once a fortnight still resolves a hero,
- * short enough to keep the fan-out bounded. The calendar feed caps at 366 days
- * server-side; nothing here approaches that.
+ * The SAME window the roster uses (`ROSTER_LOOKAHEAD_DAYS`), for the same
+ * reason the two share a feed: with different windows the roster row can show
+ * "Next to teach: Sep 1" while the hero claims no class is scheduled at all,
+ * which is a false claim, not an empty state. A 21-day hero window shipped
+ * exactly that contradiction during a term break. The calendar feed caps at
+ * 366 days server-side; nothing here approaches that.
  */
-const LOOKAHEAD_DAYS = 21;
+const LOOKAHEAD_DAYS = 120;
 
 export interface TeachingDayResult extends TeachingDay {
   readonly isLoading: boolean;
@@ -56,11 +59,11 @@ export function useTeachingDay(now: Date): TeachingDayResult {
 /**
  * How far ahead the roster looks when ordering courses by next class.
  *
- * Longer than the dashboard window: the roster must place every course,
- * including ones that only meet late in the term, and a course whose next class
- * falls outside this window simply sorts into the unscheduled group.
+ * Kept equal to the hero window BY CONSTRUCTION: if these differ, the hero and
+ * the roster can disagree about whether a next class exists. A course whose
+ * next class falls outside this window sorts into the unscheduled group.
  */
-const ROSTER_LOOKAHEAD_DAYS = 120;
+const ROSTER_LOOKAHEAD_DAYS = LOOKAHEAD_DAYS;
 
 export interface CourseNextClasses {
   readonly nextClassByCourse: ReadonlyMap<string, TeachingEntry>;

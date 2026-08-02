@@ -297,7 +297,10 @@
         "openStudents": "管理學生",
         "settingsTitle": "課程設定",
         "settingsReason": "調整已發佈課程的基本資料、教材或課表。",
-        "openSettings": "開啟課程設定"
+        "openSettings": "開啟課程設定",
+        "scheduleEndedTitle": "所有課堂已結束",
+        "scheduleEndedReason": "本課程排定的課堂皆已完成。若還有內容要教，請在課表新增課堂。",
+        "scheduleEndedAction": "開啟課表"
       }
     },
     "home": {
@@ -327,7 +330,7 @@
       },
       "empty": {
         "title": "接下來沒有排定的課堂",
-        "reason": "課程排定課表後，下一堂課會顯示在這裡，並附上就緒狀態與單一入口。",
+        "reason": "未來四個月的教學行事曆沒有任何安排。課表由各課程管理。",
         "action": "前往課程"
       },
       "laterToday": {
@@ -343,7 +346,7 @@
       "rail": {
         "agendaTitle": "這堂課之後",
         "agendaTitleNoClass": "即將到來",
-        "agendaEmpty": "未來三週沒有排程。",
+        "agendaEmpty": "未來四個月沒有排程。",
         "note": "行事曆是時間的依據；課堂就緒狀態由課程管理。",
         "viewCalendar": "查看完整行事曆",
         "prevWeek": "上一週",
@@ -696,8 +699,6 @@
       "lockedGeneric": "請先完成前一個步驟",
       "dueAt": "{date} {time} 截止",
       "noDue": "沒有截止時間",
-      "laterToday": "今天稍後",
-      "laterTodayEmpty": "今天沒有其他待辦事項。",
       "yourCourses": "我的課程",
       "yourCoursesEmpty": "您尚未加入任何課程。",
       "joinCourse": "加入課程",
@@ -717,7 +718,12 @@
         "follow_up": "追蹤練習",
         "report": "報告",
         "other": "任務"
-      }
+      },
+      "upNext": "接下來",
+      "upNextEmpty": "目前學習路徑上沒有其他待辦。",
+      "leadOverdue": "仍可提交 · 原截止於 {date} {time}",
+      "wasDueAt": "原截止：{date} {time}",
+      "overdueFlag": "已逾期"
     },
     "progress": {
       "title": "我的學習進度",

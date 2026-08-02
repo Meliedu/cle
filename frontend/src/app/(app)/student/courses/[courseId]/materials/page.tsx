@@ -16,7 +16,7 @@ export default async function StudentMaterialsPage({
 }: StudentMaterialsPageProps) {
   const { courseId } = await params;
   return (
-    <StudentCourseShell courseId={courseId} activeTab="materials">
+    <StudentCourseShell courseId={courseId}>
       <StudentMaterials courseId={courseId} />
     </StudentCourseShell>
   );

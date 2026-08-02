@@ -120,6 +120,17 @@ describe("removal rule 05: no second horizontal course tab row", () => {
     expect(shell).not.toMatch(/overflow-x-auto border-b/);
   });
 
+  it("renders no tab nav in the student course shell either", () => {
+    // The rule is lane-independent: the student shell carried a tab row that
+    // drifted out of sync with the student course rail (each listed
+    // destinations the other did not), which is exactly the duplicate
+    // navigation this rule removes.
+    const shell = read("components/student-workspace/student-course-shell.tsx");
+    expect(shell).not.toMatch(/aria-current=\{isActive \? "page"/);
+    expect(shell).not.toMatch(/TABS\s*:/);
+    expect(shell).not.toMatch(/overflow-x-auto border-b/);
+  });
+
   it("keeps exactly one breadcrumb nav in the shell", () => {
     const shell = read("components/course/course-workspace-shell.tsx");
     const navCount = (shell.match(/<nav\b/g) ?? []).length;

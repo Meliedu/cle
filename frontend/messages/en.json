@@ -861,7 +861,10 @@
         "openStudents": "Manage students",
         "settingsTitle": "Course settings",
         "settingsReason": "Change basics, sources, or the schedule for this published course.",
-        "openSettings": "Open course settings"
+        "openSettings": "Open course settings",
+        "scheduleEndedTitle": "All sessions have ended",
+        "scheduleEndedReason": "Every scheduled class in this course has finished. Add sessions in the schedule if there is more to teach.",
+        "scheduleEndedAction": "Open schedule"
       },
       "schedule": {
         "title": "Course schedule",
@@ -2280,7 +2283,7 @@
       },
       "empty": {
         "title": "No class scheduled ahead",
-        "reason": "Once a course has a schedule, the next class you teach appears here with its readiness and a single way in.",
+        "reason": "Nothing is on your teaching calendar for the next four months. Schedules live with each course.",
         "action": "Go to Courses"
       },
       "laterToday": {
@@ -2296,7 +2299,7 @@
       "rail": {
         "agendaTitle": "After this session",
         "agendaTitleNoClass": "Coming up",
-        "agendaEmpty": "Nothing scheduled in the next three weeks.",
+        "agendaEmpty": "Nothing scheduled in the next four months.",
         "note": "Calendar remains the source of time; session readiness stays with the course.",
         "viewCalendar": "View full calendar",
         "prevWeek": "Previous week",
@@ -2566,17 +2569,8 @@
     },
     "workspace": {
       "breadcrumb": "My courses",
-      "navLabel": "Course sections",
       "loadErrorTitle": "We couldn't load this course",
       "loadError": "Refresh the page or return to your courses.",
-      "tabs": {
-        "overview": "Overview",
-        "checklist": "Checklist",
-        "schedule": "Schedule",
-        "sessions": "Sessions",
-        "materials": "Materials",
-        "activities": "Activities"
-      },
       "overview": {
         "error": {
           "title": "We couldn't load your checklist",
@@ -2591,14 +2585,16 @@
           "start": "Start",
           "due": "Due {when}",
           "clearTitle": "You're all caught up",
-          "clearReason": "No open tasks right now. Check back after your next session."
+          "clearReason": "No open tasks right now. Check back after your next session.",
+          "overdue": "Was due {when} · still open"
         },
         "progress": {
           "title": "Your progress",
           "summary": "{done} of {total} tasks done",
           "open": "open",
           "done": "done",
-          "missed": "missed"
+          "missed": "missed",
+          "viewChecklist": "View checklist"
         },
         "links": {
           "schedule": "Class schedule",
@@ -3452,8 +3448,6 @@
       "lockedGeneric": "Complete the earlier step",
       "dueAt": "Due {date} · {time}",
       "noDue": "No deadline",
-      "laterToday": "Later today",
-      "laterTodayEmpty": "Nothing else is waiting today.",
       "yourCourses": "Your courses",
       "yourCoursesEmpty": "You are not enrolled in a course yet.",
       "joinCourse": "Join a course",
@@ -3473,7 +3467,12 @@
         "follow_up": "Follow-up",
         "report": "Report",
         "other": "Task"
-      }
+      },
+      "upNext": "Up next",
+      "upNextEmpty": "Nothing else on your learning path right now.",
+      "leadOverdue": "Still open · was due {date} at {time}",
+      "wasDueAt": "Was due {date} · {time}",
+      "overdueFlag": "Overdue"
     },
     "progress": {
       "title": "My progress",

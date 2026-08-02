@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -106,14 +106,22 @@ async def list_courses(
             detail="Invalid pagination: page >= 1, 1 <= limit <= 100",
         )
 
-    base = (
-        select(Course)
-        .join(Enrollment, Enrollment.course_id == Course.id)
+    # EXISTS rather than a join: a course the user OWNS is listed even when
+    # their own enrollment row is missing (e.g. seeded or migrated data), and
+    # a course can never appear twice. An instructor losing sight of a course
+    # they teach is worse than a redundant predicate.
+    actively_enrolled = (
+        select(Enrollment.id)
         .where(
+            Enrollment.course_id == Course.id,
             Enrollment.user_id == user.id,
             Enrollment.status == "active",
-            Course.deleted_at.is_(None),
         )
+        .exists()
+    )
+    base = select(Course).where(
+        Course.deleted_at.is_(None),
+        or_(actively_enrolled, Course.instructor_id == user.id),
     )
 
     count_result = await db.execute(
