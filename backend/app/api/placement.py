@@ -26,7 +26,6 @@ from app.models.placement import (
     PlacementAttempt,
     PlacementForm,
     PlacementItem,
-    PlacementItemKey,
     PlacementResponse,
     PlacementTestVersion,
 )
@@ -803,9 +802,11 @@ async def publish_version(
 ):
     """Publish a version, but only if preflight is clean.
 
-    The gate is the point. The v1.2 package carries two items whose key the
-    content owner has disputed, and publishing over that would mean scoring a
-    learner on a question with no defensible answer.
+    The gate is the point. The v1.2 package carried two items whose key the
+    content owner disputed, and publishing over that would have meant scoring a
+    learner on a question with no defensible answer. v1.3 revised them and now
+    preflights clean, which is the gate working rather than the gate being
+    unnecessary: it stays here, unchanged, for the next package.
     """
     version = await db.get(PlacementTestVersion, version_id)
     if version is None:

@@ -1,11 +1,17 @@
 """Provisional placement scoring. Pure functions, no database, no I/O.
 
 Every rule here is a transcription of the published scoring workbook
-(``Meli_Placement_Test_v1.2_Scoring_and_Calibration.xlsx``), which is the
+(``Meli_Placement_Test_v1.3_Scoring_and_Calibration.xlsx``), which is the
 executable authority CLE has already verified against seven scenarios. Where
 the Administrator Pack prose and the workbook formula disagree, the workbook
 wins and the disagreement is called out in a comment, because the workbook is
 what produced the evidence CLE signed off.
+
+v1.3 changed no rule in this module. Its ``Rules & Mapping`` sheet carries the
+same thresholds as v1.2 and its ``Summary`` formulas are character-identical,
+so the only edit was the version label. That is asserted, not assumed:
+``tests/test_placement_scoring_vs_workbook.py`` re-derives the workbook
+formulas independently over every reachable band-score vector.
 
 The single most important property of this module is what it does *not* do: it
 never decides anything. It produces evidence and a provisional recommendation.
@@ -106,7 +112,7 @@ class ScoringPolicy:
     later tightening cannot silently reinterpret past results.
     """
 
-    version: str = "v1.2-candidate"
+    version: str = "v1.3-candidate"
     #: Minimum correct at the candidate band (workbook "Band minimum").
     band_minimum: int = 3
     #: Cumulative accuracy required through the candidate band.
@@ -397,8 +403,6 @@ def _confidence(
     evidence for the reviewer and deliberately do not override the workbook's
     verified confidence output.
     """
-    minutes = _duration_minutes(duration_seconds)
-
     # Every condition below is already expressed as a flag, so the flag list is
     # the single source of truth. Duplicating the duration tests here meant an
     # approved extended-time accommodation suppressed the FLAG but not the

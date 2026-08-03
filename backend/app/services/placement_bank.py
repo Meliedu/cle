@@ -7,8 +7,10 @@ every scored attempt keeps pointing at the exact content it was scored against.
 The preflight is the publication gate. It refuses to publish a version whose
 content the people who own it have not settled -- most importantly, a version
 containing an item whose key a teacher has disputed. That is not a
-belt-and-braces nicety: the v1.2 package ships with two such items, and scoring
-one of them would produce a number nobody can defend.
+belt-and-braces nicety: the v1.2 package shipped two such items, and scoring
+one of them would have produced a number nobody could defend. v1.3 revised
+them, so the gate now passes on the real package; it stays exactly as strict,
+because what changed is the content, not the standard.
 """
 from __future__ import annotations
 
@@ -28,22 +30,22 @@ from app.models.placement import (
     PlacementTestVersion,
 )
 
-BANK_DIR = Path(__file__).resolve().parents[1] / "data" / "placement"
-
-#: Flag codes that make an item unscoreable. Anything else is a revision
-#: request: real content work, but it does not stop the arithmetic being
-#: defensible, so it does not block publication.
-BLOCKING_FLAG_CODES: frozenset[str] = frozenset(
-    {"key_disputed", "key_not_in_options", "cloze_blank_number_mismatch"}
+# Re-exported: these are the contract the offline extractor shares with this
+# module, and callers here have always reached for them by this name.
+from app.services.placement_contract import (  # noqa: F401
+    BLOCKING_FLAG_CODES,
+    EXPECTED_ITEMS_PER_BAND,
+    EXPECTED_ITEMS_PER_FORM,
+    EXPECTED_SECTIONS,
+    flag_severity,
 )
 
-EXPECTED_SECTIONS: Mapping[str, int] = {
-    "listening": 12,
-    "language_use": 6,
-    "reading": 12,
-}
-EXPECTED_ITEMS_PER_FORM = 30
-EXPECTED_ITEMS_PER_BAND = 5
+BANK_DIR = Path(__file__).resolve().parents[1] / "data" / "placement"
+
+
+def annotate_flags(flags: Sequence[Mapping[str, Any]] | None) -> list[dict[str, Any]]:
+    """Copy stored flags with their severity resolved for display."""
+    return [{**flag, "severity": flag_severity(flag.get("code"))} for flag in flags or []]
 
 
 class PlacementBankError(Exception):
@@ -255,6 +257,22 @@ def preflight_bank(bank: Mapping[str, Any]) -> PreflightResult:
     )
 
 
+def _key_is_answerable(key: str, letters: set[str], response_format: str) -> bool:
+    """Whether some legitimate response could match this key.
+
+    For an ordering item that means a *permutation* of the offered parts, not
+    merely letters drawn from them. A key of ``"A-B"`` on a three-part item, or
+    ``"A-A-B"``, names only real options while being impossible to produce by
+    arranging them, so scoring compares every genuine answer against a string
+    none of them can equal and the item silently marks everyone wrong.
+    """
+    if not letters:
+        return False
+    if response_format == "sequence":
+        return sorted(key.split("-")) == sorted(letters)
+    return key in letters
+
+
 def _item_findings(form_code: str, item: Mapping[str, Any]) -> list[PreflightFinding]:
     findings: list[PreflightFinding] = []
     restricted = item["restricted"]
@@ -279,13 +297,12 @@ def _item_findings(form_code: str, item: Mapping[str, Any]) -> list[PreflightFin
     # the extractor's version of this check.
     letters = {option["letter"] for option in item["safe"]["options"]}
     key = restricted["correct_answer"]
-    parts = key.split("-") if item["response_format"] == "sequence" else [key]
-    if not letters or any(part not in letters for part in parts):
+    if not _key_is_answerable(key, letters, item["response_format"]):
         findings.append(
             PreflightFinding(
                 code="key_not_in_options",
                 severity="blocking",
-                detail=f"key {key!r} is not among options {sorted(letters)}",
+                detail=f"key {key!r} cannot be produced from options {sorted(letters)}",
                 form_code=form_code,
                 question_number=question,
                 external_item_id=external_id,
@@ -358,9 +375,9 @@ async def import_bank(
         blueprint_hash=blueprint_hash(bank),
         scoring_rule_version=scoring_rule_version,
         key_version=_stable_hash(keys_payload)[:16],
-        review_policy_version=str((review_policy or {}).get("version", "v1.2-candidate")),
+        review_policy_version=str((review_policy or {}).get("version", "v1.3-candidate")),
         privacy_policy_version=str(
-            bank.get("claim_boundary", {}).get("version", "v1.2")
+            bank.get("claim_boundary", {}).get("version", "v1.3")
         ),
         source_package=source_package or bank.get("source_package"),
         duration_minutes=int(bank.get("blueprint", {}).get("duration_minutes", 30)),
@@ -426,6 +443,7 @@ async def import_bank(
                     target_grammar=restricted.get("target_grammar"),
                     copyright_status=restricted.get("copyright_status"),
                     qa_status=restricted.get("qa_status"),
+                    teacher_review=restricted.get("teacher_review"),
                     teacher_flags=list(item_payload.get("teacher_flags", [])),
                 )
             )
@@ -525,17 +543,17 @@ async def preflight_version(
 
         for row in form_rows:
             letters = set(row.option_letters or [])
-            parts = (
-                row.correct_answer.split("-")
-                if row.response_format == "sequence"
-                else [row.correct_answer]
-            )
-            if not letters or any(part not in letters for part in parts):
+            if not _key_is_answerable(
+                row.correct_answer, letters, row.response_format
+            ):
                 findings.append(
                     PreflightFinding(
                         code="key_not_in_options",
                         severity="blocking",
-                        detail=f"key {row.correct_answer!r} is not among options {sorted(letters)}",
+                        detail=(
+                            f"key {row.correct_answer!r} cannot be produced "
+                            f"from options {sorted(letters)}"
+                        ),
                         form_code=form_code,
                         question_number=row.question_number,
                         external_item_id=row.external_item_id,

@@ -529,6 +529,7 @@
         "colResult": "結果",
         "colChanges": "修改次數",
         "itemFlagged": "有爭議",
+        "itemAdvisory": "待確認",
         "noAnswer": "未作答",
         "resultCorrect": "正確",
         "resultIncorrect": "錯誤",

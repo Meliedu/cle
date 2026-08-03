@@ -1185,6 +1185,7 @@ async def build_evidence(
                 PlacementItemKey.answer_text,
                 PlacementItemKey.rationale,
                 PlacementItemKey.teacher_flags,
+                PlacementItemKey.teacher_review,
                 PlacementResponse.response,
                 PlacementResponse.is_correct,
                 PlacementResponse.change_count,
@@ -1212,7 +1213,13 @@ async def build_evidence(
             "correct_answer": row.correct_answer,
             "answer_text": row.answer_text,
             "rationale": row.rationale,
-            "teacher_flags": list(row.teacher_flags or []),
+            # Severity is resolved here rather than in the UI: v1.3 carries 22
+            # advisory flags, and a reviewer who sees them styled like an
+            # unscoreable item learns to ignore the badge that matters.
+            "teacher_flags": placement_bank.annotate_flags(row.teacher_flags),
+            # Why this item is in front of a reviewer, in the content owner's
+            # own terms. Restricted, and this route is instructor-gated.
+            "teacher_review": row.teacher_review,
             "response": row.response,
             "is_correct": row.is_correct,
             "change_count": row.change_count,

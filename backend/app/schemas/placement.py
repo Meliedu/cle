@@ -199,6 +199,10 @@ class ReviewResponseOut(BaseModel):
     answer_text: str | None = None
     rationale: str | None = None
     teacher_flags: list[dict[str, Any]] = []
+    #: The v1.3 teacher re-review ledger row, when the version has one. Carries
+    #: an excerpt of the item and the rubric, so it stays on this restricted
+    #: schema and never on :class:`PlacementItemOut`.
+    teacher_review: dict[str, Any] | None = None
     response: str | None = None
     is_correct: bool | None = None
     change_count: int = 0

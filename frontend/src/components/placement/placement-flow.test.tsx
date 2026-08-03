@@ -46,7 +46,7 @@ afterEach(cleanup);
 const INTRO = {
   available: true,
   unavailable_reason: null,
-  version_code: "v1.2",
+  version_code: "v1.3",
   duration_minutes: 30,
   section_counts: { listening: 12, language_use: 6, reading: 12 },
   total_items: 30,

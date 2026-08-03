@@ -2482,6 +2482,7 @@
         "colResult": "Result",
         "colChanges": "Changes",
         "itemFlagged": "Disputed",
+        "itemAdvisory": "To confirm",
         "noAnswer": "Not answered",
         "resultCorrect": "Correct",
         "resultIncorrect": "Incorrect",

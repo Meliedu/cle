@@ -14,6 +14,8 @@ import {
   usePlacementEvidence,
   useRecordPlacementDecision,
   type PlacementEvidence,
+  type PlacementTeacherFlag,
+  type PlacementTeacherReview,
 } from "@/hooks/use-placement";
 
 import { flagSeverity, hasBlockingFlag, sortFlags } from "./review-flags";
@@ -82,6 +84,53 @@ const REASON_CODES = [
   "advising_needed",
   "suspected_irregularity",
 ] as const;
+
+/**
+ * The content note on one item, if it has one.
+ *
+ * A blocking flag means the item carried no defensible key and scored nothing.
+ * An advisory one means the content owner revised it and wants the revision
+ * confirmed. Those are different asks, so they must not look the same: v1.3
+ * ships 22 advisory items and zero blocking ones, and styling all 22 as
+ * disputed would teach reviewers to skim past the badge that matters.
+ *
+ * Severity is resolved server-side from the same set the publication gate uses.
+ * A flag stored before that field existed has none, and is treated as blocking:
+ * the safe reading of an unknown content defect is the serious one.
+ */
+export function ItemFlagBadge({
+  flags,
+  review,
+}: {
+  readonly flags: readonly PlacementTeacherFlag[];
+  readonly review?: PlacementTeacherReview | null;
+}) {
+  const t = useTranslations("teacher.placement.review");
+  if (flags.length === 0) return null;
+
+  const blocking = flags.some((flag) => flag.severity !== "advisory");
+  // The review question is the content owner's own wording of what they want
+  // checked, which is more use to a reviewer than the flag code behind it.
+  const detail = [...flags.map((flag) => flag.detail), review?.review_question]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <span
+      className={cn(
+        "ml-2 rounded-[var(--radius-pill)] px-1.5 py-0.5 text-[11px]",
+        blocking
+          ? "bg-[var(--color-error)]/12 text-[var(--color-error)]"
+          : "bg-[var(--color-surface-hover)] text-[var(--color-text-secondary)]"
+      )}
+      // Words, not colour alone, and the detail is reachable without hover.
+      title={detail}
+    >
+      {blocking ? t("itemFlagged") : t("itemAdvisory")}
+      <span className="sr-only">{detail ? ` (${detail})` : ""}</span>
+    </span>
+  );
+}
 
 /**
  * The CLE decision surface for one attempt (wireframe T095).
@@ -445,14 +494,10 @@ function ReviewBody({ evidence }: { readonly evidence: PlacementEvidence }) {
                     className="px-5 py-2.5 text-left font-normal text-[var(--color-text)]"
                   >
                     {row.question_number}
-                    {row.teacher_flags.length > 0 ? (
-                      <span
-                        className="ml-2 rounded-[var(--radius-pill)] bg-[var(--color-error)]/12 px-1.5 py-0.5 text-[11px] text-[var(--color-error)]"
-                        title={row.teacher_flags.map((f) => f.detail).join(" · ")}
-                      >
-                        {t("itemFlagged")}
-                      </span>
-                    ) : null}
+                    <ItemFlagBadge
+                      flags={row.teacher_flags}
+                      review={row.teacher_review}
+                    />
                   </th>
                   <td className="px-3 py-2.5 tabular-nums text-[var(--color-text-secondary)]">
                     {row.legacy_band}

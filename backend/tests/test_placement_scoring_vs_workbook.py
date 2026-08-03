@@ -1,7 +1,7 @@
 """Exhaustive equivalence proof: our scoring vs the published workbook formulas.
 
 ``placement_scoring.py`` is a transcription of
-``Meli_Placement_Test_v1.2_Scoring_and_Calibration.xlsx``. A transcription can
+``Meli_Placement_Test_v1.3_Scoring_and_Calibration.xlsx``. A transcription can
 be reviewed by eye, but eyes miss boundary conditions, and a boundary mistake
 here silently places a student in the wrong course.
 
@@ -10,7 +10,12 @@ as literally as possible -- straight from the cell text, with no refactoring --
 and then checks the two agree on **every one of the 46,656 possible band-score
 vectors** (0..5 correct at each of six bands). Exhaustive, not sampled.
 
-The workbook formulas, copied verbatim from the v1.2 file:
+These same formula strings are asserted against the shipped workbook at
+extraction time (``scripts/placement_sources.py::_assert_scoring_formulas``), so
+a package that changes a rule fails there rather than being scored here by
+transcribed rules that no longer match it. v1.3 changed none of them.
+
+The workbook formulas, copied verbatim from the v1.3 file:
 
     B19  =IF(AND(B16>=3,SUM(B11:B16)/30>=0.7),6,
           IF(AND(B15>=3,SUM(B11:B15)/25>=0.7),5,

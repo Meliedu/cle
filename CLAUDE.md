@@ -30,6 +30,14 @@ alembic revision --autogenerate -m "description"  # create new
 
 # Seed dev data
 python seed.py
+
+# Rebuild the placement item bank from the controlled source package.
+# The output is gitignored (it carries answer keys and listening scripts), so
+# it must be regenerated on any machine that needs to run the placement tests.
+python scripts/extract_placement_bank.py --package "<v1.3 package dir>" \
+    --previous app/data/placement/meli-placement-v1.2.json   # --previous is optional
+python scripts/import_placement_bank.py --preflight-only     # report without writing
+python scripts/seed_placement_dev.py                         # publish a dev-only copy
 ```
 
 ### Frontend (run from `frontend/`)
@@ -132,3 +140,4 @@ frontend/src/
 - **Worker retry idempotency:** Tasks that mutate user-facing state (e.g. `update_concept_mastery`) carry a `_task_created_at` watermark injected by the dispatcher. The handler checks `concept_mastery_history` for `recorded_at >= watermark` and skips if already-applied. Closes the seam between handler-commit and complete_task-commit when `_reset_stuck_tasks` requeues.
 - **GENERATED columns mirrored in ORM:** `concept_mastery.mastery_score` is `GENERATED ALWAYS AS (alpha/(alpha+beta)) STORED` in PG. The SQLAlchemy model declares it via `Computed("alpha / (alpha + beta)", persisted=True)` so `Base.metadata.create_all` (used by tests) reproduces the constraint. Never set `mastery_score` from Python — only `alpha`/`beta`.
 - **`Task.payload` is JSON (not JSONB).** Use `Task.payload.op("->>")("course_id")` for queries; `astext` won't work.
+- **Placement item bank (v1.3):** the source package is PDFs + one XLSX and ships no machine-readable item file, so `scripts/extract_placement_bank.py` reconstructs it. The student-safe surface (passage, stem, options) is read only from the student booklet and the restricted surface (key, script, rationale, band) only from the Administrator Pack and workbook — that split is structural, not a convention. Paragraphs are rebuilt from PDF geometry (`scripts/pdf_layout.py`): indentation separates stimulus from question, and a line reaching the right margin marks a wrap. Extraction refuses rather than guesses: keys must agree across three independent sources, the reconstruction must equal the printed page character-for-character, and the workbook's own scoring formulas must match the ones `services/placement_scoring.py` transcribes. Facts shared with the API live in `app/services/placement_contract.py`.

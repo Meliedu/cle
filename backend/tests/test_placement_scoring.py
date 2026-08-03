@@ -32,7 +32,7 @@ from app.services.placement_scoring import (
 )
 
 BANK_PATH = (
-    Path(__file__).resolve().parents[1] / "app" / "data" / "placement" / "meli-placement-v1.2.json"
+    Path(__file__).resolve().parents[1] / "app" / "data" / "placement" / "meli-placement-v1.3.json"
 )
 
 

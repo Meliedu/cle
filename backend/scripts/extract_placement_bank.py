@@ -1,28 +1,37 @@
-"""Extract the Meli placement item bank from the v1.2 teacher re-review package.
+"""Extract the Meli placement item bank from the v1.3 teacher re-review package.
 
 Why this exists
 ---------------
-v1.1 shipped ``data/selected_items_v1.1.json``. **v1.2 does not ship any
-machine-readable item file** -- the package is PDFs, DOCX sources and one XLSX.
-So the bank has to be reconstructed, and the reconstruction has to be
+v1.1 shipped ``data/selected_items_v1.1.json``. **Neither v1.2 nor v1.3 ships a
+machine-readable item file** -- v1.2 was DOCX + one XLSX, v1.3 is PDF + one
+XLSX. So the bank has to be reconstructed, and the reconstruction has to be
 reproducible and checkable rather than a one-off paste.
 
-The two halves come from two different files on purpose, and that split is the
-whole security story of this test:
+The safe/restricted split, and why the safe half is read from the student
+booklet rather than the Administrator Pack, is documented in
+``placement_sources``. This module assembles what those readers return,
+cross-checks it, and validates the result against the published blueprint.
 
-* the **student-safe** surface (passage, stem, options) is read from the student
-  booklet ``editable/Meli_Placement_Test_v1.2_Form_?.docx`` -- the same artefact
-  a learner receives, so nothing restricted can leak in by construction;
-* the **restricted** surface (key, answer text, rationale, listening transcript,
-  reference band) is read from the controlled workbook + Administrator Pack.
-
-Reading the safe fields from the student booklet is not a convenience. If we
-derived them from the Administrator Pack we would have no structural guarantee
-that a key or a band label never rides along into the delivery payload.
+What changed for v1.3
+---------------------
+* The package is **PDF**, so paragraphs are reconstructed from page geometry
+  (see ``pdf_layout``) instead of read off DOCX paragraph objects.
+* The key is cross-checked **three ways** -- workbook ``Item Metadata``,
+  workbook ``Key Matrix``, and the Administrator Pack's printed answer table --
+  and any disagreement is fatal. v1.2 trusted a single source.
+* The claim boundary is read out of the booklets instead of being restated in
+  code, so the text shown in the app is the text printed on the learner's paper.
+* The workbook gained an ``Item Review`` sheet (the teacher re-review ledger).
+  It is carried through to ``restricted.teacher_review`` so CLE's review screen
+  can show priority and rubric scores instead of a bare item id.
+* The three v1.2 items whose key the teacher disputed were revised, so the
+  hardcoded dispute list is gone. Nothing is hardcoded in its place: flags are
+  derived from the sources or from mechanical checks.
 
 Usage::
 
     python scripts/extract_placement_bank.py --package <dir> [--out <file>]
+                                             [--previous <old bank.json>]
 
 Output is a single versioned JSON consumed by
 ``app/services/placement_bank.py``. Nothing here runs at request time.
@@ -34,458 +43,245 @@ import hashlib
 import json
 import re
 import sys
-import unicodedata
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import docx  # type: ignore[import-untyped]
-import openpyxl
+# Run as a script, so ``backend/`` is not on the path yet. Everything below is
+# imported package-qualified: ``scripts`` is a real package precisely so there
+# is only ever one copy of these modules. See ``scripts/__init__.py``.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-VERSION_CODE = "meli-placement-v1.2-candidate-2026-07-28"
-SOURCE_PACKAGE = "Meli_Placement_Test_v1.2_Teacher_Rereview_2026-07-28"
-
-FORMS = ("A", "B", "C", "D", "E")
-ITEMS_PER_FORM = 30
-BANDS = (1, 2, 3, 4, 5, 6)
-
-#: Section boundaries are fixed by the published blueprint (12 / 6 / 12) and are
-#: asserted rather than inferred, so a re-ordered source fails loudly.
-SECTION_BY_QUESTION = {
-    **{q: "listening" for q in range(1, 13)},
-    **{q: "language_use" for q in range(13, 19)},
-    **{q: "reading" for q in range(19, 31)},
-}
-
-#: Workbook ``Skill`` -> our section key. The workbook says "Vocabulary" for the
-#: middle block while every learner-facing artefact says "Language Use"; the
-#: booklet heading and the Summary sheet both use "Language Use", so that wins.
-SKILL_TO_SECTION = {
-    "Listening": "listening",
-    "Vocabulary": "language_use",
-    "Language Use": "language_use",
-    "Reading": "reading",
-}
-
-OPTION_LETTERS = ("A", "B", "C", "D", "E", "F")
-
-#: A line like "A. 老师     B. 医生" -- the booklet lays options two per line.
-_OPTION_PAIR = re.compile(
-    r"([A-F])\.\s*(.*?)(?=\s{2,}[A-F]\.|$)",
-    re.DOTALL,
+# Two facts this script must not restate: which flag codes stop a publication,
+# and the section blueprint. Both are re-checked by the API at import and
+# publish time, so a second copy here would be free to drift, and the drift
+# would surface only as a summary line disagreeing with the gate. The contract
+# module is dependency-free on purpose, so this stays an offline script.
+from app.services.placement_contract import (  # noqa: E402
+    BLOCKING_FLAG_CODES,
+    EXPECTED_SECTIONS,
 )
-_QUESTION_START = re.compile(r"^(\d{1,2})\.\s*(.*)$", re.DOTALL)
-_ADMIN_HEADING = re.compile(r"^Q(\d{1,2})\s*·\s*(\S+)\s*·\s*legacy HSK(\d)$")
-_ADMIN_KEY = re.compile(r"^Key:\s*([A-F](?:-[A-F])*)\s*·\s*(.*?)(?:\s*\|\s*(.*))?$")
-_CLOZE_PROMPT = re.compile(r"^请选择最合适的一项填入第（(\d{1,2})）空。$")
-_CLOZE_BLANK = re.compile(r"（(\d{1,2})）\s*_")
-_ORDER_LINE = "Order / 顺序"
-
-#: Booklet furniture that sits between questions and must never be mistaken for
-#: item text. Without this, a section heading and its "Questions 19-30 · about
-#: 13 minutes" descriptor get absorbed as the stem of the *preceding* item.
-_FURNITURE = (
-    re.compile(r"^(Listening|Language Use|Reading|Instructions|Answer Sheet)\s*/"),
-    re.compile(r"^Questions \d{1,2}-\d{1,2}\s*·"),
-    re.compile(r"^Internal use\s*·"),
-    re.compile(r"^MELI\s*·"),
-    re.compile(r"^Meli\s*·\s*CLE"),
-    re.compile(r"^Form [A-E]\s*·"),
-    re.compile(r"^30-minute internal diagnostic"),
-    re.compile(r"^Do not open the next page"),
+from scripts.placement_admin_pack import read_admin_pack  # noqa: E402
+from scripts.placement_sources import (  # noqa: E402
+    BANDS,
+    CLOZE_BLANK,
+    CLOZE_PROMPT,
+    FORMS,
+    ITEMS_PER_FORM,
+    PACKAGE_VERSION,
+    SKILL_TO_SECTION,
+    ExtractError,
+    RawItem,
+    read_student_form,
 )
+from scripts.placement_workbook import read_workbook  # noqa: E402
+
+VERSION_CODE = f"meli-placement-{PACKAGE_VERSION}-candidate-2026-08-03"
+SOURCE_PACKAGE = f"Meli_Placement_Test_{PACKAGE_VERSION}_Teacher_Rereview_2026-08-03"
+EXPECTED_SECONDS_PER_FORM = 1401
+#: A multiple-choice item offers four options; an ordering item offers three
+#: parts to arrange. Both are blueprint facts, not incidental.
+CHOICE_OPTIONS = 4
+SEQUENCE_PARTS = 3
+
+_WORKBOOK_NAME = f"Meli_Placement_Test_{PACKAGE_VERSION}_Scoring_and_Calibration.xlsx"
+_ADMIN_PACK_NAME = f"Meli_Placement_Test_{PACKAGE_VERSION}_Administrator_Pack.pdf"
+
+#: A bare question number followed by a space, not preceded by a digit or dot.
+#: Finding one inside an assembled stem means the paragraph grouper fused two
+#: items, which no other check would notice.
+_STRAY_QUESTION_NUMBER = re.compile(r"(?<![\d.])\d{1,2}\.\s")
 
 
-def _is_furniture(line: str) -> bool:
-    return any(pattern.match(line) for pattern in _FURNITURE)
-
-
-class ExtractError(RuntimeError):
-    """Raised when the source package does not match the published blueprint."""
-
-
-@dataclass
-class RawItem:
-    """One question as read from the student booklet (safe fields only)."""
-
-    question_number: int
-    section: str
-    passage: str | None = None
-    stem: str = ""
-    prompt: str | None = None
-    options: list[dict[str, str]] = field(default_factory=list)
-    is_sequence: bool = False
-
-
-def _clean(text: str) -> str:
-    """Normalise whitespace without touching CJK content.
-
-    NFC only. The booklets mix ideographic space (U+3000) inside cloze brackets
-    with ASCII spaces around option letters; collapsing the former would corrupt
-    the rendered blank, so only ASCII runs are collapsed.
-    """
-    normalised = unicodedata.normalize("NFC", text)
-    # Word emits NBSP inside option runs; fold it to a plain space so option
-    # text compares cleanly. U+3000 is deliberately NOT folded: it is the
-    # rendered blank inside a cloze bracket, so losing it changes the item.
-    normalised = normalised.replace(" ", " ")
-    return re.sub(r"[ \t]+", " ", normalised).strip()
-
-
-def _parse_options(line: str) -> list[tuple[str, str]]:
-    """Pull ``(letter, text)`` pairs out of one booklet option line."""
-    found = [
-        (m.group(1), _clean(m.group(2)))
-        for m in _OPTION_PAIR.finditer(line)
-    ]
-    return [(letter, text) for letter, text in found if text]
-
-
-def _looks_like_options(line: str) -> bool:
-    return bool(re.match(r"^[A-F]\.\s", line.strip()))
-
-
-def read_student_form(path: Path, form_code: str) -> list[RawItem]:
-    """Read the 30 safe question surfaces out of one student booklet."""
-    document = docx.Document(str(path))
-    # Raw text is kept alongside the cleaned text on purpose: the booklet marks
-    # an option boundary with a run of spaces ("A. 老师     B. 医生"), and
-    # collapsing that run first would destroy the only separator there is.
-    paragraphs = [(p.text, _clean(p.text)) for p in document.paragraphs]
-
-    items: list[RawItem] = []
-    current: RawItem | None = None
-    # Text lines accumulated since the question opened but before its options:
-    # the first is the stimulus, the last before options is the actual question.
-    body: list[str] = []
-
-    def close() -> None:
-        nonlocal current, body
-        if current is None:
-            return
-        _finalise(current, body)
-        items.append(current)
-        current = None
-        body = []
-
-    for raw_line, line in paragraphs:
-        if not line:
-            continue
-        if line.startswith(_ORDER_LINE):
-            if current is not None:
-                current.is_sequence = True
-            continue
-        if line.startswith("Answer Sheet"):
-            break
-        if _is_furniture(line):
-            continue
-
-        match = _QUESTION_START.match(line)
-        # A numbered line only opens a question when the number is exactly the
-        # next one we expect. Passages legitimately contain "…3.5倍" style text,
-        # and option lines start with a letter, so both are rejected here.
-        expected_next = (current.question_number + 1) if current else 1
-        if (
-            match
-            and int(match.group(1)) == expected_next
-            and not _looks_like_options(line)
-        ):
-            close()
-            number = int(match.group(1))
-            current = RawItem(
-                question_number=number,
-                section=SECTION_BY_QUESTION[number],
-            )
-            body = [_clean(match.group(2))] if match.group(2).strip() else []
-            continue
-
-        if current is None:
-            continue
-
-        if _looks_like_options(line):
-            for letter, text in _parse_options(raw_line):
-                current.options.append({"letter": letter, "text": text})
-            continue
-
-        cloze = _CLOZE_PROMPT.match(line)
-        if cloze:
-            current.prompt = line
-            continue
-
-        body.append(line)
-
-    close()
-
-    if len(items) != ITEMS_PER_FORM:
-        raise ExtractError(
-            f"Form {form_code}: expected {ITEMS_PER_FORM} questions, parsed {len(items)}"
-        )
-    return items
-
-
-def _finalise(item: RawItem, body: list[str]) -> None:
-    """Split the accumulated text into passage vs stem.
-
-    A single line is the stem. Two or more means the last is the question and
-    everything before it is the stimulus the question is asked about.
-    """
-    lines = [line for line in body if line]
-    if not lines:
-        item.stem = ""
-    elif len(lines) == 1:
-        item.stem = lines[0]
-    else:
-        item.passage = "\n".join(lines[:-1])
-        item.stem = lines[-1]
-
-    # Cloze items carry their instruction in `prompt`; the passage IS the item,
-    # so a cloze whose text collapsed into `stem` should present as a passage.
-    if item.prompt and item.passage is None and item.stem:
-        item.passage = item.stem
-        item.stem = ""
-
-
-def read_workbook_metadata(path: Path) -> dict[tuple[str, int], dict[str, Any]]:
-    """Read the restricted per-item metadata from the scoring workbook."""
-    workbook = openpyxl.load_workbook(str(path), data_only=True, read_only=True)
-    try:
-        sheet = workbook["Item Metadata"]
-        rows = list(sheet.iter_rows(values_only=True))
-    finally:
-        workbook.close()
-
-    header_row = next(
-        (i for i, row in enumerate(rows) if row and row[0] == "Form"), None
-    )
-    if header_row is None:
-        raise ExtractError("Item Metadata sheet has no 'Form' header row")
-    header = [str(c).strip() if c is not None else "" for c in rows[header_row]]
-    index = {name: i for i, name in enumerate(header) if name}
-
-    required = [
-        "Form", "Q", "Item ID", "Slot", "Legacy band", "Skill", "Item type",
-        "Response", "Topic", "Subskill", "Expected sec", "Playback", "Key",
-    ]
-    missing = [name for name in required if name not in index]
-    if missing:
-        raise ExtractError(f"Item Metadata is missing columns: {missing}")
-
-    out: dict[tuple[str, int], dict[str, Any]] = {}
-    for row in rows[header_row + 1:]:
-        if not row or row[index["Form"]] is None:
-            continue
-        form = str(row[index["Form"]]).strip()
-        number = int(row[index["Q"]])
-        out[(form, number)] = {
-            "item_id": str(row[index["Item ID"]]).strip(),
-            "slot": str(row[index["Slot"]]).strip(),
-            "legacy_band": int(row[index["Legacy band"]]),
-            "skill": str(row[index["Skill"]]).strip(),
-            "item_type": str(row[index["Item type"]]).strip(),
-            "response_format": str(row[index["Response"]]).strip(),
-            "topic": _optional(row, index, "Topic"),
-            "subskill": _optional(row, index, "Subskill"),
-            "expected_seconds": int(row[index["Expected sec"]]),
-            "audio_playback": (
-                int(row[index["Playback"]]) if row[index["Playback"]] else None
-            ),
-            "correct_answer": str(row[index["Key"]]).strip(),
-            "target_vocabulary": _optional(row, index, "Target vocab"),
-            "target_grammar": _optional(row, index, "Target grammar/discourse"),
-            "copyright_status": _optional(row, index, "Copyright status"),
-            "qa_status": _optional(row, index, "QA status"),
-        }
-    if len(out) != len(FORMS) * ITEMS_PER_FORM:
-        raise ExtractError(
-            f"Item Metadata: expected 150 rows, read {len(out)}"
-        )
-    return out
-
-
-def _optional(row: tuple, index: dict[str, int], name: str) -> str | None:
-    position = index.get(name)
-    if position is None or position >= len(row):
-        return None
-    value = row[position]
-    return str(value).strip() if value not in (None, "") else None
-
-
-def read_admin_pack(path: Path) -> dict[tuple[str, int], dict[str, Any]]:
-    """Read transcripts, answer texts and rationales from the Administrator Pack."""
-    document = docx.Document(str(path))
-    entries: dict[tuple[str, int], dict[str, Any]] = {}
-
-    form_code: str | None = None
-    current: tuple[str, int] | None = None
-    buffer: list[str] = []
-
-    def flush() -> None:
-        if current is None:
-            return
-        entry = entries[current]
-        # Position relative to the "Key:" line is what distinguishes a listening
-        # script from a rationale: both are free prose. Before the key it is the
-        # script the proctor reads; after it, the defence of the key. Matching on
-        # a prefix instead would silently drop every rationale that opens with
-        # "The decisive evidence is…" rather than "Option D…".
-        transcript: list[str] = []
-        rationale: list[str] = []
-        seen_key = False
-        for line in buffer:
-            if line.startswith("Key:"):
-                seen_key = True
-                match = _ADMIN_KEY.match(line)
-                if match:
-                    entry["answer_text"] = _clean(match.group(2))
-                    if match.group(3):
-                        rationale.append(_clean(match.group(3)))
-            elif line.startswith("Question:"):
-                entry["admin_question"] = _clean(line[len("Question:"):])
-            elif line.startswith("Target:"):
-                entry["admin_target"] = _clean(line[len("Target:"):])
-            elif seen_key:
-                rationale.append(line)
-            else:
-                transcript.append(line)
-        if transcript:
-            entry["transcript"] = "\n".join(transcript)
-        if rationale:
-            entry["rationale"] = " ".join(rationale)
-
-    for paragraph in document.paragraphs:
-        text = paragraph.text.strip()
-        if not text:
-            continue
-        style = paragraph.style.name
-
-        if style == "Heading 1":
-            match = re.match(r"^Form ([A-E]):", text)
-            if match:
-                flush()
-                current, buffer = None, []
-                form_code = match.group(1)
-            continue
-
-        if style == "Heading 3" and form_code:
-            heading = _ADMIN_HEADING.match(text)
-            if heading:
-                flush()
-                number = int(heading.group(1))
-                current = (form_code, number)
-                entries[current] = {
-                    "item_id": heading.group(2),
-                    "legacy_band": int(heading.group(3)),
-                }
-                buffer = []
-            continue
-
-        if current is not None:
-            # python-docx collapses the soft line breaks inside a script cell
-            # into a single paragraph; keep both speaker turns.
-            buffer.extend(_clean(part) for part in paragraph.text.split("\n") if part.strip())
-
-    flush()
-    return entries
-
-
-def build_bank(package: Path, teacher_flags: dict[str, list[dict[str, str]]]) -> dict[str, Any]:
+def build_bank(package: Path, *, previous: dict | None = None) -> dict[str, Any]:
     """Assemble and validate the full versioned bank."""
     root = _resolve_root(package)
-    editable = root / "editable"
-    admin = root / "admin"
-
-    workbook_path = admin / "Meli_Placement_Test_v1.2_Scoring_and_Calibration.xlsx"
-    admin_pack_path = editable / "Meli_Placement_Test_v1.2_Administrator_Pack.docx"
+    workbook_path = root / _WORKBOOK_NAME
+    admin_pack_path = root / _ADMIN_PACK_NAME
     for path in (workbook_path, admin_pack_path):
         if not path.exists():
             raise ExtractError(f"missing source file: {path}")
 
-    metadata = read_workbook_metadata(workbook_path)
-    admin_entries = read_admin_pack(admin_pack_path)
+    sheets = read_workbook(workbook_path)
+    metadata = sheets["metadata"]
+    key_matrix = sheets["key_matrix"]
+    review_ledger = sheets["review"]
+    admin_entries, admin_keys = read_admin_pack(admin_pack_path)
 
     forms: list[dict[str, Any]] = []
-    checksums: dict[str, str] = {
+    checksums = {
         workbook_path.name: _sha256(workbook_path),
         admin_pack_path.name: _sha256(admin_pack_path),
     }
+    claim_boundary: dict[str, str] = {}
 
     for form_code in FORMS:
-        booklet = editable / f"Meli_Placement_Test_v1.2_Form_{form_code}.docx"
+        booklet = root / f"Meli_Placement_Test_{PACKAGE_VERSION}_Form_{form_code}.pdf"
         if not booklet.exists():
             raise ExtractError(f"missing student booklet: {booklet}")
         checksums[booklet.name] = _sha256(booklet)
 
-        raw_items = read_student_form(booklet, form_code)
-        items: list[dict[str, Any]] = []
-
-        for raw in raw_items:
-            meta = metadata.get((form_code, raw.question_number))
-            if meta is None:
-                raise ExtractError(
-                    f"Form {form_code} Q{raw.question_number}: no workbook metadata"
-                )
-            admin_entry = admin_entries.get((form_code, raw.question_number), {})
-
-            if admin_entry and admin_entry.get("item_id") != meta["item_id"]:
-                raise ExtractError(
-                    f"Form {form_code} Q{raw.question_number}: item id mismatch "
-                    f"({admin_entry.get('item_id')} vs {meta['item_id']})"
-                )
-
-            expected_section = SKILL_TO_SECTION.get(meta["skill"])
-            if expected_section != raw.section:
-                raise ExtractError(
-                    f"Form {form_code} Q{raw.question_number}: skill "
-                    f"{meta['skill']!r} does not match blueprint section {raw.section!r}"
-                )
-
-            items.append(
-                _assemble_item(form_code, raw, meta, admin_entry, teacher_flags)
+        raw_items, boundary = read_student_form(booklet, form_code)
+        # Every booklet prints the same claim boundary. If one disagrees, the
+        # package is internally inconsistent about what it promises a learner.
+        if claim_boundary and boundary != claim_boundary:
+            raise ExtractError(
+                f"Form {form_code}: claim boundary differs from the earlier booklets"
             )
+        claim_boundary = boundary
 
+        items = [
+            _build_item(form_code, raw, metadata, key_matrix, admin_entries, admin_keys, review_ledger)
+            for raw in raw_items
+        ]
         _validate_form(form_code, items)
         forms.append({"form_code": form_code, "items": items})
 
-    return {
+    _assert_item_ids_unique(forms)
+
+    bank: dict[str, Any] = {
         "version_code": VERSION_CODE,
         "source_package": SOURCE_PACKAGE,
         "source_checksums": checksums,
         "blueprint": {
             "items_per_form": ITEMS_PER_FORM,
-            "sections": {"listening": 12, "language_use": 6, "reading": 12},
+            "sections": dict(EXPECTED_SECTIONS),
             "items_per_band": 5,
             "bands": list(BANDS),
-            "expected_seconds_per_form": 1401,
+            "expected_seconds_per_form": EXPECTED_SECONDS_PER_FORM,
             "duration_minutes": 30,
         },
-        "claim_boundary": {
-            "purpose": (
-                "This is an internal Meli/CLE placement screener. It is not an "
-                "official HSK examination or score report."
-            ),
-            "privacy": (
-                "Results support a course recommendation and CLE review. They do "
-                "not create an official proficiency credential."
-            ),
-        },
+        # Read from the booklets rather than restated here, so the text a
+        # learner is shown in the app is the text printed on their paper.
+        "claim_boundary": {**claim_boundary, "version": PACKAGE_VERSION},
+        # The workbook's own thresholds and course map, carried so the policy
+        # stored against an imported version can be proved equal to them.
+        "scoring_rules": sheets["rules"],
         "forms": forms,
     }
+    if previous is not None:
+        bank["changes_from"] = _diff_against(previous, forms)
+    return bank
+
+
+def _build_item(
+    form_code: str,
+    raw: RawItem,
+    metadata: dict[tuple[str, int], dict[str, Any]],
+    key_matrix: dict[tuple[str, int], dict[str, Any]],
+    admin_entries: dict[tuple[str, int], dict[str, Any]],
+    admin_keys: dict[tuple[str, int], dict[str, str]],
+    review_ledger: dict[tuple[str, int], dict[str, Any]],
+) -> dict[str, Any]:
+    """Join one booklet question to its restricted metadata, checking as it goes."""
+    slot = (form_code, raw.question_number)
+    location = f"Form {form_code} Q{raw.question_number}"
+
+    meta = metadata.get(slot)
+    if meta is None:
+        raise ExtractError(f"{location}: no workbook metadata")
+
+    _assert_sources_agree(
+        location, meta, key_matrix.get(slot), admin_keys.get(slot), admin_entries.get(slot)
+    )
+
+    # The workbook's skill and the blueprint's section for this question number
+    # are two statements of the same fact, from different files.
+    if SKILL_TO_SECTION.get(meta["skill"]) != raw.section:
+        raise ExtractError(
+            f"{location}: skill {meta['skill']!r} does not match "
+            f"blueprint section {raw.section!r}"
+        )
+
+    return _assemble_item(raw, meta, admin_entries[slot], review_ledger.get(slot))
+
+
+def _assert_sources_agree(
+    location: str,
+    meta: dict[str, Any],
+    matrix: dict[str, Any] | None,
+    printed: dict[str, str] | None,
+    admin_entry: dict[str, Any] | None,
+) -> None:
+    """Three independent statements of the key must be identical.
+
+    ``Item Metadata`` is what the scoring sheet looks up, ``Key Matrix`` is what
+    the workbook prints, and the Administrator Pack table is what a proctor
+    marks against. If they disagree, no answer is defensible and there is no
+    basis for picking a winner, so extraction stops rather than guessing.
+    """
+    key = meta["correct_answer"]
+    item_id = meta["item_id"]
+    band = meta["legacy_band"]
+
+    if matrix is None:
+        raise ExtractError(f"{location}: absent from the workbook Key Matrix")
+    if matrix["correct_answer"] != key:
+        raise ExtractError(
+            f"{location}: Key Matrix keys {matrix['correct_answer']!r}, "
+            f"Item Metadata keys {key!r}"
+        )
+    if matrix["item_id"] != item_id:
+        raise ExtractError(
+            f"{location}: Key Matrix item id {matrix['item_id']!r} != {item_id!r}"
+        )
+    if matrix["legacy_band"] != band:
+        raise ExtractError(
+            f"{location}: Key Matrix band {matrix['legacy_band']} != {band}"
+        )
+
+    if printed is None:
+        raise ExtractError(f"{location}: absent from the Administrator Pack key table")
+    if printed["correct_answer"] != key:
+        raise ExtractError(
+            f"{location}: Administrator Pack table keys "
+            f"{printed['correct_answer']!r}, workbook keys {key!r}"
+        )
+    if printed["item_id"] != item_id:
+        raise ExtractError(
+            f"{location}: Administrator Pack item id {printed['item_id']!r} != {item_id!r}"
+        )
+    if printed["band_label"] != f"HSK{band}":
+        raise ExtractError(
+            f"{location}: Administrator Pack band {printed['band_label']!r} != HSK{band}"
+        )
+
+    if not admin_entry:
+        raise ExtractError(f"{location}: no Administrator Pack rationale or script")
+    if admin_entry.get("item_id") != item_id:
+        raise ExtractError(
+            f"{location}: script heading item id "
+            f"{admin_entry.get('item_id')!r} != {item_id!r}"
+        )
+    if admin_entry.get("legacy_band") != band:
+        raise ExtractError(
+            f"{location}: script heading band {admin_entry.get('legacy_band')} != {band}"
+        )
+    rationale_key = admin_entry.get("correct_answer")
+    if rationale_key is None:
+        raise ExtractError(f"{location}: Administrator Pack rationale states no key")
+    if rationale_key != key:
+        raise ExtractError(
+            f"{location}: rationale keys {rationale_key!r}, workbook keys {key!r}"
+        )
 
 
 def _assemble_item(
-    form_code: str,
     raw: RawItem,
     meta: dict[str, Any],
     admin_entry: dict[str, Any],
-    teacher_flags: dict[str, list[dict[str, str]]],
+    review: dict[str, Any] | None,
 ) -> dict[str, Any]:
     key = meta["correct_answer"]
     letters = [option["letter"] for option in raw.options]
-    flags = list(teacher_flags.get(meta["item_id"], []))
+    flags: list[dict[str, str]] = []
 
     if raw.is_sequence:
         response_format = "sequence"
-        valid = all(part in letters for part in key.split("-"))
+        # A permutation, not a membership test. "A-B" (short) and "A-A-B"
+        # (repeated) both name only real options, but neither can be produced
+        # by arranging the three parts on the page, so no legitimate answer
+        # could ever match the key and the item would be quietly unscoreable.
+        valid = sorted(key.split("-")) == sorted(letters)
     else:
         response_format = f"choice_{len(letters)}"
         valid = key in letters
@@ -503,6 +299,7 @@ def _assemble_item(
         )
 
     flags.extend(_cloze_numbering_flags(raw))
+    flags.extend(_provenance_flags(meta, review))
 
     return {
         "question_number": raw.question_number,
@@ -536,9 +333,39 @@ def _assemble_item(
             "target_grammar": meta["target_grammar"],
             "copyright_status": meta["copyright_status"],
             "qa_status": meta["qa_status"],
+            "teacher_review": review,
         },
         "teacher_flags": flags,
     }
+
+
+def _provenance_flags(
+    meta: dict[str, Any], review: dict[str, Any] | None
+) -> list[dict[str, str]]:
+    """Advisory flags derived from the sources, never from our own judgement.
+
+    v1.2 carried a hand-maintained list of teacher annotations. Those three
+    items were revised for v1.3, so instead of curating a replacement list this
+    reads the workbook's own QA status: the items it marks as carrying
+    incorporated feedback are exactly the ones CLE has to look at first.
+
+    Advisory, so it surfaces in the review queue without blocking publication.
+    The content owner asked for the change and the change was made; what remains
+    is confirmation, which is a review task, not an unscoreable item.
+    """
+    status = meta.get("qa_status") or ""
+    if "feedback incorporated" not in status.lower():
+        return []
+    detail = status
+    if review and review.get("review_question"):
+        detail = f"{status} ({review['review_question']})"
+    return [
+        {
+            "code": "teacher_feedback_incorporated",
+            "detail": detail,
+            "source": f"workbook:Item Metadata:QA status:{PACKAGE_VERSION}",
+        }
+    ]
 
 
 def _cloze_numbering_flags(raw: RawItem) -> list[dict[str, str]]:
@@ -547,15 +374,17 @@ def _cloze_numbering_flags(raw: RawItem) -> list[dict[str, str]]:
     The booklet writes the blank as "（17）____" and instructs "填入第（17）空".
     Both numbers must equal the question number, or the learner is told to fill
     a blank that is not on the page. This is a mechanical check, and it is what
-    catches Form B Q17 without anyone having to hardcode that item.
+    caught Form B Q17 in v1.2 without anyone having to hardcode that item.
     """
     flags: list[dict[str, str]] = []
     expected = raw.question_number
 
-    for source, text in (("passage", raw.passage), ("prompt", raw.prompt)):
+    for source, text, pattern in (
+        ("passage", raw.passage, CLOZE_BLANK),
+        ("prompt", raw.prompt, CLOZE_PROMPT),
+    ):
         if not text:
             continue
-        pattern = _CLOZE_BLANK if source == "passage" else _CLOZE_PROMPT
         for match in pattern.finditer(text):
             found = int(match.group(1))
             if found != expected:
@@ -572,6 +401,26 @@ def _cloze_numbering_flags(raw: RawItem) -> list[dict[str, str]]:
     return flags
 
 
+def _assert_item_ids_unique(forms: list[dict[str, Any]]) -> None:
+    """Item ids must be unique across the whole bank, not just within a form.
+
+    ``_diff_against`` keys the previous bank by item id alone, so a duplicate
+    would silently make it compare one form's item against another form's, and
+    report the wrong answer to the question CLE most needs right: which keys
+    moved between versions.
+    """
+    seen: dict[str, str] = {}
+    for form in forms:
+        for item in form["items"]:
+            item_id = item["restricted"]["item_id"]
+            where = f"Form {form['form_code']} Q{item['question_number']}"
+            if item_id in seen:
+                raise ExtractError(
+                    f"{where}: item id {item_id!r} is already used by {seen[item_id]}"
+                )
+            seen[item_id] = where
+
+
 def _validate_form(form_code: str, items: list[dict[str, Any]]) -> None:
     """Assert the published blueprint on the reconstructed form."""
     if len(items) != ITEMS_PER_FORM:
@@ -579,105 +428,246 @@ def _validate_form(form_code: str, items: list[dict[str, Any]]) -> None:
 
     sections: dict[str, int] = {}
     bands: dict[int, int] = {}
+    item_ids: set[str] = set()
     for item in items:
         sections[item["section"]] = sections.get(item["section"], 0) + 1
         band = item["restricted"]["legacy_band"]
         bands[band] = bands.get(band, 0) + 1
+        item_ids.add(item["restricted"]["item_id"])
 
-    if sections != {"listening": 12, "language_use": 6, "reading": 12}:
+    if sections != EXPECTED_SECTIONS:
         raise ExtractError(f"Form {form_code}: section counts {sections}")
     if any(bands.get(band) != 5 for band in BANDS):
         raise ExtractError(f"Form {form_code}: band counts {bands}")
+    if len(item_ids) != ITEMS_PER_FORM:
+        raise ExtractError(f"Form {form_code}: duplicate item ids")
 
     total = sum(item["expected_seconds"] for item in items)
-    if total != 1401:
-        raise ExtractError(f"Form {form_code}: expected 1401 seconds, got {total}")
+    if total != EXPECTED_SECONDS_PER_FORM:
+        raise ExtractError(
+            f"Form {form_code}: expected {EXPECTED_SECONDS_PER_FORM} seconds, got {total}"
+        )
 
     for item in items:
-        options = item["safe"]["options"]
-        if len(options) < 2:
-            raise ExtractError(
-                f"Form {form_code} Q{item['question_number']}: {len(options)} options"
-            )
-        texts = [option["text"] for option in options]
-        if len(set(texts)) != len(texts):
-            raise ExtractError(
-                f"Form {form_code} Q{item['question_number']}: duplicate option text"
-            )
-        if not item["safe"]["stem"] and not item["safe"]["passage"]:
-            raise ExtractError(
-                f"Form {form_code} Q{item['question_number']}: no stem or passage"
-            )
+        _validate_item(form_code, item)
+
+
+def _validate_item(form_code: str, item: dict[str, Any]) -> None:
+    number = item["question_number"]
+    where = f"Form {form_code} Q{number}"
+    restricted = item["restricted"]
+    options = item["safe"]["options"]
+    letters = [option["letter"] for option in options]
+    is_sequence = item["response_format"] == "sequence"
+
+    expected_options = SEQUENCE_PARTS if is_sequence else CHOICE_OPTIONS
+    if len(options) != expected_options:
+        # The booklet separates two options on a line with a run of spaces. If
+        # a line ever renders with one, the pair regex swallows the second
+        # option into the first's text and the item loses an option while every
+        # character stays present, so the losslessness check sees nothing wrong.
+        raise ExtractError(
+            f"{where}: {len(options)} options, expected {expected_options}"
+        )
+    _assert_option_count_matches_workbook(where, restricted, len(options))
+
+    if letters != sorted(letters) or len(set(letters)) != len(letters):
+        raise ExtractError(f"{where}: option letters {letters}")
+    if is_sequence and letters != ["A", "B", "C"]:
+        raise ExtractError(f"{where}: ordering item has options {letters}")
+    texts = [option["text"] for option in options]
+    if len(set(texts)) != len(texts):
+        raise ExtractError(f"{where}: duplicate option text")
+    if not item["safe"]["stem"] and not item["safe"]["passage"]:
+        raise ExtractError(f"{where}: no stem or passage")
+    if not is_sequence:
+        _assert_answer_text_matches_key(where, restricted, options)
+
+    # A question number bleeding into item text means the paragraph grouper
+    # fused two items, which every other check here would happily accept.
+    joined = (item["safe"]["passage"] or "") + item["safe"]["stem"]
+    if _STRAY_QUESTION_NUMBER.search(joined):
+        raise ExtractError(f"{where}: item text contains a question number")
+
+    if item["section"] == "listening" and not restricted.get("transcript"):
+        raise ExtractError(f"{where}: listening item has no script")
+    if not restricted.get("answer_text"):
+        raise ExtractError(f"{where}: no answer text in the Administrator Pack")
+
+
+#: The workbook states the response format in prose, e.g. "4-option MC".
+_WORKBOOK_OPTION_COUNT = re.compile(r"^(\d+)-option")
+
+
+def _assert_option_count_matches_workbook(
+    where: str, restricted: dict[str, Any], parsed: int
+) -> None:
+    """The workbook's stated option count must match what the booklet offered.
+
+    Independent confirmation that option splitting worked. The workbook says
+    "4-option MC" without knowing how the booklet lays the options out, so if
+    the pair regex merged two options into one this disagrees, where nothing
+    else would: a merged pair keeps every character and still yields a
+    plausible-looking item.
+    """
+    stated = _WORKBOOK_OPTION_COUNT.match(restricted.get("workbook_response_format") or "")
+    if stated and int(stated.group(1)) != parsed:
+        raise ExtractError(
+            f"{where}: workbook says {stated.group(1)} options, booklet parsed {parsed}"
+        )
+
+
+def _assert_answer_text_matches_key(
+    where: str, restricted: dict[str, Any], options: list[dict[str, str]]
+) -> None:
+    """The Administrator Pack's answer text must be the keyed option's text.
+
+    The pack states the key twice: once as a letter, once as the wording. Only
+    the letter is cross-checked elsewhere, so a pack left unregenerated after an
+    option was reworded keeps describing the old wording -- and a teacher
+    reviewing that item is shown an answer that is not on the paper.
+    """
+    answer_text = restricted.get("answer_text") or ""
+    keyed = next(
+        (o["text"] for o in options if o["letter"] == restricted["correct_answer"]),
+        None,
+    )
+    if keyed is None:
+        # A key naming no option is already recorded as a blocking flag.
+        return
+    if re.sub(r"\s+", "", answer_text) != re.sub(r"\s+", "", keyed):
+        raise ExtractError(
+            f"{where}: Administrator Pack describes the key as {answer_text!r} "
+            f"but the booklet option reads {keyed!r}"
+        )
+
+
+def _diff_against(previous: dict, forms: list[dict[str, Any]]) -> dict[str, Any]:
+    """What moved since the previous bank, keyed by item id.
+
+    Recorded in the bank so CLE can see the delta they are approving without
+    diffing two 280 KB files by hand -- in particular which keys changed, which
+    is the only kind of edit that silently re-scores a past attempt.
+    """
+    old = {
+        item["restricted"]["item_id"]: item
+        for form in previous.get("forms", [])
+        for item in form["items"]
+    }
+
+    key_changes: list[dict[str, Any]] = []
+    text_changed: list[str] = []
+    whitespace_changed: list[str] = []
+    added: list[str] = []
+    for form in forms:
+        for item in form["items"]:
+            item_id = item["restricted"]["item_id"]
+            before = old.pop(item_id, None)
+            if before is None:
+                added.append(item_id)
+                continue
+            if before["restricted"]["correct_answer"] != item["restricted"]["correct_answer"]:
+                key_changes.append(
+                    {
+                        "item_id": item_id,
+                        "from": before["restricted"]["correct_answer"],
+                        "to": item["restricted"]["correct_answer"],
+                    }
+                )
+            if _stable_hash(before["safe"]) == _stable_hash(item["safe"]):
+                continue
+            # Reporting "42 items changed" when 20 of them differ only in the
+            # width of a blank would send CLE re-reading items nobody edited.
+            # The two lists are kept apart so the number they act on is the
+            # number of items whose wording actually moved.
+            if _text_only(before["safe"]) == _text_only(item["safe"]):
+                whitespace_changed.append(item_id)
+            else:
+                text_changed.append(item_id)
+
+    return {
+        "previous_version_code": previous.get("version_code"),
+        "key_changes": sorted(key_changes, key=lambda change: change["item_id"]),
+        "text_changed": sorted(text_changed),
+        "whitespace_changed": sorted(whitespace_changed),
+        "items_added": sorted(added),
+        "items_removed": sorted(old),
+    }
+
+
+def _text_only(safe: dict[str, Any]) -> str:
+    """The safe surface with every kind of space removed.
+
+    v1.2 rendered the cloze blank as an ideographic space and v1.3's PDF text
+    layer carries a plain one, so a raw comparison marks twenty untouched items
+    as revised. ``\\s`` is Unicode-aware on a ``str`` pattern and so already
+    covers U+3000, which leaves only what a reader would call a wording change.
+    """
+    joined = "".join(
+        [
+            safe.get("passage") or "",
+            safe.get("stem") or "",
+            safe.get("prompt") or "",
+            *(f"{o['letter']}{o['text']}" for o in safe.get("options", [])),
+        ]
+    )
+    return re.sub(r"\s+", "", joined)
 
 
 def _resolve_root(package: Path) -> Path:
-    """Find the directory that actually holds ``admin/`` and ``editable/``.
+    """Find the directory that actually holds the v1.3 source files.
 
-    The distributed zip unpacks with its own name repeated, so the path the
+    The distributed archive unpacks with its own name repeated, so the path the
     user hands us may be the parent, the package dir, or the doubled dir.
     """
     candidates = [
         package,
         package / SOURCE_PACKAGE,
         package / SOURCE_PACKAGE / SOURCE_PACKAGE,
+        *sorted(child for child in package.glob("*") if child.is_dir()),
     ]
     for candidate in candidates:
-        if (candidate / "admin").is_dir() and (candidate / "editable").is_dir():
+        if (candidate / _ADMIN_PACK_NAME).exists():
             return candidate
     raise ExtractError(
-        f"no admin/ + editable/ pair under {package} (tried: "
+        f"no {_ADMIN_PACK_NAME} under {package} (tried: "
         + ", ".join(str(c) for c in candidates)
         + ")"
     )
 
 
+def _stable_hash(payload: Any) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    digest.update(path.read_bytes())
-    return digest.hexdigest()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-#: Teacher annotations on the v1.2 PDFs (author ``lcxfxu``, 30 July 2026) that
-#: name a defect in the **key**, keyed by item ID.
-#:
-#: The v1.2 comment PDFs carry ~59 markup annotations. Most are prose edits
-#: (word choice, tightening) which are content work for CLE and do not change
-#: what a response scores as. The three below do: two dispute the key outright,
-#: and one disputes the wording of the keyed option itself. An item carrying a
-#: ``key_disputed`` flag cannot be scored defensibly, so publication is blocked
-#: until CLE resolves it (see ``services/placement_preflight.py``).
-#:
-#: Comments are recorded verbatim in the teacher's own words. Meli does not
-#: adjudicate assessment content; it surfaces the dispute and refuses to
-#: pretend the item is scoreable.
-TEACHER_KEY_FLAGS: dict[str, list[dict[str, str]]] = {
-    # Form B Q17. The blank-number defect is caught mechanically as well; this
-    # records the second half of the same annotation, that the key is wrong.
-    "HSK5-B-13": [
-        {
-            "code": "key_disputed",
-            "detail": "没有正确选项，administration里面的答案不正确，修改时一起修改",
-            "source": "teacher:lcxfxu:2026-07-30:Form_B_p4",
-        }
-    ],
-    # Form C Q23. Two options are defensible, so the item has no single key.
-    "HSK3-C-12": [
-        {
-            "code": "key_disputed",
-            "detail": "选项A和C都可以",
-            "source": "teacher:lcxfxu:2026-07-30:Form_C_p5",
-        }
-    ],
-    # Form E Q17. The keyed option's wording is disputed, not the choice of
-    # option, so this is a revision request rather than an unscoreable item.
-    "HSK5-E-11": [
-        {
-            "code": "keyed_option_wording",
-            "detail": "A:改成“隐瞒”会更好一些",
-            "source": "teacher:lcxfxu:2026-07-30:Form_E_p4",
-        }
-    ],
-}
+def _summarise(bank: dict[str, Any]) -> None:
+    items = [item for form in bank["forms"] for item in form["items"]]
+    flagged = [item for item in items if item["teacher_flags"]]
+    blocking = [
+        item
+        for item in flagged
+        if any(flag["code"] in BLOCKING_FLAG_CODES for flag in item["teacher_flags"])
+    ]
+    print(f"  {len(bank['forms'])} forms, {len(items)} items")
+    print(f"  {len(flagged)} flagged, {len(blocking)} with a publication-blocking flag")
+
+    changes = bank.get("changes_from")
+    if not changes:
+        return
+    print(
+        f"  vs {changes['previous_version_code']}: "
+        f"{len(changes['key_changes'])} key change(s), "
+        f"{len(changes['text_changed'])} with revised wording, "
+        f"{len(changes['whitespace_changed'])} whitespace-only, "
+        f"{len(changes['items_added'])} added, {len(changes['items_removed'])} removed"
+    )
+    for change in changes["key_changes"]:
+        print(f"    key {change['item_id']}: {change['from']} -> {change['to']}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -687,24 +677,30 @@ def main(argv: list[str] | None = None) -> int:
         "--out",
         type=Path,
         default=Path(__file__).resolve().parents[1]
-        / "app" / "data" / "placement" / "meli-placement-v1.2.json",
+        / "app" / "data" / "placement" / f"meli-placement-{PACKAGE_VERSION}.json",
+    )
+    parser.add_argument(
+        "--previous",
+        type=Path,
+        default=None,
+        help="a prior bank JSON to record the key/text delta against",
     )
     args = parser.parse_args(argv)
 
-    bank = build_bank(args.package, TEACHER_KEY_FLAGS)
+    previous = None
+    if args.previous is not None:
+        if not args.previous.exists():
+            raise ExtractError(f"previous bank not found: {args.previous}")
+        previous = json.loads(args.previous.read_text(encoding="utf-8"))
+
+    bank = build_bank(args.package, previous=previous)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
         json.dumps(bank, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
     )
 
-    total = sum(len(form["items"]) for form in bank["forms"])
-    flagged = sum(
-        1
-        for form in bank["forms"]
-        for item in form["items"]
-        if item["teacher_flags"]
-    )
-    print(f"wrote {args.out} :: {len(bank['forms'])} forms, {total} items, {flagged} flagged")
+    print(f"wrote {args.out}")
+    _summarise(bank)
     return 0
 
 

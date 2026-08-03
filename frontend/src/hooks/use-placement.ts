@@ -118,6 +118,27 @@ export interface PlacementTeacherFlag {
   readonly code: string;
   readonly detail: string;
   readonly source?: string;
+  /**
+   * Resolved server-side from the same set the publication gate uses.
+   * "blocking" means the item has no defensible key and was excluded from the
+   * score; "advisory" means it is content the owner still wants to confirm.
+   * Optional because an attempt scored before v1.3 has flags stored without it.
+   */
+  readonly severity?: "blocking" | "advisory";
+}
+
+/**
+ * The v1.3 "Item Review" ledger row: what the content owner is being asked to
+ * confirm about this item. Absent on versions extracted before the sheet
+ * existed, so every field is optional.
+ */
+export interface PlacementTeacherReview {
+  readonly candidate_status?: string | null;
+  readonly teacher_priority?: string | null;
+  readonly rubric_total?: number | null;
+  readonly rubric?: Readonly<Record<string, number | null>> | null;
+  readonly evidence_excerpt?: string | null;
+  readonly review_question?: string | null;
 }
 
 export interface PlacementReviewResponse {
@@ -130,6 +151,7 @@ export interface PlacementReviewResponse {
   readonly answer_text: string | null;
   readonly rationale: string | null;
   readonly teacher_flags: readonly PlacementTeacherFlag[];
+  readonly teacher_review?: PlacementTeacherReview | null;
   readonly response: string | null;
   readonly is_correct: boolean | null;
   readonly change_count: number;

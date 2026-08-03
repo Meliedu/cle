@@ -1,4 +1,4 @@
-"""Placement test model family (Meli Placement Test v1.2 integration spec).
+"""Placement test model family (Meli Placement Test v1.3 integration spec).
 
 Placement is deliberately its own family rather than an extension of the quiz
 tables. Three properties make it different in kind:
@@ -334,6 +334,13 @@ class PlacementItemKey(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     teacher_flags: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
+
+    #: The v1.3 "Item Review" ledger row: candidate status, teacher priority,
+    #: the twelve-dimension rubric, the excerpt under review and the question
+    #: the teacher is being asked. Restricted, not merely internal -- the
+    #: excerpt quotes item content and the rubric says where an item is
+    #: considered weak. NULL for versions extracted before the sheet existed.
+    teacher_review: Mapped[dict | None] = mapped_column(JSONB)
 
 
 class PlacementAttempt(UUIDPrimaryKeyMixin, TimestampMixin, Base):

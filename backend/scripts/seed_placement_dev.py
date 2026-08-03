@@ -1,13 +1,17 @@
 """Publish a DEV-ONLY placement version so the flow can be exercised locally.
 
-The real v1.2 bank cannot be published: two of its items carry a teacher's
-report that the key is wrong or ambiguous, and the preflight refuses. That is
-correct, and it also means the sitting flow cannot be walked through on real
-content until CLE resolves those items.
+Under v1.2 this existed because the real bank *could not* be published: two of
+its items carried a teacher's report that the key was wrong or ambiguous, and
+the preflight refused. v1.3 revised those items, so the real bank now preflights
+clean and the reason has changed rather than disappeared.
 
-This imports the same bank under a clearly-marked dev version code with those
-flags cleared, so local verification is possible without ever pretending the
-real content is publishable. It refuses to run against a non-local database.
+What remains is that publishing the real version is a deliberate, audited,
+instructor-gated act which also retires whatever is live, and only one version
+may be published at a time. A developer walking the sitting flow should not have
+to perform that act, and must not leave a local machine's idea of "the published
+placement test" pointing at a version nobody at CLE released. So this imports
+the same content under a clearly-marked dev version code and publishes that
+instead. It refuses to run against a non-local database.
 
     python scripts/seed_placement_dev.py
     python scripts/seed_placement_dev.py --remove
@@ -29,7 +33,8 @@ from app.database import async_session_factory  # noqa: E402
 from app.models.placement import PlacementTestVersion  # noqa: E402
 from app.services import placement_bank  # noqa: E402
 
-DEV_VERSION_CODE = "meli-placement-v1.2-DEVFIXTURE"
+DEV_VERSION_CODE = "meli-placement-v1.3-DEVFIXTURE"
+BANK_VERSION = "meli-placement-v1.3"
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 
 
@@ -39,22 +44,16 @@ def _is_local() -> bool:
 
 
 def _dev_bank() -> dict:
-    """The real bank, re-coded and with blocking content flags cleared.
+    """The real bank under a dev version code, otherwise untouched.
 
-    Only the flags are dropped. Every item's text, options and key are the real
-    ones, so what is exercised locally is the real delivery surface.
+    v1.3 needs no doctoring: it preflights clean, so every item's text, options
+    and key are exactly the real ones and what is exercised locally is the real
+    delivery surface. Only the version code differs, and the preflight below
+    still runs -- if a future package regresses, this script must fail rather
+    than quietly seed content the gate would have refused.
     """
-    bank = placement_bank.load_bank_file(version_code="meli-placement-v1.2")
+    bank = placement_bank.load_bank_file(version_code=BANK_VERSION)
     bank["version_code"] = DEV_VERSION_CODE
-    for form in bank["forms"]:
-        for item in form["items"]:
-            item["teacher_flags"] = []
-            # The same defect the flags describe also trips the mechanical
-            # prompt/blank-number check, so normalise it for the fixture.
-            if item["safe"].get("prompt"):
-                item["safe"]["prompt"] = (
-                    f"请选择最合适的一项填入第（{item['question_number']}）空。"
-                )
     return bank
 
 
@@ -104,8 +103,8 @@ async def main(argv: list[str] | None = None) -> int:
         version = await placement_bank.import_bank(
             session,
             bank,
-            scoring_rule_version="v1.2-devfixture",
-            review_policy={"version": "v1.2-devfixture"},
+            scoring_rule_version="v1.3-devfixture",
+            review_policy={"version": "v1.3-devfixture"},
         )
         version.status = "published"
         version.published_at = datetime.now(timezone.utc)

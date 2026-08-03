@@ -23,7 +23,6 @@ from app.models.placement import (
     PlacementForm,
     PlacementItem,
     PlacementItemKey,
-    PlacementResponse,
     PlacementTestVersion,
 )
 from app.models.user import User
@@ -32,8 +31,9 @@ from app.services import placement_bank
 
 BANK_PATH = (
     Path(__file__).resolve().parents[1]
-    / "app" / "data" / "placement" / "meli-placement-v1.2.json"
+    / "app" / "data" / "placement" / "meli-placement-v1.3.json"
 )
+RULE_VERSION = "v1.3-candidate"
 
 pytestmark = pytest.mark.asyncio
 
@@ -44,22 +44,24 @@ def _bank() -> dict:
     return json.loads(BANK_PATH.read_text(encoding="utf-8"))
 
 
-def _clean_bank() -> dict:
-    """The real bank with the teacher's blocking flags cleared.
+def _disputed_bank() -> dict:
+    """The real bank with one item's key marked disputed.
 
-    Used wherever a test needs a *publishable* version. The flags themselves are
-    tested separately; here they would just prevent every other assertion.
+    v1.2 shipped two genuinely disputed items, so the gate could be tested
+    against the real file. v1.3 revised them and preflights clean -- which is
+    the outcome we want and also removes the natural fixture. Injecting the
+    dispute keeps the gate under test on its own terms instead of leaving it
+    exercised only by whichever defects a package happens to contain.
     """
     bank = _bank()
-    for form in bank["forms"]:
-        for item in form["items"]:
-            item["teacher_flags"] = []
-            # Form B Q17's blank is numbered (13); it is the same defect and
-            # would fail the key/prompt consistency preflight for a clean run.
-            if item["safe"].get("prompt"):
-                item["safe"]["prompt"] = (
-                    f"请选择最合适的一项填入第（{item['question_number']}）空。"
-                )
+    item = bank["forms"][1]["items"][16]
+    item["teacher_flags"] = [
+        {
+            "code": "key_disputed",
+            "detail": "two options are defensible",
+            "source": "test",
+        }
+    ]
     return bank
 
 
@@ -111,7 +113,7 @@ def _as(user: User) -> None:
 @pytest_asyncio.fixture
 async def published(db_session) -> PlacementTestVersion:
     version = await placement_bank.import_bank(
-        db_session, _clean_bank(), scoring_rule_version="v1.2-candidate"
+        db_session, _bank(), scoring_rule_version=RULE_VERSION
     )
     version.status = "published"
     version.published_at = datetime.now(timezone.utc)
@@ -127,7 +129,7 @@ async def published(db_session) -> PlacementTestVersion:
 
 async def test_import_creates_five_forms_and_one_hundred_fifty_items(db_session):
     version = await placement_bank.import_bank(
-        db_session, _bank(), scoring_rule_version="v1.2-candidate"
+        db_session, _bank(), scoring_rule_version=RULE_VERSION
     )
     await db_session.commit()
 
@@ -142,7 +144,7 @@ async def test_import_creates_five_forms_and_one_hundred_fifty_items(db_session)
 
 async def test_import_lands_as_candidate_never_published(db_session):
     version = await placement_bank.import_bank(
-        db_session, _bank(), scoring_rule_version="v1.2-candidate"
+        db_session, _bank(), scoring_rule_version=RULE_VERSION
     )
     await db_session.commit()
     assert version.status == "candidate"
@@ -150,40 +152,103 @@ async def test_import_lands_as_candidate_never_published(db_session):
 
 async def test_importing_the_same_version_twice_is_refused(db_session):
     await placement_bank.import_bank(
-        db_session, _bank(), scoring_rule_version="v1.2-candidate"
+        db_session, _bank(), scoring_rule_version=RULE_VERSION
     )
     await db_session.commit()
     with pytest.raises(placement_bank.PlacementBankError) as excinfo:
         await placement_bank.import_bank(
-            db_session, _bank(), scoring_rule_version="v1.2-candidate"
+            db_session, _bank(), scoring_rule_version=RULE_VERSION
         )
     assert excinfo.value.code == "VERSION_EXISTS"
 
 
-async def test_preflight_blocks_publication_on_the_teacher_disputed_keys(db_session):
-    """The real v1.2 package must NOT be publishable as shipped.
+async def test_the_real_v1_3_package_preflights_clean(db_session):
+    """The shipped v1.3 package must carry no blocking finding.
 
-    Two items carry a teacher's report that the key is wrong or ambiguous.
-    Scoring either would produce a number nobody can defend, so the gate holds.
+    This is the assertion v1.3 exists to satisfy: the three items the teacher
+    disputed in v1.2 were revised, so nothing is left that would make a score
+    indefensible. It is deliberately an assertion about the *real* file --
+    if a future package reintroduces a disputed key, an unscoreable option set
+    or a mis-numbered cloze blank, this fails before anyone tries to publish.
+    """
+    bank = _bank()
+    result = placement_bank.preflight_bank(bank)
+    assert result.blocking == (), [f.as_dict() for f in result.blocking]
+
+    version = await placement_bank.import_bank(
+        db_session, bank, scoring_rule_version=RULE_VERSION
+    )
+    await db_session.commit()
+    stored = await placement_bank.preflight_version(db_session, version)
+    assert stored.can_publish is True, [f.as_dict() for f in stored.blocking]
+
+
+async def test_the_teacher_re_review_ledger_survives_import(db_session):
+    """Advisory findings still reach the reviewer.
+
+    Clean does not mean silent: the 22 items carrying incorporated v1.2
+    feedback are exactly what CLE has to confirm, so they must arrive as
+    advisory findings rather than being dropped for not blocking.
     """
     version = await placement_bank.import_bank(
-        db_session, _bank(), scoring_rule_version="v1.2-candidate"
+        db_session, _bank(), scoring_rule_version=RULE_VERSION
+    )
+    await db_session.commit()
+
+    result = await placement_bank.preflight_version(db_session, version)
+    advisory = [f for f in result.findings if f.code == "teacher_feedback_incorporated"]
+    assert len(advisory) == 22
+    assert all(f.severity == "advisory" for f in advisory)
+    assert all(f.external_item_id for f in advisory)
+
+
+async def test_the_item_review_ledger_reaches_storage(db_session):
+    """The v1.3 ledger row must actually be persisted, not silently dropped.
+
+    ``import_bank`` names every column it writes, so a field added to the bank
+    without a matching column is discarded in silence and the review screen
+    quietly loses the thing it was added for. This asserts the round trip.
+    """
+    version = await placement_bank.import_bank(
+        db_session, _bank(), scoring_rule_version=RULE_VERSION
+    )
+    await db_session.commit()
+
+    rows = (
+        await db_session.execute(
+            select(PlacementItemKey.teacher_review).where(
+                PlacementItemKey.test_version_id == version.id
+            )
+        )
+    ).scalars().all()
+
+    assert len(rows) == 150
+    assert all(row is not None for row in rows)
+    assert all(row.get("review_question") for row in rows)
+    assert {row.get("teacher_priority") for row in rows} <= {"High", "Medium", "Low"}
+
+
+async def test_preflight_blocks_publication_on_a_teacher_disputed_key(db_session):
+    """An item whose key the content owner disputes cannot be published.
+
+    Scoring it would produce a number nobody can defend, so the gate holds
+    regardless of how clean the rest of the package is.
+    """
+    version = await placement_bank.import_bank(
+        db_session, _disputed_bank(), scoring_rule_version=RULE_VERSION
     )
     await db_session.commit()
 
     result = await placement_bank.preflight_version(db_session, version)
     assert result.can_publish is False
-    codes = {f.code for f in result.blocking}
-    assert "key_disputed" in codes
-    disputed_items = {f.external_item_id for f in result.blocking if f.code == "key_disputed"}
-    assert disputed_items == {"HSK5-B-13", "HSK3-C-12"}
+    assert "key_disputed" in {f.code for f in result.blocking}
 
 
 async def test_publish_endpoint_refuses_a_version_with_blocking_findings(
     client, db_session, instructor
 ):
     version = await placement_bank.import_bank(
-        db_session, _bank(), scoring_rule_version="v1.2-candidate"
+        db_session, _disputed_bank(), scoring_rule_version=RULE_VERSION
     )
     await db_session.commit()
     _as(instructor)
@@ -200,7 +265,7 @@ async def test_publish_succeeds_once_the_content_is_settled(
     client, db_session, instructor
 ):
     version = await placement_bank.import_bank(
-        db_session, _clean_bank(), scoring_rule_version="v1.2-candidate"
+        db_session, _bank(), scoring_rule_version=RULE_VERSION
     )
     await db_session.commit()
     _as(instructor)
@@ -212,7 +277,7 @@ async def test_publish_succeeds_once_the_content_is_settled(
 
 async def test_publishing_is_audited(client, db_session, instructor):
     version = await placement_bank.import_bank(
-        db_session, _clean_bank(), scoring_rule_version="v1.2-candidate"
+        db_session, _bank(), scoring_rule_version=RULE_VERSION
     )
     await db_session.commit()
     _as(instructor)
@@ -231,7 +296,7 @@ async def test_publishing_is_audited(client, db_session, instructor):
 
 async def test_a_student_cannot_publish_a_version(client, db_session, student):
     version = await placement_bank.import_bank(
-        db_session, _clean_bank(), scoring_rule_version="v1.2-candidate"
+        db_session, _bank(), scoring_rule_version=RULE_VERSION
     )
     await db_session.commit()
     _as(student)
@@ -395,6 +460,10 @@ async def test_the_delivered_payload_contains_no_restricted_field(
         "correct_answer", "answer_text", "rationale", "transcript",
         "legacy_band", "external_item_id", "slot", "target_vocabulary",
         "qa_status", "teacher_flags",
+        # v1.3's teacher re-review ledger. `evidence_excerpt` quotes the item
+        # and the rubric says where it is considered weak, so it is restricted
+        # in the same way a key is.
+        "teacher_review", "evidence_excerpt", "rubric_total", "candidate_status",
     ):
         assert forbidden not in body, f"{forbidden} leaked into the student payload"
 
@@ -716,6 +785,21 @@ async def test_evidence_bundle_exposes_keys_to_an_instructor(
     assert all(r["correct_answer"] for r in data["responses"])
     assert data["band_scores"] == {str(b): 5 for b in range(1, 7)}
     assert data["evidence_hash"]
+
+    # v1.3: the reviewer is told why an item is in front of them, in the
+    # content owner's own words, without opening the workbook.
+    assert all(r["teacher_review"] for r in data["responses"])
+    assert all(r["teacher_review"]["review_question"] for r in data["responses"])
+
+    # Flag severity is resolved server-side, so the UI cannot disagree with the
+    # publication gate about what counts as blocking.
+    flagged = [r for r in data["responses"] if r["teacher_flags"]]
+    assert flagged, "the v1.3 bank carries advisory content flags"
+    assert all(
+        flag["severity"] in {"blocking", "advisory"}
+        for r in flagged
+        for flag in r["teacher_flags"]
+    )
 
 
 async def test_evidence_bundle_is_not_reachable_by_a_student(
