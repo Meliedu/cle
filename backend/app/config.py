@@ -84,6 +84,18 @@ class Settings(BaseSettings):
     #: measured pace, so this sits slightly below the vendor default.
     iflytek_tts_speed: int = 45
 
+    # Fallback synthesis through OpenRouter's audio-output models, for when no
+    # iFLYTEK credential is available. These are generative models asked to read
+    # aloud, not TTS engines, so their output is verified against the source
+    # transcript before it is treated as usable. Voices are OpenAI's and are
+    # English-first; their Mandarin needs human sign-off.
+    openrouter_tts_model: str = "openai/gpt-audio"
+    openrouter_tts_voice_male: str = "onyx"
+    openrouter_tts_voice_female: str = "nova"
+    #: Used to transcribe generated clips back to text, so a clip that reports
+    #: one thing and voices another is caught before a learner hears it.
+    openrouter_asr_model: str = "openai/gpt-audio"
+
     # Symmetric key for encrypting third-party tokens at rest (Canvas, etc.).
     # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     integrations_encryption_key: str = ""

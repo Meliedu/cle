@@ -49,6 +49,7 @@ from app.services.placement_audio import (  # noqa: E402
     pcm_duration_seconds,
     segment_transcript,
 )
+from app.services import tts_openrouter  # noqa: E402
 from app.services.placement_bank import BANK_DIR, load_bank_file  # noqa: E402
 
 DEFAULT_BANK = BANK_DIR / "meli-placement-v1.3.json"
@@ -87,14 +88,25 @@ class ItemResult:
     pcm: bytes = b""
     duration_s: float = 0.0
     sha256: str = ""
+    #: What the synthesizer claims it said, when the provider reports it.
+    #: Verified against the script by scripts/verify_placement_audio.py.
+    reported_transcript: str = ""
     issues: list[str] = field(default_factory=list)
 
 
-def voice_for(role: str) -> str:
+def voice_for(role: str, provider: str) -> str:
+    if provider == "openrouter":
+        return (
+            settings.openrouter_tts_voice_male
+            if role == "male"
+            else settings.openrouter_tts_voice_female
+        )
     return settings.iflytek_tts_voice_male if role == "male" else settings.iflytek_tts_voice_female
 
 
-async def synthesize_item(form_code: str, item: dict[str, Any], *, dry_run: bool) -> ItemResult:
+async def synthesize_item(
+    form_code: str, item: dict[str, Any], *, dry_run: bool, provider: str = "iflytek"
+) -> ItemResult:
     transcript = item["restricted"]["transcript"]
     turns = segment_transcript(transcript)
     result = ItemResult(
@@ -107,8 +119,20 @@ async def synthesize_item(form_code: str, item: dict[str, Any], *, dry_run: bool
         return result
 
     clips: list[bytes] = []
+    reported: list[str] = []
     for turn in turns:
-        clips.append(await tts.synthesize_with_retry(turn.text, voice=voice_for(turn.voice)))
+        voice = voice_for(turn.voice, provider)
+        if provider == "openrouter":
+            # Synchronous vendor call, run off the loop so a 60-item batch does
+            # not block anything else that wants to make progress.
+            clip = await asyncio.to_thread(
+                tts_openrouter.synthesize, turn.text, voice=voice
+            )
+            clips.append(clip.pcm)
+            reported.append(clip.reported_transcript)
+        else:
+            clips.append(await tts.synthesize_with_retry(turn.text, voice=voice))
+    result.reported_transcript = "".join(reported)
     result.pcm = assemble_pcm(clips)
     result.duration_s = pcm_duration_seconds(result.pcm)
     result.mp3 = encode_mp3(result.pcm)
@@ -152,6 +176,8 @@ async def run(args: argparse.Namespace) -> int:
     for form in sorted(forms, key=lambda f: f["form_code"]):
         code = form["form_code"]
         items = [i for i in form["items"] if i["section"] == LISTENING_SECTION]
+        if args.only_question:
+            items = [i for i in items if i["question_number"] in set(args.only_question)]
         items.sort(key=lambda i: i["question_number"])
         playbacks = {i["question_number"]: (i.get("audio_playback") or 1) for i in items}
 
@@ -163,7 +189,9 @@ async def run(args: argparse.Namespace) -> int:
         manifest: dict[str, Any] = {}
 
         for item in items:
-            res = await synthesize_item(code, item, dry_run=args.dry_run)
+            res = await synthesize_item(
+                code, item, dry_run=args.dry_run, provider=args.provider
+            )
             results.append(res)
             speakers = "/".join(f"{t.speaker or 'narrator'}:{t.voice}" for t in res.turns)
             if args.dry_run:
@@ -194,11 +222,19 @@ async def run(args: argparse.Namespace) -> int:
             "test_version_code": version_code,
             "transcript_source": bank.get("source_package"),
             "transcript_source_file": "Meli_Placement_Test_v1.3_Administrator_Pack.pdf",
-            "tts_provider": "iFLYTEK online TTS (WebSocket v2)",
-            "tts_endpoint": f"wss://{tts.TTS_HOST}{tts.TTS_PATH}",
+            "tts_provider": (
+                "OpenRouter " + settings.openrouter_tts_model
+                if args.provider == "openrouter"
+                else "iFLYTEK online TTS (WebSocket v2)"
+            ),
+            "tts_endpoint": (
+                tts_openrouter.OPENROUTER_URL
+                if args.provider == "openrouter"
+                else f"wss://{tts.TTS_HOST}{tts.TTS_PATH}"
+            ),
             "voice_configuration": {
-                "male": settings.iflytek_tts_voice_male,
-                "female": settings.iflytek_tts_voice_female,
+                "male": voice_for("male", args.provider),
+                "female": voice_for("female", args.provider),
                 "speed": settings.iflytek_tts_speed,
                 "sample_rate_hz": tts.SAMPLE_RATE,
                 "encoding": "MP3 64kbps mono, loudnorm I=-16 TP=-1.5 LRA=11",
@@ -219,6 +255,14 @@ async def run(args: argparse.Namespace) -> int:
         }
         (out_dir / f"QA_Log_Version{code}_{stage}.json").write_text(
             json.dumps(qa_log, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        (out_dir / "reported_transcripts.json").write_text(
+            json.dumps(
+                {str(r.question): r.reported_transcript for r in results if r.reported_transcript},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
         )
         (version_folder(root, code) / f"audio_manifest_{code}.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -243,6 +287,13 @@ def main() -> int:
     p.add_argument("--out", default="tmp/placement-audio")
     p.add_argument("--form", action="append", help="limit to a form code; repeatable")
     p.add_argument("--stage", default="Draft", choices=["Samples", "Draft", "Final"])
+    p.add_argument(
+        "--provider",
+        default="iflytek",
+        choices=["iflytek", "openrouter"],
+        help="openrouter is a generative model reading aloud; verify its output",
+    )
+    p.add_argument("--only-question", type=int, action="append", help="limit to question numbers")
     p.add_argument("--dry-run", action="store_true", help="segment and report, call no vendor")
     p.add_argument("--upload", action="store_true", help="also upload clips to R2")
     return asyncio.run(run(p.parse_args()))
