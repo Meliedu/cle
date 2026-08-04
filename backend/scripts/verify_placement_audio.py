@@ -46,6 +46,15 @@ CHUNK_SECONDS = 12.0
 #: script expects, assume the transcriber truncated and retry it in halves.
 SHORT_CLIP_RECALL = 0.8
 
+#: The transcriber is not deterministic. Across two full runs of the same 60
+#: clips the flagged set barely overlapped, and individual clips moved between
+#: 0.65 and 1.0 without the audio changing. Its errors are dropouts, never
+#: invention, so a clip that transcribes cleanly even once demonstrably
+#: contains the right speech: take the best of several attempts and stop early
+#: once one passes. A single attempt cannot be used as a gate.
+ASR_ATTEMPTS = 3
+ASR_PASS = 0.92
+
 #: Everything a reader would not voice: punctuation, spacing, and the speaker
 #: labels, which are stage direction printed for a proctor.
 _STRIP = re.compile(r"[\s，。！？、；：“”‘’（）()\[\]—…·,.!?;:\"']+")
@@ -141,12 +150,18 @@ def _transcribe_span(path: Path, start: float, length: float) -> str:
 
     from app.config import settings
 
+    if length <= 0.2:
+        return ""
     wav = subprocess.run(
         ["ffmpeg", "-hide_banner", "-loglevel", "error",
-         "-ss", f"{start}", "-t", f"{length}", "-i", str(path),
+         "-ss", f"{start:.3f}", "-t", f"{length:.3f}", "-i", str(path),
          "-ar", "16000", "-ac", "1", "-f", "wav", "pipe:1"],
         capture_output=True, check=True,
     ).stdout
+    # A span that decoded to nothing yields a header-only buffer the provider
+    # rejects outright, which failed a whole form mid-run.
+    if len(wav) < 1024:
+        return ""
 
     body = {
         "model": settings.openrouter_asr_model,
@@ -222,16 +237,22 @@ def main() -> int:
         if clip is None:
             entry["error"] = "no clip found"
         elif not args.no_asr:
-            entry["asr"] = compare(
-                spoken_source, transcribe(clip, expect_chars=len(spoken_form(spoken_source)))
-            )
+            expect = len(spoken_form(spoken_source))
+            best = None
+            for _ in range(ASR_ATTEMPTS):
+                result = compare(spoken_source, transcribe(clip, expect_chars=expect))
+                if best is None or result["similarity"] > best["similarity"]:
+                    best = result
+                if best["similarity"] >= ASR_PASS:
+                    break
+            entry["asr"] = best
         findings.append(entry)
 
     failures = [
         f
         for f in findings
         if f.get("error")
-        or (f.get("asr") and f["asr"]["similarity"] < 0.90)
+        or (f.get("asr") and f["asr"]["similarity"] < ASR_PASS)
         or (f.get("reported") and not f["reported"]["match"])
     ]
 
