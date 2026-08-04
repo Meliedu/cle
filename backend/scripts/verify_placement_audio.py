@@ -38,14 +38,31 @@ from app.services.placement_audio import segment_transcript  # noqa: E402
 
 DEFAULT_BANK = BANK_DIR / "meli-placement-v1.3.json"
 
+#: Transcription window. The model returns an empty string on inputs much
+#: longer than this, so clips are cut into spans of at most this length.
+CHUNK_SECONDS = 12.0
+
+#: If a short clip transcribes to less than this fraction of the characters the
+#: script expects, assume the transcriber truncated and retry it in halves.
+SHORT_CLIP_RECALL = 0.8
+
 #: Everything a reader would not voice: punctuation, spacing, and the speaker
 #: labels, which are stage direction printed for a proctor.
 _STRIP = re.compile(r"[\s，。！？、；：“”‘’（）()\[\]—…·,.!?;:\"']+")
 
 
+#: A transcriber may write 八六 as 86 and vice versa. Both are the same
+#: utterance, so digits are folded to characters before comparing. Numbers are
+#: exactly where a listening item is most fragile, so they must be compared,
+#: just not on their written form.
+_DIGITS = str.maketrans("0123456789", "〇一二三四五六七八九")
+
+
 def spoken_form(text: str) -> str:
     """The characters a reader would actually utter, in order."""
-    normalised = unicodedata.normalize("NFKC", text)
+    normalised = unicodedata.normalize("NFKC", text).translate(_DIGITS)
+    # 零 and 〇 are the same spoken syllable written two ways.
+    normalised = normalised.replace("零", "〇").replace("两", "二")
     return _STRIP.sub("", normalised)
 
 
@@ -66,7 +83,7 @@ def compare(source: str, heard: str) -> dict:
     }
 
 
-def transcribe(path: Path) -> str:
+def transcribe(path: Path, expect_chars: int = 0) -> str:
     """Round-trip the rendered clip back to text.
 
     This is the check that matters. The synthesizer's own reported transcript
@@ -78,6 +95,45 @@ def transcribe(path: Path) -> str:
     Whisper path needs an ``OPENAI_API_KEY`` that this project deliberately
     does not set (everything goes through OpenRouter).
     """
+    import subprocess
+
+    duration = float(subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "csv=p=0", str(path)],
+        capture_output=True, check=True,
+    ).stdout.decode().strip() or 0)
+
+    # The transcriber returns an empty string on long inputs: a 29 s monologue
+    # came back blank twice, while the same audio in 10 s pieces transcribed
+    # perfectly. Chunking is therefore a correctness requirement, not an
+    # optimisation, and without it the checker reports a clean clip as silent.
+    if duration > CHUNK_SECONDS:
+        spans = []
+        start = 0.0
+        while start < duration:
+            spans.append(_transcribe_span(path, start, min(CHUNK_SECONDS, duration - start)))
+            start += CHUNK_SECONDS
+        return "".join(spans)
+
+    whole = _transcribe_span(path, 0.0, duration)
+    if not expect_chars or len(spoken_form(whole)) >= expect_chars * SHORT_CLIP_RECALL:
+        return whole
+
+    # The transcriber sometimes returns only the tail of a short multi-turn
+    # clip: an 8.6 s two-turn dialogue came back as its second turn alone,
+    # twice, while each turn transcribed perfectly in isolation. Splitting in
+    # half recovers it. Without this the checker condemns correct audio, which
+    # is the more expensive error: it sends a human hunting a defect that is
+    # not there, and erodes trust in every other clip it passed.
+    halves = [
+        _transcribe_span(path, 0.0, duration / 2),
+        _transcribe_span(path, duration / 2, duration / 2),
+    ]
+    joined = "".join(halves)
+    return joined if len(spoken_form(joined)) > len(spoken_form(whole)) else whole
+
+
+def _transcribe_span(path: Path, start: float, length: float) -> str:
     import base64
     import subprocess
 
@@ -86,7 +142,8 @@ def transcribe(path: Path) -> str:
     from app.config import settings
 
     wav = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(path),
+        ["ffmpeg", "-hide_banner", "-loglevel", "error",
+         "-ss", f"{start}", "-t", f"{length}", "-i", str(path),
          "-ar", "16000", "-ac", "1", "-f", "wav", "pipe:1"],
         capture_output=True, check=True,
     ).stdout
@@ -165,7 +222,9 @@ def main() -> int:
         if clip is None:
             entry["error"] = "no clip found"
         elif not args.no_asr:
-            entry["asr"] = compare(spoken_source, transcribe(clip))
+            entry["asr"] = compare(
+                spoken_source, transcribe(clip, expect_chars=len(spoken_form(spoken_source)))
+            )
         findings.append(entry)
 
     failures = [
