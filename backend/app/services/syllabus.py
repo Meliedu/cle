@@ -96,7 +96,11 @@ class _SyllabusAssignmentV1(BaseModel):
         "essay", "project", "quiz", "reading", "presentation", "lab",
         "problem_set", "participation", "other",
     ] = "other"
-    due_at: str = Field(..., max_length=64)
+    # Optional, because syllabi weight components they never date ("Attendance
+    # and Participation, 15%") and the prompt forbids inventing a date. Making
+    # it mandatory discarded the entire syllabus over one undated row;
+    # apply_syllabus_payload already skips assignments without a usable date.
+    due_at: str | None = Field(None, max_length=64)
     weight: float | None = Field(None, ge=0, le=1000)
     module_index: int | None = Field(None, ge=0, le=10_000)
     meeting_index: int | None = Field(None, ge=0, le=10_000)
@@ -157,7 +161,17 @@ Output ONLY a JSON object matching this schema:
   }],
   "schema_version": "v1"
 }
-If a field is missing, omit it. Do not hallucinate dates."""
+Index rules (they differ, so follow them exactly):
+- "order_index" on modules starts at 0 for the first module.
+- "module_index" refers to a module's "order_index", so it also starts at 0.
+- "meeting_index" starts at 1 for the first class session, not 0. It is the
+  session number a student would recognise ("Session 1").
+- "meeting_index" on an assignment, and "scope_index" on a "meeting"-scoped
+  objective, refer to a meeting's "meeting_index", so they also start at 1.
+
+If a field is missing, omit it. Do not hallucinate dates: when the syllabus
+gives no date for a graded component, set its "due_at" to null and keep the
+component. Undated components are normal and are still wanted."""
 
 
 async def _llm_extract(raw_text: str) -> dict[str, Any]:
@@ -186,6 +200,69 @@ async def _llm_extract(raw_text: str) -> dict[str, Any]:
     return json.loads(resp.choices[0].message.content or "{}")
 
 
+def _renumber_zero_based_meetings(payload: dict[str, Any]) -> dict[str, Any]:
+    """Shift a 0-based ``meeting_index`` set onto the 1-based product contract.
+
+    The rest of the system treats ``meeting_index`` as the session number a
+    student sees: the UI renders "Session {meeting_index}" and the meetings API
+    declares ``ge=1``. The prompt now says so, but a model that numbers from 0
+    anyway used to fail strict validation and take the whole syllabus with it,
+    which is a catastrophic response to an off-by-one.
+
+    Only a payload that actually starts at 0 is touched, and every reference to
+    a meeting shifts with it so assignments and meeting-scoped objectives keep
+    pointing at the same session. Returns a new payload; the input is not
+    mutated.
+    """
+    meetings = payload.get("meetings")
+    if not isinstance(meetings, list) or not meetings:
+        return payload
+
+    indices = [
+        m.get("meeting_index")
+        for m in meetings
+        if isinstance(m, dict) and isinstance(m.get("meeting_index"), int)
+    ]
+    if not indices or min(indices) != 0:
+        return payload
+
+    def _shift(value: Any) -> Any:
+        return value + 1 if isinstance(value, int) else value
+
+    logger.info(
+        "Syllabus payload used 0-based meeting_index; renumbering %d meetings",
+        len(meetings),
+    )
+    shifted_meetings = [
+        {**m, "meeting_index": _shift(m.get("meeting_index"))}
+        if isinstance(m, dict)
+        else m
+        for m in meetings
+    ]
+    shifted_assignments = [
+        {**a, "meeting_index": _shift(a.get("meeting_index"))}
+        if isinstance(a, dict) and a.get("meeting_index") is not None
+        else a
+        for a in (payload.get("assignments") or [])
+    ]
+    # Only meeting-scoped objectives index meetings; a course- or module-scoped
+    # scope_index means something else entirely and must not move.
+    shifted_objectives = [
+        {**o, "scope_index": _shift(o.get("scope_index"))}
+        if isinstance(o, dict)
+        and o.get("scope") == "meeting"
+        and o.get("scope_index") is not None
+        else o
+        for o in (payload.get("objectives") or [])
+    ]
+    return {
+        **payload,
+        "meetings": shifted_meetings,
+        "assignments": shifted_assignments,
+        "objectives": shifted_objectives,
+    }
+
+
 async def parse_syllabus_text(raw_text: str) -> dict[str, Any]:
     """Extract a strict-validated structured payload from syllabus text.
 
@@ -201,6 +278,7 @@ async def parse_syllabus_text(raw_text: str) -> dict[str, Any]:
     payload = await _llm_extract(raw_text)
     if "schema_version" not in payload:
         payload["schema_version"] = "v1"
+    payload = _renumber_zero_based_meetings(payload)
     try:
         validated = _SyllabusPayloadV1.model_validate(payload)
     except ValidationError as exc:
