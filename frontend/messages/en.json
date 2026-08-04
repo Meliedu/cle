@@ -3698,6 +3698,8 @@
       "loadingTitle": "Loading your questions",
       "loadingReason": "This takes a moment.",
       "playAudio": "Play audio",
+      "audioLoading": "Loading audio…",
+      "audioFailed": "The recording could not be played. This has been noted, and it did not use up one of your plays.",
       "playsLeft": "{count, plural, one {# play} other {# plays}} left of {total}",
       "orderPosition": "Position {position}",
       "orderEmpty": "Choose",

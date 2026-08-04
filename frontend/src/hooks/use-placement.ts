@@ -416,6 +416,32 @@ export function useSavePlacementResponse(attemptId: string) {
   });
 }
 
+export interface PlacementAudioGrant {
+  readonly url: string;
+  readonly plays_used: number;
+  readonly plays_allowed: number;
+  readonly expires_in_seconds: number;
+}
+
+/**
+ * Spend one playback of a listening item and get a link to it.
+ *
+ * POST because it mutates: the server owns the play allowance, since a client
+ * that counted its own plays could simply refetch for a third listening the
+ * item was never calibrated for. The URL it returns is presigned and expires
+ * in minutes, so it is not a durable handle on exam content.
+ */
+export function usePlayPlacementAudio(attemptId: string) {
+  const call = useAuthedMutation();
+  return useMutation<PlacementAudioGrant, Error, { itemId: string }>({
+    mutationFn: ({ itemId }) =>
+      call<PlacementAudioGrant>(
+        `/placement/attempts/${attemptId}/items/${itemId}/audio`,
+        { method: "POST" }
+      ),
+  });
+}
+
 export function useReportInterruption(attemptId: string) {
   const call = useAuthedMutation();
   return useMutation<PlacementAttempt, Error, { kind: string; detail?: string }>(

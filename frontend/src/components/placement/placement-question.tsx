@@ -20,6 +20,13 @@ interface PlacementQuestionProps {
    * script is read aloud by a proctor, so no play control is offered.
    */
   readonly audioAvailable?: boolean;
+  /** Presigned URL for the current grant, or null before one is issued. */
+  readonly audioUrl?: string | null;
+  /** A grant is in flight. */
+  readonly audioPending?: boolean;
+  /** The grant failed, or the browser could not decode the clip. */
+  readonly audioError?: boolean;
+  readonly onAudioError?: () => void;
 }
 
 /**
@@ -38,6 +45,10 @@ export function PlacementQuestion({
   playCount = 0,
   onPlay,
   audioAvailable = false,
+  audioUrl = null,
+  audioPending = false,
+  audioError = false,
+  onAudioError,
 }: PlacementQuestionProps) {
   const t = useTranslations("placement.sitting");
   const groupId = useId();
@@ -73,19 +84,41 @@ export function PlacementQuestion({
       ) : null}
 
       {item.audio_playback && audioAvailable ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onPlay}
-            disabled={playsLeft === 0}
-          >
-            <Volume2 aria-hidden="true" />
-            {t("playAudio")}
-          </Button>
-          <span className="text-[13px] text-[var(--color-text-secondary)]">
-            {t("playsLeft", { count: playsLeft, total: playsAllowed })}
-          </span>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onPlay}
+              disabled={playsLeft === 0 || audioPending}
+            >
+              <Volume2 aria-hidden="true" />
+              {audioPending ? t("audioLoading") : t("playAudio")}
+            </Button>
+            <span className="text-[13px] text-[var(--color-text-secondary)]">
+              {t("playsLeft", { count: playsLeft, total: playsAllowed })}
+            </span>
+          </div>
+          {/* The element that actually produces sound. Rendered only once the
+              server has granted a URL for this item, because the grant is what
+              spends a play: a preloaded <audio> would either leak a spare
+              listening or sit silent, and silence is what this whole branch
+              exists to avoid. No `loop`, and no `controls` beyond play, since a
+              scrubber would let a learner replay inside one grant. */}
+          {audioUrl ? (
+            <audio
+              key={audioUrl}
+              src={audioUrl}
+              autoPlay
+              onError={onAudioError}
+              className="sr-only"
+            />
+          ) : null}
+          {audioError ? (
+            <p role="alert" className="text-[13px] text-[var(--color-danger)]">
+              {t("audioFailed")}
+            </p>
+          ) : null}
         </div>
       ) : null}
 

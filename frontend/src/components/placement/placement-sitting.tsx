@@ -13,6 +13,7 @@ import {
 import { PlacementTimer } from "@/components/placement/placement-timer";
 import { cn } from "@/lib/utils";
 import {
+  usePlayPlacementAudio,
   useReportInterruption,
   useSavePlacementResponse,
   useSubmitPlacementAttempt,
@@ -46,12 +47,15 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
   const save = useSavePlacementResponse(attempt.id);
   const submit = useSubmitPlacementAttempt(attempt.id);
   const reportInterruption = useReportInterruption(attempt.id);
+  const playAudio = usePlayPlacementAudio(attempt.id);
 
   const [answers, setAnswers] = useState<Record<string, string | null>>(
     () => ({ ...attempt.saved_responses })
   );
   const [index, setIndex] = useState(0);
   const [plays, setPlays] = useState<Record<string, number>>({});
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [expired, setExpired] = useState(false);
@@ -138,10 +142,43 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
     [current, isSubmittable, persist]
   );
 
-  const handlePlay = useCallback(() => {
+  /**
+   * Ask the server for this item's recording, which spends one play.
+   *
+   * The count shown comes back from the server rather than being incremented
+   * locally, because the server owns the allowance. Optimistically bumping it
+   * here would disagree with the server the moment a grant fails, and the
+   * learner would lose a listening they never heard.
+   */
+  const handlePlay = useCallback(async () => {
     if (!current) return;
-    setPlays((prev) => ({ ...prev, [current.id]: (prev[current.id] ?? 0) + 1 }));
-  }, [current]);
+    setAudioError(false);
+    setAudioUrl(null);
+    try {
+      const grant = await playAudio.mutateAsync({ itemId: current.id });
+      setPlays((prev) => ({ ...prev, [current.id]: grant.plays_used }));
+      setAudioUrl(grant.url);
+    } catch {
+      setAudioError(true);
+      // Worth a reviewer's attention: a learner who could not hear an item
+      // answered it deaf, and that is not visible from the score alone.
+      void reportInterruption
+        .mutateAsync({ kind: "audio_failure", detail: `q${current.question_number}` })
+        .catch(() => undefined);
+    }
+  }, [current, playAudio, reportInterruption]);
+
+  // A new question must never inherit the previous one's clip. Adjusted during
+  // render rather than in an effect: this is React's documented pattern for
+  // state derived from a prop change, and it drops the stale URL before the
+  // paint instead of after, so the old clip is never briefly playable on the
+  // new question. Same shape as `seededFrom` in placement-question.tsx.
+  const [audioForItem, setAudioForItem] = useState(current?.id);
+  if (current?.id !== audioForItem) {
+    setAudioForItem(current?.id);
+    setAudioUrl(null);
+    setAudioError(false);
+  }
 
   useEffect(() => {
     // A learner who loses connectivity mid-sitting produces evidence a reviewer
@@ -347,6 +384,10 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
           playCount={plays[current.id] ?? 0}
           onPlay={handlePlay}
           audioAvailable={attempt.audio_available}
+          audioUrl={audioUrl}
+          audioPending={playAudio.isPending}
+          audioError={audioError}
+          onAudioError={() => setAudioError(true)}
         />
         </fieldset>
       </div>

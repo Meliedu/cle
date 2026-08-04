@@ -89,7 +89,13 @@ describe("multiple-choice question", () => {
   });
 });
 
-function renderListening(props: { playCount?: number; audioAvailable?: boolean }) {
+function renderListening(props: {
+  playCount?: number;
+  audioAvailable?: boolean;
+  audioUrl?: string | null;
+  audioPending?: boolean;
+  audioError?: boolean;
+}) {
   render(
     <NextIntlClientProvider locale="en" messages={messages}>
       <PlacementQuestion
@@ -99,6 +105,10 @@ function renderListening(props: { playCount?: number; audioAvailable?: boolean }
         playCount={props.playCount ?? 0}
         onPlay={vi.fn()}
         audioAvailable={props.audioAvailable ?? false}
+        audioUrl={props.audioUrl ?? null}
+        audioPending={props.audioPending ?? false}
+        audioError={props.audioError ?? false}
+        onAudioError={vi.fn()}
       />
     </NextIntlClientProvider>
   );
@@ -128,6 +138,41 @@ describe("audio items", () => {
   it("says a proctor reads the script instead", () => {
     renderListening({ audioAvailable: false });
     expect(screen.getByText(/read aloud 2 times by the person supervising/i)).toBeTruthy();
+  });
+
+  it("renders no audio element until the server grants a URL", () => {
+    // The regression this whole endpoint exists for: before the fix the play
+    // button existed and nothing ever produced sound.
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <PlacementQuestion
+          item={choiceItem({ section: "listening", audio_playback: 2 })}
+          value={null}
+          onChange={vi.fn()}
+          onPlay={vi.fn()}
+          audioAvailable
+        />
+      </NextIntlClientProvider>
+    );
+    expect(container.querySelector("audio")).toBeNull();
+  });
+
+  it("plays the granted URL once one is issued", () => {
+    renderListening({ audioAvailable: true, audioUrl: "https://signed.invalid/a.mp3" });
+    const el = document.querySelector("audio");
+    expect(el).not.toBeNull();
+    expect(el?.getAttribute("src")).toBe("https://signed.invalid/a.mp3");
+  });
+
+  it("disables the control while a grant is in flight", () => {
+    renderListening({ audioAvailable: true, audioPending: true });
+    const btn = screen.getByRole("button", { name: /loading audio/i }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+  });
+
+  it("tells the learner a failed clip did not cost them a play", () => {
+    renderListening({ audioAvailable: true, audioError: true });
+    expect(screen.getByRole("alert").textContent).toMatch(/did not use up one of your plays/i);
   });
 
   it("shows no audio affordance at all on a reading item", () => {

@@ -533,6 +533,94 @@ async def save_response(
     return existing
 
 
+#: How long an issued audio link stays usable. Long enough to survive a slow
+#: network and a learner who presses play a moment later, short enough that a
+#: link copied out of devtools is worthless by the time it is shared.
+AUDIO_URL_TTL_SECONDS = 300
+
+
+async def issue_audio_url(
+    db: AsyncSession,
+    *,
+    attempt: PlacementAttempt,
+    item_id: uuid.UUID,
+) -> tuple[str, int, int]:
+    """Spend one playback and hand back a short-lived link.
+
+    The play allowance is enforced here rather than in the client, because the
+    client cannot enforce it. ``audio_playback`` is a property of the exam (the
+    paper says a script is heard once or twice), so a learner who refetches the
+    URL, reloads the page or replays the element must not get a third listening
+    that the item's difficulty was never calibrated for.
+
+    Counting on *issue* rather than on playback completion is deliberate: a
+    learner who starts a clip and navigates away has heard it, and the opposite
+    choice would let anyone farm unlimited plays by aborting each one.
+
+    Returns ``(url, plays_used, plays_allowed)``.
+    """
+    if attempt.state not in placement_state.MUTABLE_STATES:
+        raise PlacementError("ATTEMPT_NOT_EDITABLE", "this attempt can no longer be changed")
+
+    expires = _aware(attempt.expires_at)
+    if expires is not None and _now() > expires + timedelta(seconds=SUBMIT_GRACE_SECONDS):
+        raise PlacementError("ATTEMPT_EXPIRED", "the time limit for this attempt has passed")
+
+    item = await db.get(PlacementItem, item_id)
+    if item is None or item.form_id != attempt.form_id:
+        raise ValueError("item is not part of this attempt")
+
+    allowed = item.audio_playback or 0
+    if allowed <= 0:
+        raise PlacementError("ITEM_HAS_NO_AUDIO", "this question has no audio")
+
+    form = await db.get(PlacementForm, attempt.form_id)
+    manifest = (form.audio_manifest if form else None) or {}
+    entry = manifest.get(str(item.question_number))
+    if not entry:
+        raise PlacementError(
+            "AUDIO_NOT_AVAILABLE", "no recording has been published for this question"
+        )
+    key = entry.get("r2_key") if isinstance(entry, dict) else entry
+
+    # Claim the play before minting the link. A conditional UPDATE makes two
+    # concurrent presses race for the same row rather than both winning, which
+    # a read-then-write would allow.
+    row = (
+        await db.execute(
+            select(PlacementResponse).where(
+                PlacementResponse.attempt_id == attempt.id,
+                PlacementResponse.item_id == item.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = await save_response(db, attempt=attempt, item_id=item.id, response=None)
+
+    claimed = (
+        await db.execute(
+            update(PlacementResponse)
+            .where(
+                PlacementResponse.id == row.id,
+                PlacementResponse.audio_play_count < allowed,
+            )
+            .values(audio_play_count=PlacementResponse.audio_play_count + 1)
+            .returning(PlacementResponse.audio_play_count)
+        )
+    ).scalar_one_or_none()
+    if claimed is None:
+        raise PlacementError(
+            "AUDIO_PLAYS_EXHAUSTED",
+            f"this question may be heard {allowed} time(s), and all have been used",
+        )
+
+    from app.services.storage import generate_presigned_url
+
+    url = generate_presigned_url(key, expiration=AUDIO_URL_TTL_SECONDS)
+    await db.flush()
+    return url, int(claimed), allowed
+
+
 #: Interruptions a learner may report, per attempt. Generous for a real bad
 #: connection, finite because the array is learner-controlled and is inside the
 #: evidence bundle a reviewer's decision is hashed against.

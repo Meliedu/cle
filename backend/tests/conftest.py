@@ -24,7 +24,15 @@ from app.models.user import User  # noqa: E402
 # Override settings field too — pydantic-settings caches the value at import.
 app_settings.integrations_encryption_key = os.environ["INTEGRATIONS_ENCRYPTION_KEY"]
 
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/langassistant_test"
+# Overridable so two runs can be isolated from each other. The suite builds and
+# drops the whole schema per test, so two concurrent runs against one database
+# race `create_all` and leave a half-built schema behind -- which surfaces as
+# `duplicate key ... pg_type_typname_nsp_index` followed by `relation ... does
+# not exist` for every later test, and can deadlock outright.
+TEST_DATABASE_URL = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/langassistant_test",
+)
 
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 test_session_factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)

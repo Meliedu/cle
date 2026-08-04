@@ -69,6 +69,21 @@ class Settings(BaseSettings):
     iflytek_api_key: str = ""
     iflytek_api_secret: str = ""
 
+    # iFlytek speech *synthesis*, used to voice the placement listening scripts.
+    # Same account and credential triple as the assessment API above; the voices
+    # ("发音人") must be activated on that account separately, and an unactivated
+    # one is refused per-request rather than at connect time.
+    #
+    # Two distinct voices are required, not preferred: 46 of the 60 listening
+    # scripts are two-speaker 男/女 dialogues, and rendering both speakers in one
+    # voice would destroy the turn-taking the items test.
+    iflytek_tts_voice_male: str = "aisjiuxu"
+    iflytek_tts_voice_female: str = "xiaoyan"
+    #: 0-100, vendor default 50. Placement listening is graded on comprehension,
+    #: not decoding speed, and the paper instructs a proctor to read at a
+    #: measured pace, so this sits slightly below the vendor default.
+    iflytek_tts_speed: int = 45
+
     # Symmetric key for encrypting third-party tokens at rest (Canvas, etc.).
     # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     integrations_encryption_key: str = ""

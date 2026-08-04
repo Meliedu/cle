@@ -39,6 +39,20 @@ class PlacementItemOut(BaseModel):
     options: list[PlacementOptionOut]
 
 
+class AudioGrantOut(BaseModel):
+    """A single, expiring permission to hear one item's recording.
+
+    Carries no transcript and no answer: the audio is the delivery surface, the
+    script stays restricted. The URL is presigned and short-lived, so it is not
+    a durable handle on exam content.
+    """
+
+    url: str
+    plays_used: int
+    plays_allowed: int
+    expires_in_seconds: int
+
+
 class PlacementIntroOut(BaseModel):
     """Everything shown before the timer starts (spec student flow, step 1).
 

@@ -36,6 +36,7 @@ from app.schemas.placement import (
     AttemptEvidenceOut,
     AttemptOut,
     AttemptStartIn,
+    AudioGrantOut,
     DecisionIn,
     DecisionOut,
     InterruptionIn,
@@ -92,6 +93,11 @@ def _fail(error: svc.PlacementError) -> HTTPException:
         "REASON_REQUIRED": status.HTTP_422_UNPROCESSABLE_ENTITY,
         "UNKNOWN_ACTION": status.HTTP_422_UNPROCESSABLE_ENTITY,
         "BLOCKED_BY_CONTENT": status.HTTP_409_CONFLICT,
+        # Audio delivery. All conflicts rather than client errors: the request
+        # is well formed, the attempt's state is what refuses it.
+        "AUDIO_NOT_AVAILABLE": status.HTTP_409_CONFLICT,
+        "ITEM_HAS_NO_AUDIO": status.HTTP_409_CONFLICT,
+        "AUDIO_PLAYS_EXHAUSTED": status.HTTP_409_CONFLICT,
     }
     return HTTPException(
         status_code=codes.get(error.code, status.HTTP_400_BAD_REQUEST),
@@ -421,6 +427,44 @@ async def save_response(
             response=row.response,
             change_count=row.change_count,
             saved_at=_iso(row.updated_at) or "",
+        ),
+    )
+
+
+@router.post(
+    "/attempts/{attempt_id}/items/{item_id}/audio",
+    response_model=APIResponse[AudioGrantOut],
+)
+async def play_item_audio(
+    attempt_id: uuid.UUID,
+    item_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Spend one playback of a listening item and return a link to it.
+
+    POST, not GET: this mutates the attempt. Each call consumes one of the
+    item's allowed listenings, which is why the client cannot be trusted to
+    count them and why the URL it gets back expires quickly.
+    """
+    attempt = await _load_own_attempt(attempt_id, user, db)
+    try:
+        url, used, allowed = await svc.issue_audio_url(db, attempt=attempt, item_id=item_id)
+    except svc.PlacementError as error:
+        raise _fail(error) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "UNKNOWN_ITEM", "message": "That question is not part of this attempt."},
+        ) from error
+    await db.commit()
+    return APIResponse(
+        success=True,
+        data=AudioGrantOut(
+            url=url,
+            plays_used=used,
+            plays_allowed=allowed,
+            expires_in_seconds=svc.AUDIO_URL_TTL_SECONDS,
         ),
     )
 

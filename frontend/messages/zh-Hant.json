@@ -949,6 +949,8 @@
       "loadingTitle": "正在載入題目",
       "loadingReason": "請稍候片刻。",
       "playAudio": "播放錄音",
+      "audioLoading": "錄音載入中…",
+      "audioFailed": "無法播放錄音。系統已記錄此情況，本次不會計入你的播放次數。",
       "playsLeft": "尚可播放 {count} 次，共 {total} 次",
       "orderPosition": "第 {position} 句",
       "orderEmpty": "請選擇",

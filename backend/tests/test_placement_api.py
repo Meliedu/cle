@@ -1147,3 +1147,147 @@ async def test_the_sweep_is_audited(client, published, db_session, student):
     ).scalars().all()
     assert len(events) == 1
     assert events[0].actor_role == "system"
+
+
+# ---------------------------------------------------------------------------
+# Listening audio delivery
+# ---------------------------------------------------------------------------
+
+
+async def _started_attempt(client, student):
+    """Drive an attempt all the way to a running timer.
+
+    ``/begin`` matters: items are released only in ``in_progress``, so stopping
+    at the instructions screen yields an empty item list and any test that
+    iterates it passes vacuously.
+    """
+    _as(student)
+    attempt = (await client.post("/api/placement/attempts", json={})).json()["data"]
+    await client.post(f"/api/placement/attempts/{attempt['id']}/confirm-eligibility")
+    await client.post(f"/api/placement/attempts/{attempt['id']}/acknowledge-instructions")
+    await client.post(f"/api/placement/attempts/{attempt['id']}/begin")
+    detail = (await client.get(f"/api/placement/attempts/{attempt['id']}")).json()["data"]
+    assert detail["items"], "no items delivered; attempt did not reach in_progress"
+    return attempt, detail
+
+
+async def _publish_audio(db_session, published, *, monkeypatch=None):
+    """Give every form a manifest, as a real generation run would."""
+    forms = (
+        await db_session.execute(
+            select(PlacementForm).where(PlacementForm.test_version_id == published.id)
+        )
+    ).scalars().all()
+    for form in forms:
+        form.audio_manifest = {
+            str(q): {"r2_key": f"placement/v/{form.form_code}/q{q:02d}.mp3"}
+            for q in range(1, 13)
+        }
+    await db_session.commit()
+
+
+async def test_audio_play_is_refused_when_no_recording_is_published(
+    client, published, student
+):
+    """An empty manifest must not be a 500 or a silent success."""
+    attempt, detail = await _started_attempt(client, student)
+    listening = next(i for i in detail["items"] if i["section"] == "listening")
+    resp = await client.post(
+        f"/api/placement/attempts/{attempt['id']}/items/{listening['id']}/audio"
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "AUDIO_NOT_AVAILABLE"
+
+
+async def test_audio_play_count_is_enforced_server_side(
+    client, published, db_session, student, monkeypatch
+):
+    """The exam says a script is heard once or twice. The client cannot be
+    trusted to stop at that, so the server must."""
+    monkeypatch.setattr(
+        "app.services.storage.generate_presigned_url",
+        lambda key, expiration=300: f"https://signed.invalid/{key}?e={expiration}",
+    )
+    await _publish_audio(db_session, published)
+    attempt, detail = await _started_attempt(client, student)
+    listening = next(i for i in detail["items"] if i["section"] == "listening")
+    allowed = listening["audio_playback"]
+    assert allowed >= 1
+
+    for expected in range(1, allowed + 1):
+        resp = await client.post(
+            f"/api/placement/attempts/{attempt['id']}/items/{listening['id']}/audio"
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()["data"]
+        assert body["plays_used"] == expected
+        assert body["plays_allowed"] == allowed
+        assert body["url"].startswith("https://signed.invalid/")
+
+    exhausted = await client.post(
+        f"/api/placement/attempts/{attempt['id']}/items/{listening['id']}/audio"
+    )
+    assert exhausted.status_code == 409
+    assert exhausted.json()["detail"]["code"] == "AUDIO_PLAYS_EXHAUSTED"
+
+
+async def test_audio_grant_leaks_no_transcript(
+    client, published, db_session, student, monkeypatch
+):
+    """The audio is the delivery surface; the script stays restricted."""
+    monkeypatch.setattr(
+        "app.services.storage.generate_presigned_url",
+        lambda key, expiration=300: f"https://signed.invalid/{key}",
+    )
+    await _publish_audio(db_session, published)
+    attempt, detail = await _started_attempt(client, student)
+    listening = next(i for i in detail["items"] if i["section"] == "listening")
+    key_row = (
+        await db_session.execute(
+            select(PlacementItemKey).where(
+                PlacementItemKey.item_id == uuid.UUID(listening["id"])
+            )
+        )
+    ).scalar_one()
+
+    body = (
+        await client.post(
+            f"/api/placement/attempts/{attempt['id']}/items/{listening['id']}/audio"
+        )
+    ).text
+    assert key_row.transcript
+    for line in key_row.transcript.split("\n"):
+        assert line.strip() not in body
+
+    # The key itself is a bare letter, so substring-searching the body for it
+    # only ever proves that JSON contains the letter "A". Assert on the shape
+    # instead: the grant carries these four fields and nothing else, so no
+    # restricted value can ride along under any name.
+    payload = json.loads(body)["data"]
+    assert set(payload) == {"url", "plays_used", "plays_allowed", "expires_in_seconds"}
+
+
+async def test_audio_play_is_refused_on_a_non_listening_item(
+    client, published, db_session, student
+):
+    await _publish_audio(db_session, published)
+    attempt, detail = await _started_attempt(client, student)
+    reading = next(i for i in detail["items"] if i["section"] == "reading")
+    resp = await client.post(
+        f"/api/placement/attempts/{attempt['id']}/items/{reading['id']}/audio"
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "ITEM_HAS_NO_AUDIO"
+
+
+async def test_another_learners_attempt_cannot_be_played(
+    client, published, db_session, student, instructor
+):
+    await _publish_audio(db_session, published)
+    attempt, detail = await _started_attempt(client, student)
+    listening = next(i for i in detail["items"] if i["section"] == "listening")
+    _as(instructor)
+    resp = await client.post(
+        f"/api/placement/attempts/{attempt['id']}/items/{listening['id']}/audio"
+    )
+    assert resp.status_code == 404
