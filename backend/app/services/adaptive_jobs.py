@@ -627,7 +627,7 @@ async def _llm_draft_note(events: list[Any]) -> dict[str, Any] | None:
     )
     try:
         resp = await client.chat.completions.create(
-            model=settings.llm_primary_model,
+            model=settings.openrouter_primary_model,
             messages=[
                 {"role": "system", "content": _NOTE_SYSTEM_PROMPT},
                 {"role": "user", "content": _summarize_events(events)[:6000]},
@@ -820,7 +820,7 @@ async def _llm_draft_report(
     )
     try:
         resp = await client.chat.completions.create(
-            model=settings.llm_primary_model,
+            model=settings.openrouter_primary_model,
             messages=[
                 {"role": "system", "content": _REPORT_SYSTEM_PROMPT},
                 {

@@ -175,7 +175,7 @@ async def _llm_extract(raw_text: str) -> dict[str, Any]:
         base_url=settings.openrouter_base_url,
     )
     resp = await client.chat.completions.create(
-        model=settings.llm_primary_model,
+        model=settings.openrouter_primary_model,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": content},

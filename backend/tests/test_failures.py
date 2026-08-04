@@ -56,6 +56,35 @@ class TestClassifyByExceptionType:
         exc = AttributeError("could not parse settings")
         assert classify(exc) is SourceFailureCode.ANALYSIS_UNAVAILABLE
 
+    def test_a_rejected_provider_key_is_ours_not_the_users_file(self):
+        """The 4 Aug 2026 incident: a revoked OpenRouter key on the worker.
+
+        The provider answered ``401 {'message': 'User not found.'}`` on every
+        embedding call. No substring in that message names a key, a quota or a
+        provider, so it fell through to UNKNOWN — which is retryable, so the UI
+        offered a Retry that re-ran download, parse and embed to fail
+        identically. A rejected credential is an operator fix.
+        """
+
+        class AuthenticationError(Exception):
+            """Shape of ``openai.AuthenticationError`` without the SDK import."""
+
+        exc = AuthenticationError(
+            "Error code: 401 - {'error': {'message': 'User not found.', "
+            "'code': 401}}"
+        )
+        assert classify(exc) is SourceFailureCode.ANALYSIS_UNAVAILABLE
+        assert not is_retryable(classify(exc))
+
+    def test_a_rejected_permission_is_also_ours(self):
+        class PermissionDeniedError(Exception):
+            """Shape of ``openai.PermissionDeniedError`` (403)."""
+
+        assert (
+            classify(PermissionDeniedError("Error code: 403"))
+            is SourceFailureCode.ANALYSIS_UNAVAILABLE
+        )
+
 
 class TestClassifyByMessage:
     @pytest.mark.parametrize(

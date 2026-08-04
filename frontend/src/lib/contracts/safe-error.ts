@@ -130,8 +130,13 @@ const SAFE_COPY: Record<SafeErrorCode, SafeCopy> = {
       object ? `Meli could not analyse ${object}` : "Meli could not finish the analysis",
     consequence: "Suggested outcomes and checkpoints are not ready yet.",
     preserved: "Your files and every completed step are saved.",
-    nextAction: "Retry now, or continue and analyse later.",
-    retryable: true,
+    // No Retry. This is the bucket for our own defects and misconfiguration
+    // (a bad setting, a rejected provider key), so mirrors the backend's
+    // RETRYABLE_CODES, which excludes it for the same reason: a retry re-runs
+    // download, parse and embedding only to fail identically, at real cost.
+    // Recovery is an operator fix, so the honest next action is to carry on.
+    nextAction: "Continue setting up. Contact CLE support if this persists.",
+    retryable: false,
     severity: "recoverable",
   },
   timeout: {

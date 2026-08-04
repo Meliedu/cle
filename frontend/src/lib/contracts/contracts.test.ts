@@ -261,6 +261,20 @@ describe("toSafeError", () => {
     expect(toSafeError(new TypeError("Failed to fetch")).code).toBe("network");
   });
 
+  it("never offers Retry for a failure only an operator can fix", () => {
+    // Mirrors the backend RETRYABLE_CODES, which excludes ANALYSIS_UNAVAILABLE:
+    // it is the bucket for our own defects and misconfiguration (the 4 Aug 2026
+    // revoked OpenRouter key landed here), where a retry re-runs download,
+    // parse and embedding to fail identically and bills us for it.
+    const safe = safeErrorFromCode("analysis_unavailable", {
+      objectName: "syllabus.pdf",
+    });
+    expect(safe.retryable).toBe(false);
+    // Still recoverable: the route, the files and the finished steps survive.
+    expect(safe.severity).toBe("recoverable");
+    expect(safe.nextAction).not.toMatch(/retry/i);
+  });
+
   it("marks unsupported formats as blocking, not retryable", () => {
     const safe = safeErrorFromCode("unsupported_format", {
       objectName: "notes.key",

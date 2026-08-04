@@ -77,7 +77,7 @@ async def draft_review_cards(*, context: str, n: int) -> list[dict[str, Any]]:
     )
     try:
         resp = await client.chat.completions.create(
-            model=settings.llm_primary_model,
+            model=settings.openrouter_primary_model,
             messages=[
                 {"role": "system", "content": _CARD_SYSTEM_PROMPT},
                 {

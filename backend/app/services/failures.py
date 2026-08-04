@@ -103,6 +103,15 @@ _BY_EXCEPTION_NAME: dict[str, SourceFailureCode] = {
     # is never the user's file, so it classifies as "analysis unavailable"
     # rather than blaming the upload. This is the exact class that leaked.
     "AttributeError": SourceFailureCode.ANALYSIS_UNAVAILABLE,
+    # A credential the provider rejects is also ours, not the user's file. The
+    # 4 Aug 2026 incident: a revoked OpenRouter key on the worker service made
+    # every embedding call raise `openai.AuthenticationError: 401 {'message':
+    # 'User not found.'}`. That message names no key, quota or provider, so the
+    # substring table below never matched and it landed in UNKNOWN — which is
+    # retryable, so the UI invited a Retry that could only fail identically.
+    # Matched by name so this module stays free of the openai/httpx imports.
+    "AuthenticationError": SourceFailureCode.ANALYSIS_UNAVAILABLE,
+    "PermissionDeniedError": SourceFailureCode.ANALYSIS_UNAVAILABLE,
     "KeyError": SourceFailureCode.ANALYSIS_UNAVAILABLE,
     "ImportError": SourceFailureCode.ANALYSIS_UNAVAILABLE,
     "ModuleNotFoundError": SourceFailureCode.ANALYSIS_UNAVAILABLE,

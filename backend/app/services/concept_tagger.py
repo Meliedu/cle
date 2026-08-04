@@ -80,7 +80,7 @@ async def _llm_tag_call(text: str, candidates: list[dict[str, Any]]) -> list[dic
     )
     user_payload = json.dumps({"passage": text[:6000], "concepts": candidates})
     resp = await client.chat.completions.create(
-        model=settings.llm_primary_model,
+        model=settings.openrouter_primary_model,
         messages=[
             {"role": "system", "content": _TAGGER_SYSTEM_PROMPT},
             {"role": "user", "content": user_payload},

@@ -15,7 +15,6 @@ from app.database import async_session_factory
 from app.models.api_usage import ApiUsage
 from app.models.cron_run import CronRun
 from app.models.task import Task
-from app.services.storage import delete_file_safe
 
 logger = logging.getLogger(__name__)
 
@@ -142,16 +141,17 @@ async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
         ),
         {"grace_seconds": grace_seconds},
     )
-    orphan_keys = [row[0] for row in result.fetchall() if row[0]]
+    orphan_count = len(result.fetchall())
     await session.commit()
-    # Reclaim R2 storage for the orphans. Best-effort: delete_file_safe
-    # swallows errors so a missing key can't undo the DB tombstone.
-    for r2_key in orphan_keys:
-        await delete_file_safe(r2_key)
-    if orphan_keys:
+    # The R2 objects stay. This swept them, but a document lands here because
+    # the WORKER died mid-task — nothing has been shown to be wrong with the
+    # file itself. Deleting it left "Retry parsing" permanently broken for an
+    # upload that never got a complete attempt. Clearing the stuck spinner is
+    # this sweep's whole job; reclaiming bytes belongs to an explicit delete.
+    if orphan_count:
         logger.info(
             "Tombstoned orphaned processing documents: count=%d (grace=%ds)",
-            len(orphan_keys),
+            orphan_count,
             grace_seconds,
         )
 
@@ -267,7 +267,6 @@ async def fail_task(
     task.error_message = error
     task.error_code = error_code
 
-    orphan_r2_key: str | None = None
     if permanently_failed and task.task_type == "process_document":
         document_id = task.payload.get("document_id")
         if document_id:
@@ -288,18 +287,25 @@ async def fail_task(
                 doc = doc_result.scalar_one_or_none()
                 if doc:
                     doc.status = "failed"
-                    # Capture r2_key before commit so we can reclaim storage
-                    # once the tombstone is durable. A permanently-failed doc
-                    # can't be retried, so the uploaded bytes are dead weight.
-                    orphan_r2_key = doc.r2_key
+                    # The R2 object stays. This used to delete it, on the
+                    # premise that a permanently-failed doc can't be retried —
+                    # but "Retry parsing" (POST .../documents/{id}/reprocess)
+                    # and run_parse_syllabus both re-download it, so deleting
+                    # made both fail with NoSuchKey forever while the UI kept
+                    # offering a Retry that could never succeed.
+                    #
+                    # What exhausts the attempts is usually operational (an
+                    # expired provider key, an outage, a bad deploy), so the
+                    # bytes are the instructor's only copy of a file that will
+                    # process fine once the cause is fixed. Reclaiming storage
+                    # is the job of an explicit delete or a retention sweep
+                    # over soft-deleted rows, not of a failed task.
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "Could not tombstone document %s on failed task", document_id
                 )
 
     await session.commit()
-    if orphan_r2_key:
-        await delete_file_safe(orphan_r2_key)
 
 
 async def process_task(session: AsyncSession, task: Task) -> dict | None:
