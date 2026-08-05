@@ -121,7 +121,11 @@ class Assignment(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(String)
     kind: Mapped[str] = mapped_column(String(30), nullable=False)
-    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Nullable: a syllabus weights components it never dates ("Participation,
+    # 15%"). An undated assignment is inert everywhere a deadline matters (it
+    # never goes overdue, never lands on the calendar) and still carries its
+    # title and weight. See migration e2f9a4b71c60.
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     available_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     weight: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     quiz_id: Mapped[uuid.UUID | None] = mapped_column(

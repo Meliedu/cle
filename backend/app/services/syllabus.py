@@ -282,8 +282,25 @@ async def parse_syllabus_text(raw_text: str) -> dict[str, Any]:
     constraints are baked in before storage.
     """
     payload = await _llm_extract(raw_text)
+    return validate_syllabus_payload(payload, source="LLM payload")
+
+
+def validate_syllabus_payload(
+    payload: dict[str, Any], *, source: str = "payload"
+) -> dict[str, Any]:
+    """Normalize and strict-validate a syllabus payload, or raise.
+
+    Shared by the parse job and the apply endpoint. The apply body is
+    client-supplied and used to reach ``apply_syllabus_payload`` unchecked, so
+    the caps that bound a prompt-injected or hand-edited payload were enforced
+    on the parse path only; an oversize name got as far as Postgres and came
+    back as a 500. Validating in one place keeps both entry points honest.
+
+    The dict round-trip via ``model_dump`` bakes in the field caps and enum
+    constraints before the value is stored or applied.
+    """
     if "schema_version" not in payload:
-        payload["schema_version"] = "v1"
+        payload = {**payload, "schema_version": "v1"}
     payload = _renumber_zero_based_meetings(payload)
     try:
         validated = _SyllabusPayloadV1.model_validate(payload)
@@ -293,7 +310,7 @@ async def parse_syllabus_text(raw_text: str) -> dict[str, Any]:
         first = exc.errors()[0] if exc.errors() else {"msg": "validation failed"}
         loc = ".".join(str(p) for p in first.get("loc", ())) or "<root>"
         raise SyllabusValidationError(
-            f"LLM payload failed validation at {loc}: {first.get('msg', 'invalid')}"
+            f"{source} failed validation at {loc}: {first.get('msg', 'invalid')}"
         ) from exc
     return validated.model_dump(mode="json", exclude_none=False)
 
@@ -417,16 +434,24 @@ async def apply_syllabus_payload(
         title = (raw.get("title") or "").strip()
         if not title:
             continue
-        # Fix 6: guard against missing/malformed due_at
+        # An absent date is a legitimate answer, not a defect: the prompt
+        # forbids inventing one and a syllabus weights work it never dates.
+        # These used to be skipped because due_at was NOT NULL, so the preview
+        # promised components the apply silently dropped. A malformed date is
+        # kept the same way: losing the date beats losing the component.
         due_raw = raw.get("due_at")
-        if not due_raw or not isinstance(due_raw, str):
-            logger.warning("Skipping assignment '%s' with invalid due_at", title)
-            continue
-        try:
-            due = datetime.fromisoformat(due_raw.replace("Z", "+00:00"))
-        except (ValueError, AttributeError) as exc:
-            logger.warning("Skipping assignment '%s' with malformed due_at: %s", title, exc)
-            continue
+        due: datetime | None = None
+        if isinstance(due_raw, str) and due_raw:
+            try:
+                due = datetime.fromisoformat(due_raw.replace("Z", "+00:00"))
+            except (ValueError, AttributeError) as exc:
+                logger.warning(
+                    "Keeping assignment '%s' undated, malformed due_at: %s",
+                    title,
+                    exc,
+                )
+        # ``== None`` compiles to ``IS NULL``, so undated components dedupe on
+        # (course, title) as intended rather than never matching.
         existing = (
             await db.execute(
                 select(Assignment).where(

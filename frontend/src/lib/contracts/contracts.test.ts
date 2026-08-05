@@ -275,6 +275,17 @@ describe("toSafeError", () => {
     expect(safe.nextAction).not.toMatch(/retry/i);
   });
 
+  it("tells the user to re-upload a file that is no longer stored", () => {
+    // The two uploads destroyed by the delete-on-failure bug carried
+    // `storage_unavailable`, whose "Retry in a moment" can never succeed
+    // against bytes that no longer exist.
+    const safe = safeErrorFromCode("file_missing", { objectName: "syllabus.pdf" });
+    expect(safe.retryable).toBe(false);
+    expect(safe.severity).toBe("blocking");
+    expect(safe.nextAction).toMatch(/upload/i);
+    expect(safe.title).toContain("syllabus.pdf");
+  });
+
   it("still offers Retry when the provider is merely busy", () => {
     // The counterpart to the test above. Both come from the same LLM step, so
     // if they shared a code the Retry button would have to be wrong for one of
@@ -303,6 +314,7 @@ describe("toSafeError", () => {
       "file_too_large",
       "empty_document",
       "storage_unavailable",
+      "file_missing",
       "analysis_unavailable",
       "provider_unavailable",
       "timeout",

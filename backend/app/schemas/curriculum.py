@@ -168,7 +168,10 @@ class AssignmentResponse(BaseModel):
     title: str
     description: str | None
     kind: AssignmentKind
-    due_at: datetime
+    # Optional: see migration e2f9a4b71c60. AssignmentCreate deliberately still
+    # requires a date, because an instructor adding one by hand has one in
+    # mind; this is for components extracted from a syllabus that has none.
+    due_at: datetime | None
     available_from: datetime | None
     weight: Decimal | None
     quiz_id: uuid.UUID | None

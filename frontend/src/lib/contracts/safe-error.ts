@@ -32,6 +32,7 @@ export type SafeErrorCode =
   | "file_too_large"
   | "empty_document"
   | "storage_unavailable"
+  | "file_missing"
   | "analysis_unavailable"
   | "provider_unavailable"
   | "timeout"
@@ -125,6 +126,18 @@ const SAFE_COPY: Record<SafeErrorCode, SafeCopy> = {
     nextAction: "Retry in a moment.",
     retryable: true,
     severity: "recoverable",
+  },
+  file_missing: {
+    title: (object) =>
+      object ? `${object} is no longer stored` : "This file is no longer stored",
+    // Separate from `storage_unavailable` so the copy can be honest: the
+    // object is gone, so "Retry in a moment" would loop forever. Blocking and
+    // non-retryable, with the one action that actually works.
+    consequence: "Meli cannot read it, so it is not contributing to your course content.",
+    preserved: "Everything else you have set up is intact.",
+    nextAction: "Upload the file again.",
+    retryable: false,
+    severity: "blocking",
   },
   analysis_unavailable: {
     title: (object) =>

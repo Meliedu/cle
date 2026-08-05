@@ -233,3 +233,92 @@ async def test_apply_creates_entities(
     )
     assert r.status_code == 200
     assert r.json()["data"]["status"] == "applied"
+
+
+@pytest.mark.asyncio
+async def test_apply_revalidates_the_submitted_payload(
+    async_client: AsyncClient,
+    db_session: AsyncSession,
+    own_course: Course,
+    logged_in_user: User,
+):
+    """The apply body is client-supplied and must be validated, not trusted.
+
+    Found in review: the strict schema bounded the PARSE path only. The apply
+    endpoint took ``parsed_payload`` straight from the request and handed it to
+    ``apply_syllabus_payload``, so the caps that exist to bound a prompt-
+    injected or hand-edited payload were not enforced on the one path that
+    writes curriculum rows.
+    """
+    imp = SyllabusImport(
+        course_id=own_course.id,
+        raw_text="x",
+        parsed_payload={},
+        status="parsed",
+        created_by=logged_in_user.id,
+    )
+    db_session.add(imp)
+    await db_session.commit()
+    await db_session.refresh(imp)
+
+    r = await async_client.post(
+        f"/api/courses/{own_course.id}/syllabus/imports/{imp.id}/apply",
+        json={
+            "parsed_payload": {
+                "modules": [{"name": "M" * 5000, "order_index": 0}],
+                "meetings": [],
+                "objectives": [],
+                "assignments": [],
+                "schema_version": "v1",
+            }
+        },
+    )
+    assert r.status_code == 422, r.text
+
+    await db_session.refresh(imp)
+    # A rejected payload must not strand the row in 'applying'.
+    assert imp.status == "parsed"
+
+
+@pytest.mark.asyncio
+async def test_apply_accepts_a_valid_payload(
+    async_client: AsyncClient,
+    db_session: AsyncSession,
+    own_course: Course,
+    logged_in_user: User,
+):
+    """The guard must not reject what the parse path legitimately produces."""
+    imp = SyllabusImport(
+        course_id=own_course.id,
+        raw_text="x",
+        parsed_payload={},
+        status="parsed",
+        created_by=logged_in_user.id,
+    )
+    db_session.add(imp)
+    await db_session.commit()
+    await db_session.refresh(imp)
+
+    r = await async_client.post(
+        f"/api/courses/{own_course.id}/syllabus/imports/{imp.id}/apply",
+        json={
+            "parsed_payload": {
+                "course": {"name": "Ethics", "semester": "SPR 2026"},
+                "modules": [],
+                "meetings": [],
+                "objectives": [],
+                # Undated components are valid now and must survive the guard.
+                "assignments": [
+                    {
+                        "title": "Participation",
+                        "kind": "participation",
+                        "due_at": None,
+                        "weight": 0.15,
+                    }
+                ],
+                "schema_version": "v1",
+            }
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["status"] == "applied"

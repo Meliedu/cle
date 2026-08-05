@@ -48,8 +48,13 @@ class SourceFailureCode(str, Enum):
     FILE_TOO_LARGE = "file_too_large"
     #: Parsed successfully but yielded no usable text (e.g. a scanned PDF).
     EMPTY_DOCUMENT = "empty_document"
-    #: Object storage could not return the file.
+    #: Object storage could not return the file right now (outage, timeout,
+    #: refused connection). The bytes still exist, so a retry can work.
     STORAGE_UNAVAILABLE = "storage_unavailable"
+    #: The stored object is gone, not merely unreachable. Distinct from
+    #: STORAGE_UNAVAILABLE because no retry can bring it back: only a
+    #: re-upload can, and the copy has to say so.
+    FILE_MISSING = "file_missing"
     #: The model/analysis step failed or was misconfigured.
     ANALYSIS_UNAVAILABLE = "analysis_unavailable"
     #: The model provider was reachable but refused to serve right now: a rate
@@ -105,7 +110,10 @@ _BY_EXCEPTION_NAME: dict[str, SourceFailureCode] = {
     "ClientError": SourceFailureCode.STORAGE_UNAVAILABLE,
     "BotoCoreError": SourceFailureCode.STORAGE_UNAVAILABLE,
     "EndpointConnectionError": SourceFailureCode.STORAGE_UNAVAILABLE,
-    "NoSuchKey": SourceFailureCode.STORAGE_UNAVAILABLE,
+    # The object is gone, not unreachable. Retrying re-runs the download to the
+    # same 404 forever, which is exactly what the two destroyed uploads did.
+    "NoSuchKey": SourceFailureCode.FILE_MISSING,
+    "NoSuchBucket": SourceFailureCode.STORAGE_UNAVAILABLE,
     "UnsupportedFormatError": SourceFailureCode.UNSUPPORTED_FORMAT,
     "FileNotFoundError": SourceFailureCode.STORAGE_UNAVAILABLE,
     # A misconfigured setting or a missing attribute is an internal defect. It
@@ -154,7 +162,11 @@ _BY_MESSAGE: tuple[tuple[tuple[str, ...], SourceFailureCode], ...] = (
      SourceFailureCode.PROVIDER_UNAVAILABLE),
     (("api key", "openrouter", "model not found", "llm", "completion"),
      SourceFailureCode.ANALYSIS_UNAVAILABLE),
-    (("nosuchkey", "access denied", "bucket", "s3", "r2 ", "storage"),
+    # Checked before the general storage bucket, for the same reason as the
+    # exception-name entry: a missing key never recovers on its own.
+    (("nosuchkey", "no such key", "key does not exist"),
+     SourceFailureCode.FILE_MISSING),
+    (("access denied", "bucket", "s3", "r2 ", "storage"),
      SourceFailureCode.STORAGE_UNAVAILABLE),
     (("could not parse", "parse error", "corrupt", "malformed", "decrypt",
       "password"),

@@ -18,7 +18,11 @@ from app.schemas.curriculum import (
     SyllabusImportResponse,
     SyllabusImportTriggerRequest,
 )
-from app.services.syllabus import apply_syllabus_payload
+from app.services.syllabus import (
+    SyllabusValidationError,
+    apply_syllabus_payload,
+    validate_syllabus_payload,
+)
 
 router = APIRouter(prefix="/courses/{course_id}/syllabus", tags=["curriculum"])
 
@@ -98,6 +102,18 @@ async def apply_import(
     db: AsyncSession = Depends(get_db),
     course: Course = Depends(get_owned_course),
 ):
+    # Validate BEFORE the state transition. The body is client-supplied (the
+    # teacher may edit the parsed payload), and it used to reach the applier
+    # unchecked, so the strict schema bounded the parse path only. Validating
+    # first also means a rejected payload leaves the row in 'parsed' rather
+    # than stranded in 'applying'.
+    try:
+        validated_payload = validate_syllabus_payload(
+            body.parsed_payload, source="submitted payload"
+        )
+    except SyllabusValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     # Atomic state transition: parsed → applying. The conditional UPDATE
     # is the actual lock — only one concurrent request flips the row.
     # Without it, two requests both pass a SELECT status='parsed' check
@@ -140,7 +156,7 @@ async def apply_import(
         await apply_syllabus_payload(
             db,
             course_id=course.id,
-            payload=body.parsed_payload,
+            payload=validated_payload,
             applied_by=course.instructor_id,
         )
     except Exception:
@@ -163,7 +179,7 @@ async def apply_import(
         update(SyllabusImport)
         .where(SyllabusImport.id == import_id)
         .values(
-            parsed_payload=body.parsed_payload,
+            parsed_payload=validated_payload,
             status="applied",
             applied_at=now,
             applied_by=course.instructor_id,

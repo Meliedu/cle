@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 
 import pytest
 import pytest_asyncio
@@ -198,3 +199,100 @@ async def test_apply_syllabus_payload_creates_entities(
     assert meetings[0].module_id == modules[0].id
     assert len(objs) == 1
     assert len(asns) == 1
+
+
+@pytest.mark.asyncio
+async def test_apply_keeps_undated_graded_components(
+    db_session: AsyncSession,
+    test_instructor,
+):
+    """An undated weighted component must reach the course, not be dropped.
+
+    Before ``assignments.due_at`` became nullable (migration e2f9a4b71c60) the
+    applier skipped every component the syllabus never dated, so the import
+    preview promised five assignments and the course got one. A silent partial
+    write is worse than the loud failure it replaced.
+    """
+    course = Course(
+        name="T",
+        language="english",
+        instructor_id=test_instructor.id,
+        enroll_code="SYLUNDAT",
+    )
+    db_session.add(course)
+    await db_session.flush()
+
+    payload = {
+        "modules": [],
+        "meetings": [],
+        "objectives": [],
+        "assignments": [
+            {"title": "Attendance and Participation", "kind": "participation",
+             "due_at": None, "weight": 0.15},
+            {"title": "Final exam", "kind": "quiz", "due_at": None, "weight": 0.25},
+            {"title": "Group Project", "kind": "project",
+             "due_at": "2026-03-12T00:00:00", "weight": 0.25},
+        ],
+        "schema_version": "v1",
+    }
+    await apply_syllabus_payload(
+        db_session,
+        course_id=course.id,
+        payload=payload,
+        applied_by=test_instructor.id,
+    )
+    await db_session.commit()
+
+    rows = (
+        await db_session.execute(
+            select(Assignment).where(Assignment.course_id == course.id)
+        )
+    ).scalars().all()
+    by_title = {a.title: a for a in rows}
+    assert set(by_title) == {
+        "Attendance and Participation",
+        "Final exam",
+        "Group Project",
+    }
+    assert by_title["Attendance and Participation"].due_at is None
+    assert by_title["Attendance and Participation"].weight == Decimal("0.15")
+    assert by_title["Group Project"].due_at is not None
+
+
+@pytest.mark.asyncio
+async def test_apply_is_idempotent_for_undated_components(
+    db_session: AsyncSession,
+    test_instructor,
+):
+    """Re-applying must not duplicate them: NULL dedupe needs ``IS NULL``."""
+    course = Course(
+        name="T",
+        language="english",
+        instructor_id=test_instructor.id,
+        enroll_code="SYLUNDA2",
+    )
+    db_session.add(course)
+    await db_session.flush()
+
+    payload = {
+        "assignments": [
+            {"title": "Participation", "kind": "participation",
+             "due_at": None, "weight": 0.15},
+        ],
+        "schema_version": "v1",
+    }
+    for _ in range(2):
+        await apply_syllabus_payload(
+            db_session,
+            course_id=course.id,
+            payload=payload,
+            applied_by=test_instructor.id,
+        )
+        await db_session.commit()
+
+    rows = (
+        await db_session.execute(
+            select(Assignment).where(Assignment.course_id == course.id)
+        )
+    ).scalars().all()
+    assert len(rows) == 1, "an undated component must dedupe on (course, title)"

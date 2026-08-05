@@ -76,6 +76,33 @@ class TestClassifyByExceptionType:
         assert classify(exc) is SourceFailureCode.ANALYSIS_UNAVAILABLE
         assert not is_retryable(classify(exc))
 
+    def test_a_vanished_object_asks_for_a_re_upload(self):
+        """``NoSuchKey`` is not a storage outage: the bytes are gone for good.
+
+        Two production uploads were destroyed by the delete-on-permanent-
+        failure bug. Both carried ``storage_unavailable``, which is retryable
+        and says "Retry in a moment", so the UI invited a retry that could
+        never succeed against a file that no longer exists. Only re-uploading
+        recovers it, so the code must be blocking and say that.
+        """
+
+        class NoSuchKey(Exception):
+            """Shape of ``botocore.errorfactory.NoSuchKey``."""
+
+        code = classify(NoSuchKey("An error occurred (NoSuchKey) ... GetObject"))
+        assert code is SourceFailureCode.FILE_MISSING
+        assert not is_retryable(code)
+
+    def test_a_storage_outage_is_still_retryable(self):
+        """The sibling case must not get swept up: a 500 from R2 does recover."""
+
+        class EndpointConnectionError(Exception):
+            """Shape of ``botocore.exceptions.EndpointConnectionError``."""
+
+        code = classify(EndpointConnectionError("Could not connect to endpoint"))
+        assert code is SourceFailureCode.STORAGE_UNAVAILABLE
+        assert is_retryable(code)
+
     def test_a_provider_blip_stays_retryable(self):
         """A 429 or a provider 5xx is transient, unlike a rejected key.
 
@@ -130,7 +157,11 @@ class TestClassifyByMessage:
             ("rate limit exceeded", SourceFailureCode.PROVIDER_UNAVAILABLE),
             ("model is overloaded, try again", SourceFailureCode.PROVIDER_UNAVAILABLE),
             ("invalid api key supplied", SourceFailureCode.ANALYSIS_UNAVAILABLE),
-            ("NoSuchKey when reading object", SourceFailureCode.STORAGE_UNAVAILABLE),
+            # Was STORAGE_UNAVAILABLE. A missing key is permanent, and telling
+            # the instructor to "Retry in a moment" was the loop two destroyed
+            # uploads sat in.
+            ("NoSuchKey when reading object", SourceFailureCode.FILE_MISSING),
+            ("access denied on bucket", SourceFailureCode.STORAGE_UNAVAILABLE),
             ("could not parse PDF, file is corrupt", SourceFailureCode.UNREADABLE_FILE),
         ],
     )
