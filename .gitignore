@@ -81,3 +81,11 @@ frontend/scripts/_probe.mjs
 # scripts/extract_placement_bank.py. It carries answer keys, listening scripts
 # and rationales, which the package marks "do not distribute".
 backend/app/data/placement/*.json
+
+# Generated listening audio and its QA artefacts. Same rule as the bank above,
+# for the same reason: a clip IS a listening script, read aloud. Committing it
+# would put "do not distribute" exam content in the repository, where anyone
+# with clone access could transcribe the whole paper back out of it. The real
+# copies live in R2, keyed by version, and are reproducible from the bank via
+# scripts/generate_placement_audio.py.
+backend/tmp/
