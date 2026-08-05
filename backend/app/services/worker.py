@@ -136,7 +136,7 @@ async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
                       AND (t.payload->>'document_id')::uuid = documents.id
                       AND t.status IN ('pending', 'running')
                )
-         RETURNING r2_key
+         RETURNING id
             """
         ),
         {"grace_seconds": grace_seconds},
@@ -144,10 +144,15 @@ async def _reconcile_orphaned_documents(session: AsyncSession) -> None:
     orphan_count = len(result.fetchall())
     await session.commit()
     # The R2 objects stay. This swept them, but a document lands here because
-    # the WORKER died mid-task — nothing has been shown to be wrong with the
+    # the WORKER died mid-task, and nothing has been shown to be wrong with the
     # file itself. Deleting it left "Retry parsing" permanently broken for an
     # upload that never got a complete attempt. Clearing the stuck spinner is
-    # this sweep's whole job; reclaiming bytes belongs to an explicit delete.
+    # this sweep's whole job. Reclaiming bytes is currently manual: the only
+    # R2 delete left is the explicit DELETE endpoint, so failed and swept
+    # documents keep their objects until an instructor removes the row. That
+    # leak is bounded by upload volume and is the deliberate trade against
+    # destroying a recoverable file. TODO: a retention sweep over rows
+    # soft-deleted more than N days ago would reclaim them safely.
     if orphan_count:
         logger.info(
             "Tombstoned orphaned processing documents: count=%d (grace=%ds)",
@@ -288,7 +293,7 @@ async def fail_task(
                 if doc:
                     doc.status = "failed"
                     # The R2 object stays. This used to delete it, on the
-                    # premise that a permanently-failed doc can't be retried —
+                    # premise that a permanently-failed doc can't be retried,
                     # but "Retry parsing" (POST .../documents/{id}/reprocess)
                     # and run_parse_syllabus both re-download it, so deleting
                     # made both fail with NoSuchKey forever while the UI kept
@@ -298,8 +303,9 @@ async def fail_task(
                     # expired provider key, an outage, a bad deploy), so the
                     # bytes are the instructor's only copy of a file that will
                     # process fine once the cause is fixed. Reclaiming storage
-                    # is the job of an explicit delete or a retention sweep
-                    # over soft-deleted rows, not of a failed task.
+                    # is the job of an explicit delete, not of a failed task.
+                    # See _reconcile_orphaned_documents for the trade-off this
+                    # accepts and the retention sweep that would settle it.
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "Could not tombstone document %s on failed task", document_id

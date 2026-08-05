@@ -74,7 +74,11 @@ class _SyllabusMeetingV1(BaseModel):
     model_config = ConfigDict(extra="ignore")
     module_index: int | None = Field(None, ge=0, le=10_000)
     meeting_index: int = Field(..., ge=1, le=10_000)
-    scheduled_at: str = Field(..., max_length=64)
+    # Optional for the same reason as an assignment's due_at: a schedule that
+    # reads "Week 3: Utilitarianism" carries no calendar date, the prompt
+    # forbids inventing one, and apply_syllabus_payload already skips meetings
+    # it cannot date. Requiring it could only discard the whole syllabus.
+    scheduled_at: str | None = Field(None, max_length=64)
     title: str | None = Field(None, max_length=_MAX_NAME)
     objective_statements: list[str] = Field(default_factory=list, max_length=50)
 
@@ -171,7 +175,9 @@ Index rules (they differ, so follow them exactly):
 
 If a field is missing, omit it. Do not hallucinate dates: when the syllabus
 gives no date for a graded component, set its "due_at" to null and keep the
-component. Undated components are normal and are still wanted."""
+component, and when it gives no date for a session, set that session's
+"scheduled_at" to null and keep the session. Undated items are normal and are
+still wanted."""
 
 
 async def _llm_extract(raw_text: str) -> dict[str, Any]:
@@ -226,32 +232,32 @@ def _renumber_zero_based_meetings(payload: dict[str, Any]) -> dict[str, Any]:
     if not indices or min(indices) != 0:
         return payload
 
-    def _shift(value: Any) -> Any:
-        return value + 1 if isinstance(value, int) else value
-
     logger.info(
         "Syllabus payload used 0-based meeting_index; renumbering %d meetings",
         len(meetings),
     )
-    shifted_meetings = [
-        {**m, "meeting_index": _shift(m.get("meeting_index"))}
-        if isinstance(m, dict)
-        else m
-        for m in meetings
-    ]
+    def _shift_key(item: Any, key: str) -> Any:
+        """Shift ``key`` only where the model actually supplied an int.
+
+        Absent keys stay absent: writing an explicit ``None`` in would turn a
+        "Field required" error into "Input should be a valid integer", which
+        misdirects whoever reads ``tasks.error_message``. Non-dict entries pass
+        through untouched so a malformed list still fails where it should.
+        """
+        if not isinstance(item, dict) or not isinstance(item.get(key), int):
+            return item
+        return {**item, key: item[key] + 1}
+
+    shifted_meetings = [_shift_key(m, "meeting_index") for m in meetings]
     shifted_assignments = [
-        {**a, "meeting_index": _shift(a.get("meeting_index"))}
-        if isinstance(a, dict) and a.get("meeting_index") is not None
-        else a
+        _shift_key(a, "meeting_index")
         for a in (payload.get("assignments") or [])
     ]
     # Only meeting-scoped objectives index meetings; a course- or module-scoped
     # scope_index means something else entirely and must not move.
     shifted_objectives = [
-        {**o, "scope_index": _shift(o.get("scope_index"))}
-        if isinstance(o, dict)
-        and o.get("scope") == "meeting"
-        and o.get("scope_index") is not None
+        _shift_key(o, "scope_index")
+        if isinstance(o, dict) and o.get("scope") == "meeting"
         else o
         for o in (payload.get("objectives") or [])
     ]

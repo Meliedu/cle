@@ -11,14 +11,14 @@ uploaded PDF from R2, on the premise that
 
 That premise is false. Two live paths re-download the object after a failure:
 
-  * ``POST /courses/{id}/documents/{doc_id}/reprocess`` — the "Retry parsing"
+  * ``POST /courses/{id}/documents/{doc_id}/reprocess``, the "Retry parsing"
     action the approved setup flow puts beside every failed source, and
-  * ``run_parse_syllabus`` — the syllabus import job, which downloads the same
+  * ``run_parse_syllabus``, the syllabus import job, which downloads the same
     document independently of the processing pipeline.
 
 Both then failed with ``NoSuchKey`` forever, which the UI renders as
-``storage_unavailable`` — "The file could not be retrieved for processing just
-now. Retry in a moment." — inviting a retry that can never succeed against a
+``storage_unavailable``: "The file could not be retrieved for processing just
+now. Retry in a moment.", inviting a retry that can never succeed against a
 file the product itself deleted.
 
 The failure that triggers this is routinely transient or operational (an
@@ -131,7 +131,7 @@ async def test_permanent_failure_keeps_r2_object(db_session, monkeypatch):
     refreshed = (
         await db_session.execute(select(Document).where(Document.id == document.id))
     ).scalar_one()
-    # The tombstone still has to happen — the user must see 'failed', with a
+    # The tombstone still has to happen: the user must see 'failed', with a
     # Retry that can actually succeed once the underlying cause is fixed.
     assert refreshed.status == "failed"
     assert refreshed.r2_key == "courses/c/documents/d/Syllabus.pdf"
@@ -165,8 +165,8 @@ async def test_orphan_reconciler_keeps_r2_object(db_session, monkeypatch):
     Same defect as ``fail_task``, reached by a different route: when the worker
     is SIGKILL'd mid-task the document is left in 'processing' with no live
     task, and this sweep flips it to 'failed'. Deleting the bytes there is
-    worse than in ``fail_task`` — nothing about the document was even shown to
-    be bad, the worker just died — and it leaves Retry parsing permanently
+    worse than in ``fail_task``: nothing about the document was even shown to
+    be bad, the worker just died, and it leaves Retry parsing permanently
     broken for a file that never got a real attempt.
     """
     deleted = _watch_r2_deletes(monkeypatch)

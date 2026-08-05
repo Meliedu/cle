@@ -52,6 +52,11 @@ class SourceFailureCode(str, Enum):
     STORAGE_UNAVAILABLE = "storage_unavailable"
     #: The model/analysis step failed or was misconfigured.
     ANALYSIS_UNAVAILABLE = "analysis_unavailable"
+    #: The model provider was reachable but refused to serve right now: a rate
+    #: limit, an exhausted quota, a 5xx, a dropped connection. Distinct from
+    #: ANALYSIS_UNAVAILABLE because the input is fine and a later attempt is
+    #: genuinely likely to succeed, so this one keeps its Retry.
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
     #: The operation exceeded its time budget.
     TIMEOUT = "timeout"
     #: The referenced object vanished or changed identity under us.
@@ -70,10 +75,14 @@ class SourceFailureCode(str, Enum):
 #: captioning) and embedding only to fail identically. Offering Retry there
 #: spends real money to show the instructor the same failure, and invites them
 #: to keep clicking. Recovery is an operator fix, not a user action.
+#: PROVIDER_UNAVAILABLE is the deliberate counterpart: same LLM step, but the
+#: cause is the provider's availability rather than our configuration, so the
+#: same input plausibly succeeds on a later attempt and Retry is honest.
 RETRYABLE_CODES = frozenset(
     {
         SourceFailureCode.UNREADABLE_FILE,
         SourceFailureCode.STORAGE_UNAVAILABLE,
+        SourceFailureCode.PROVIDER_UNAVAILABLE,
         SourceFailureCode.TIMEOUT,
         SourceFailureCode.UNKNOWN,
     }
@@ -107,11 +116,18 @@ _BY_EXCEPTION_NAME: dict[str, SourceFailureCode] = {
     # 4 Aug 2026 incident: a revoked OpenRouter key on the worker service made
     # every embedding call raise `openai.AuthenticationError: 401 {'message':
     # 'User not found.'}`. That message names no key, quota or provider, so the
-    # substring table below never matched and it landed in UNKNOWN — which is
+    # substring table below never matched and it landed in UNKNOWN, which is
     # retryable, so the UI invited a Retry that could only fail identically.
     # Matched by name so this module stays free of the openai/httpx imports.
     "AuthenticationError": SourceFailureCode.ANALYSIS_UNAVAILABLE,
     "PermissionDeniedError": SourceFailureCode.ANALYSIS_UNAVAILABLE,
+    # Provider availability, not our configuration. Mapped by name so the most
+    # common transient failures stop depending on substring matching, which is
+    # the fragility that let the 401 above reach UNKNOWN in the first place.
+    "RateLimitError": SourceFailureCode.PROVIDER_UNAVAILABLE,
+    "APIConnectionError": SourceFailureCode.PROVIDER_UNAVAILABLE,
+    "APITimeoutError": SourceFailureCode.TIMEOUT,
+    "InternalServerError": SourceFailureCode.PROVIDER_UNAVAILABLE,
     "KeyError": SourceFailureCode.ANALYSIS_UNAVAILABLE,
     "ImportError": SourceFailureCode.ANALYSIS_UNAVAILABLE,
     "ModuleNotFoundError": SourceFailureCode.ANALYSIS_UNAVAILABLE,
@@ -129,8 +145,14 @@ _BY_MESSAGE: tuple[tuple[tuple[str, ...], SourceFailureCode], ...] = (
      SourceFailureCode.EMPTY_DOCUMENT),
     (("timed out", "timeout", "deadline exceeded"),
      SourceFailureCode.TIMEOUT),
-    (("rate limit", "quota", "insufficient_quota", "api key", "openrouter",
-      "model not found", "llm", "completion"),
+    # Checked BEFORE the analysis bucket: an OpenRouter 503 mentions both
+    # "openrouter" and "service unavailable", and the transient reading is the
+    # correct one. Ordering is the only thing separating them.
+    (("rate limit", "rate_limit", "quota", "insufficient_quota", "overloaded",
+      "service unavailable", "temporarily unavailable", "bad gateway",
+      "connection error"),
+     SourceFailureCode.PROVIDER_UNAVAILABLE),
+    (("api key", "openrouter", "model not found", "llm", "completion"),
      SourceFailureCode.ANALYSIS_UNAVAILABLE),
     (("nosuchkey", "access denied", "bucket", "s3", "r2 ", "storage"),
      SourceFailureCode.STORAGE_UNAVAILABLE),

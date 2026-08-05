@@ -33,6 +33,7 @@ export type SafeErrorCode =
   | "empty_document"
   | "storage_unavailable"
   | "analysis_unavailable"
+  | "provider_unavailable"
   | "timeout"
   | "permission_denied"
   | "not_found"
@@ -137,6 +138,19 @@ const SAFE_COPY: Record<SafeErrorCode, SafeCopy> = {
     // Recovery is an operator fix, so the honest next action is to carry on.
     nextAction: "Continue setting up. Contact CLE support if this persists.",
     retryable: false,
+    severity: "recoverable",
+  },
+  provider_unavailable: {
+    title: (object) =>
+      object ? `Meli could not analyse ${object} yet` : "Meli could not analyse this yet",
+    // Deliberately separate from `analysis_unavailable`: same step, but the
+    // cause is the model provider being busy or unreachable rather than our
+    // configuration, so the same file genuinely can succeed on a second try
+    // and Retry is an honest offer here.
+    consequence: "The service Meli uses for analysis is busy right now.",
+    preserved: "Your files and every completed step are saved.",
+    nextAction: "Retry in a few minutes.",
+    retryable: true,
     severity: "recoverable",
   },
   timeout: {

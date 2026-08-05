@@ -61,7 +61,7 @@ class TestClassifyByExceptionType:
 
         The provider answered ``401 {'message': 'User not found.'}`` on every
         embedding call. No substring in that message names a key, a quota or a
-        provider, so it fell through to UNKNOWN — which is retryable, so the UI
+        provider, so it fell through to UNKNOWN, which is retryable, so the UI
         offered a Retry that re-ran download, parse and embed to fail
         identically. A rejected credential is an operator fix.
         """
@@ -75,6 +75,36 @@ class TestClassifyByExceptionType:
         )
         assert classify(exc) is SourceFailureCode.ANALYSIS_UNAVAILABLE
         assert not is_retryable(classify(exc))
+
+    def test_a_provider_blip_stays_retryable(self):
+        """A 429 or a provider 5xx is transient, unlike a rejected key.
+
+        Found in review: both used to land in ANALYSIS_UNAVAILABLE via the
+        message table ("rate limit", "openrouter"), and making that code
+        non-retryable would have removed the Retry button for failures a second
+        attempt would clear. That is the opposite of what keeping the uploaded
+        bytes was for.
+        """
+
+        class RateLimitError(Exception):
+            """Shape of ``openai.RateLimitError`` (429)."""
+
+        class APIConnectionError(Exception):
+            """Shape of ``openai.APIConnectionError``."""
+
+        for exc in (
+            RateLimitError("Error code: 429 - rate limit exceeded"),
+            APIConnectionError("Connection error."),
+        ):
+            code = classify(exc)
+            assert code is SourceFailureCode.PROVIDER_UNAVAILABLE, exc
+            assert is_retryable(code), exc
+
+    def test_a_provider_outage_message_is_retryable_too(self):
+        """Falls to the message table, which must not bucket it with defects."""
+        code = classify(RuntimeError("openrouter returned 503 Service Unavailable"))
+        assert code is SourceFailureCode.PROVIDER_UNAVAILABLE
+        assert is_retryable(code)
 
     def test_a_rejected_permission_is_also_ours(self):
         class PermissionDeniedError(Exception):
@@ -94,7 +124,12 @@ class TestClassifyByMessage:
             ("File too large (120 MB)", SourceFailureCode.FILE_TOO_LARGE),
             ("no extractable text found", SourceFailureCode.EMPTY_DOCUMENT),
             ("request timed out after 60s", SourceFailureCode.TIMEOUT),
-            ("rate limit exceeded", SourceFailureCode.ANALYSIS_UNAVAILABLE),
+            # Was ANALYSIS_UNAVAILABLE. A rate limit is the provider declining
+            # to serve right now, not a defect in our configuration, and the
+            # two need different answers once that code stops offering Retry.
+            ("rate limit exceeded", SourceFailureCode.PROVIDER_UNAVAILABLE),
+            ("model is overloaded, try again", SourceFailureCode.PROVIDER_UNAVAILABLE),
+            ("invalid api key supplied", SourceFailureCode.ANALYSIS_UNAVAILABLE),
             ("NoSuchKey when reading object", SourceFailureCode.STORAGE_UNAVAILABLE),
             ("could not parse PDF, file is corrupt", SourceFailureCode.UNREADABLE_FILE),
         ],

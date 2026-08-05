@@ -275,6 +275,18 @@ describe("toSafeError", () => {
     expect(safe.nextAction).not.toMatch(/retry/i);
   });
 
+  it("still offers Retry when the provider is merely busy", () => {
+    // The counterpart to the test above. Both come from the same LLM step, so
+    // if they shared a code the Retry button would have to be wrong for one of
+    // them: a revoked key never recovers, a 429 usually does.
+    const safe = safeErrorFromCode("provider_unavailable", {
+      objectName: "syllabus.pdf",
+    });
+    expect(safe.retryable).toBe(true);
+    expect(safe.severity).toBe("recoverable");
+    expect(safe.title).toContain("syllabus.pdf");
+  });
+
   it("marks unsupported formats as blocking, not retryable", () => {
     const safe = safeErrorFromCode("unsupported_format", {
       objectName: "notes.key",
@@ -292,6 +304,7 @@ describe("toSafeError", () => {
       "empty_document",
       "storage_unavailable",
       "analysis_unavailable",
+      "provider_unavailable",
       "timeout",
       "permission_denied",
       "not_found",

@@ -86,6 +86,54 @@ async def test_an_undated_graded_component_is_kept(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_an_undated_session_is_kept(monkeypatch):
+    """``scheduled_at`` is the same defect as ``due_at``, found in review.
+
+    A schedule that reads "Week 3: Utilitarianism" with no calendar date is at
+    least as common as an undated graded component, and the prompt forbids
+    inventing one. ``apply_syllabus_payload`` already skips meetings without a
+    usable date, so requiring it here could only ever discard the syllabus
+    whole.
+    """
+    result = await _parse(
+        monkeypatch,
+        _payload(
+            meetings=[
+                {"meeting_index": 1, "title": "Intro", "scheduled_at": None},
+                {"meeting_index": 2, "scheduled_at": "2026-02-12T11:00:00"},
+            ]
+        ),
+    )
+    assert [m["meeting_index"] for m in result["meetings"]] == [1, 2]
+    assert result["meetings"][0]["scheduled_at"] is None
+    assert result["meetings"][1]["scheduled_at"] == "2026-02-12T11:00:00"
+
+
+@pytest.mark.asyncio
+async def test_a_meeting_without_an_index_does_not_gain_a_null_one(monkeypatch):
+    """Renumbering must not invent keys the model never sent.
+
+    Injecting an explicit ``meeting_index: None`` turns "Field required" into
+    "Input should be a valid integer" in ``tasks.error_message``, which
+    misdirects whoever triages it.
+    """
+    import app.services.syllabus as syllabus_module
+
+    payload = _payload(
+        meetings=[
+            {"meeting_index": 0, "scheduled_at": "2026-02-05T11:00:00"},
+            {"title": "Unnumbered", "scheduled_at": "2026-02-12T11:00:00"},
+        ]
+    )
+    shifted = syllabus_module._renumber_zero_based_meetings(payload)
+
+    assert shifted["meetings"][0]["meeting_index"] == 1
+    assert "meeting_index" not in shifted["meetings"][1]
+    # The input is untouched: callers may still hold a reference to it.
+    assert payload["meetings"][0]["meeting_index"] == 0
+
+
+@pytest.mark.asyncio
 async def test_zero_based_meetings_are_renumbered_not_discarded(monkeypatch):
     result = await _parse(
         monkeypatch,
