@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Volume2 } from "lucide-react";
 
@@ -24,8 +24,15 @@ interface PlacementQuestionProps {
   readonly audioUrl?: string | null;
   /** A grant is in flight. */
   readonly audioPending?: boolean;
-  /** The grant failed, or the browser could not decode the clip. */
-  readonly audioError?: boolean;
+  /**
+   * Which half of playback failed, if either.
+   *
+   * The distinction is not cosmetic: a refused grant costs the learner
+   * nothing, but a grant that succeeded and then would not play has already
+   * spent a listening server-side. Telling them otherwise would be a lie about
+   * their own exam.
+   */
+  readonly audioError?: "grant" | "playback" | null;
   readonly onAudioError?: () => void;
 }
 
@@ -47,11 +54,55 @@ export function PlacementQuestion({
   audioAvailable = false,
   audioUrl = null,
   audioPending = false,
-  audioError = false,
+  audioError = null,
   onAudioError,
 }: PlacementQuestionProps) {
   const t = useTranslations("placement.sitting");
   const groupId = useId();
+  const audioRef = useRef<HTMLAudioElement>(null);
+  // Held in a ref so the play effect depends only on the URL. Depending on the
+  // callback would re-run it whenever the parent re-renders, replaying the clip
+  // the learner already heard and burning nothing but their patience.
+  const onAudioErrorRef = useRef(onAudioError);
+  // Synced in an effect, not during render: a ref write during render is not
+  // safe under concurrent rendering. Declared before the play effect below so
+  // the ordering is explicit, though the initial value from useRef already
+  // covers the first mount.
+  useEffect(() => {
+    onAudioErrorRef.current = onAudioError;
+  }, [onAudioError]);
+
+  /*
+   * Start the clip explicitly rather than with `autoPlay`.
+   *
+   * The element mounts only after the grant round-trip has resolved, which can
+   * put it outside the user gesture a browser wants to see before it will play
+   * audio. A blocked autoplay REJECTS THE play() PROMISE AND FIRES NO `error`
+   * EVENT, so with `autoPlay` the learner would spend a listening, hear
+   * nothing, and be told nothing. Calling play() ourselves is the only way to
+   * observe that rejection and report it as the spent-play failure it is.
+   *
+   * Declared ABOVE the ordering-item early return, not next to the markup it
+   * drives. The parent renders every question through one instance of this
+   * component with no `key`, so paging from a multiple-choice item to an
+   * ordering one would change the hook count and React would tear the sitting
+   * down mid-exam.
+   */
+  useEffect(() => {
+    if (!audioUrl) return;
+    const element = audioRef.current;
+    if (!element) return;
+    let cancelled = false;
+    // Wrapped rather than chained directly: `play()` predates promises and
+    // still returns undefined in some engines (and in jsdom), where calling
+    // .catch on it throws and takes the whole sitting down with it.
+    void Promise.resolve(element.play()).catch(() => {
+      if (!cancelled) onAudioErrorRef.current?.();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [audioUrl]);
 
   if (item.response_format === "sequence") {
     return (
@@ -108,15 +159,15 @@ export function PlacementQuestion({
           {audioUrl ? (
             <audio
               key={audioUrl}
+              ref={audioRef}
               src={audioUrl}
-              autoPlay
               onError={onAudioError}
               className="sr-only"
             />
           ) : null}
           {audioError ? (
             <p role="alert" className="text-[13px] text-[var(--color-danger)]">
-              {t("audioFailed")}
+              {audioError === "grant" ? t("audioFailed") : t("audioFailedAfterPlay")}
             </p>
           ) : null}
         </div>

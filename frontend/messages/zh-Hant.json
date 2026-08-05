@@ -951,6 +951,7 @@
       "playAudio": "播放錄音",
       "audioLoading": "錄音載入中…",
       "audioFailed": "無法播放錄音。系統已記錄此情況，本次不會計入你的播放次數。",
+      "audioFailedAfterPlay": "錄音已開始但無法播放。系統已記錄此情況以供覆核。本次已計入你的播放次數，若你聽不到，請告知負責你考試的人員。",
       "playsLeft": "尚可播放 {count} 次，共 {total} 次",
       "orderPosition": "第 {position} 句",
       "orderEmpty": "請選擇",

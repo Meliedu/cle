@@ -3700,6 +3700,7 @@
       "playAudio": "Play audio",
       "audioLoading": "Loading audio…",
       "audioFailed": "The recording could not be played. This has been noted, and it did not use up one of your plays.",
+      "audioFailedAfterPlay": "The recording started but could not be played. This has been noted for review. It did use one of your plays, so tell the person running your test if you could not hear it.",
       "playsLeft": "{count, plural, one {# play} other {# plays}} left of {total}",
       "orderPosition": "Position {position}",
       "orderEmpty": "Choose",

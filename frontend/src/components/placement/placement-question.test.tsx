@@ -94,7 +94,7 @@ function renderListening(props: {
   audioAvailable?: boolean;
   audioUrl?: string | null;
   audioPending?: boolean;
-  audioError?: boolean;
+  audioError?: "grant" | "playback" | null;
 }) {
   render(
     <NextIntlClientProvider locale="en" messages={messages}>
@@ -107,7 +107,7 @@ function renderListening(props: {
         audioAvailable={props.audioAvailable ?? false}
         audioUrl={props.audioUrl ?? null}
         audioPending={props.audioPending ?? false}
-        audioError={props.audioError ?? false}
+        audioError={props.audioError ?? null}
         onAudioError={vi.fn()}
       />
     </NextIntlClientProvider>
@@ -170,9 +170,48 @@ describe("audio items", () => {
     expect(btn.disabled).toBe(true);
   });
 
-  it("tells the learner a failed clip did not cost them a play", () => {
-    renderListening({ audioAvailable: true, audioError: true });
+  it("tells the learner a refused grant did not cost them a play", () => {
+    renderListening({ audioAvailable: true, audioError: "grant" });
     expect(screen.getByRole("alert").textContent).toMatch(/did not use up one of your plays/i);
+  });
+
+  it("does NOT claim a play was free when the clip failed after being granted", () => {
+    // The server spends the listening when it mints the URL. If the clip then
+    // will not play, telling the learner it cost them nothing is a lie about
+    // their own exam, and they would not know to raise it with the proctor.
+    renderListening({ audioAvailable: true, audioError: "playback" });
+    const alert = screen.getByRole("alert").textContent ?? "";
+    expect(alert).not.toMatch(/did not use up/i);
+    expect(alert).toMatch(/did use one of your plays/i);
+  });
+
+  it("survives paging from a choice item to an ordering item", () => {
+    // One instance renders every question and there is no `key`, so a hook
+    // declared after the ordering-item early return changes the hook count
+    // between renders and React tears down the whole sitting mid-exam.
+    const { rerender } = render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <PlacementQuestion
+          item={choiceItem({ section: "listening", audio_playback: 2 })}
+          value={null}
+          onChange={vi.fn()}
+          audioAvailable
+          audioUrl="https://signed.invalid/a.mp3"
+        />
+      </NextIntlClientProvider>
+    );
+    expect(() =>
+      rerender(
+        <NextIntlClientProvider locale="en" messages={messages}>
+          <PlacementQuestion
+            item={sequenceItem()}
+            value={null}
+            onChange={vi.fn()}
+            audioAvailable
+          />
+        </NextIntlClientProvider>
+      )
+    ).not.toThrow();
   });
 
   it("shows no audio affordance at all on a reading item", () => {

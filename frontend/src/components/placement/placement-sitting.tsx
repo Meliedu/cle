@@ -55,7 +55,7 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
   const [index, setIndex] = useState(0);
   const [plays, setPlays] = useState<Record<string, number>>({});
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [audioError, setAudioError] = useState(false);
+  const [audioError, setAudioError] = useState<"grant" | "playback" | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [expired, setExpired] = useState(false);
@@ -152,14 +152,14 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
    */
   const handlePlay = useCallback(async () => {
     if (!current) return;
-    setAudioError(false);
+    setAudioError(null);
     setAudioUrl(null);
     try {
       const grant = await playAudio.mutateAsync({ itemId: current.id });
       setPlays((prev) => ({ ...prev, [current.id]: grant.plays_used }));
       setAudioUrl(grant.url);
     } catch {
-      setAudioError(true);
+      setAudioError("grant");
       // Worth a reviewer's attention: a learner who could not hear an item
       // answered it deaf, and that is not visible from the score alone.
       void reportInterruption
@@ -167,6 +167,22 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
         .catch(() => undefined);
     }
   }, [current, playAudio, reportInterruption]);
+
+  /**
+   * The clip was granted but would not play. The listening is already spent
+   * server-side, so this is not a free retry, and a reviewer needs to know the
+   * learner answered this item without hearing it.
+   */
+  const handleAudioError = useCallback(() => {
+    setAudioError("playback");
+    if (!current) return;
+    void reportInterruption
+      .mutateAsync({
+        kind: "audio_failure",
+        detail: `q${current.question_number} playback failed after grant`,
+      })
+      .catch(() => undefined);
+  }, [current, reportInterruption]);
 
   // A new question must never inherit the previous one's clip. Adjusted during
   // render rather than in an effect: this is React's documented pattern for
@@ -177,7 +193,7 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
   if (current?.id !== audioForItem) {
     setAudioForItem(current?.id);
     setAudioUrl(null);
-    setAudioError(false);
+    setAudioError(null);
   }
 
   useEffect(() => {
@@ -387,7 +403,7 @@ export function PlacementSitting({ attempt, onSubmitted }: PlacementSittingProps
           audioUrl={audioUrl}
           audioPending={playAudio.isPending}
           audioError={audioError}
-          onAudioError={() => setAudioError(true)}
+          onAudioError={handleAudioError}
         />
         </fieldset>
       </div>

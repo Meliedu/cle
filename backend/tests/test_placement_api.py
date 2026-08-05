@@ -1291,3 +1291,46 @@ async def test_another_learners_attempt_cannot_be_played(
         f"/api/placement/attempts/{attempt['id']}/items/{listening['id']}/audio"
     )
     assert resp.status_code == 404
+
+
+async def test_playing_audio_does_not_look_like_changing_an_answer(
+    client, published, db_session, student, monkeypatch
+):
+    """Claiming a playback must not inflate `change_count`.
+
+    Playing an item's audio creates the response row before any answer exists.
+    Counting the subsequent first answer as a change would put a revision on a
+    reviewer's screen for every listening item a learner simply answered once,
+    which is the false signal the idempotency rule exists to prevent.
+    """
+    monkeypatch.setattr(
+        "app.services.storage.generate_presigned_url",
+        lambda key, expiration=300: f"https://signed.invalid/{key}",
+    )
+    await _publish_audio(db_session, published)
+    attempt, detail = await _started_attempt(client, student)
+    listening = next(i for i in detail["items"] if i["section"] == "listening")
+
+    await client.post(
+        f"/api/placement/attempts/{attempt['id']}/items/{listening['id']}/audio"
+    )
+    saved = (
+        await client.put(
+            f"/api/placement/attempts/{attempt['id']}/responses",
+            json={"item_id": listening["id"], "response": listening["options"][0]["letter"]},
+        )
+    ).json()["data"]
+    assert saved["change_count"] == 0, "answering once after playing audio is not a revision"
+
+
+async def test_a_real_revision_is_still_counted(client, published, student):
+    """The guard above must not blind the reviewer to genuine second thoughts."""
+    attempt, detail = await _started_attempt(client, student)
+    item = next(i for i in detail["items"] if i["response_format"] != "sequence")
+    first, second = item["options"][0]["letter"], item["options"][1]["letter"]
+
+    url = f"/api/placement/attempts/{attempt['id']}/responses"
+    a = (await client.put(url, json={"item_id": item["id"], "response": first})).json()["data"]
+    b = (await client.put(url, json={"item_id": item["id"], "response": second})).json()["data"]
+    assert a["change_count"] == 0
+    assert b["change_count"] == 1

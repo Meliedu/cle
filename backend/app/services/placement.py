@@ -519,7 +519,16 @@ async def save_response(
         ).scalar_one()
 
     if existing.response != value:
-        existing.change_count += 1
+        # Filling a blank is not a change of mind. A row can already exist with
+        # no answer for reasons that have nothing to do with the learner
+        # revising: playing an item's audio claims a playback and creates the
+        # row, and a partially-built ordering answer is saved as NULL so paging
+        # away does not discard it. Counting None -> "B" as a change would put
+        # a revision on a reviewer's screen for every listening item the
+        # learner simply answered once, which is exactly the false signal the
+        # idempotency rule above exists to prevent.
+        if existing.response is not None:
+            existing.change_count += 1
         existing.response = value
         existing.answered_at = now if value else None
     if time_spent_ms is not None:

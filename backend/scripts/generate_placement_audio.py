@@ -40,7 +40,6 @@ from app.services import tts  # noqa: E402
 from app.services.placement_audio import (  # noqa: E402
     BEFORE_REPEAT_MS,
     BETWEEN_QUESTIONS_MS,
-    BETWEEN_REPEATS_MS,
     END_OF_SECTION_MS,
     Turn,
     _silence,
@@ -148,13 +147,13 @@ def build_section_tape(results: list[ItemResult], playbacks: dict[int, int]) -> 
             parts.append(_silence(BETWEEN_QUESTIONS_MS))
         plays = playbacks.get(result.question, 1)
         for play in range(plays):
+            # The pause belongs BEFORE each repeat, not after the last one.
+            # Appending it after the final play instead made the gap before the
+            # next question 3.5 s rather than the documented 2 s, and meant
+            # BEFORE_REPEAT_MS never actually preceded a repeat.
             if play:
-                parts.append(_silence(BETWEEN_REPEATS_MS))
-            elif plays > 1:
-                pass
+                parts.append(_silence(BEFORE_REPEAT_MS))
             parts.append(result.pcm)
-        if plays > 1:
-            parts.append(_silence(BEFORE_REPEAT_MS))
     parts.append(_silence(END_OF_SECTION_MS))
     return encode_mp3(b"".join(parts))
 
@@ -243,7 +242,6 @@ async def run(args: argparse.Namespace) -> int:
                 "lead_in": 350, "turn_gap": 450, "tail": 250,
                 "between_questions": BETWEEN_QUESTIONS_MS,
                 "before_repeat": BEFORE_REPEAT_MS,
-                "between_repeats": BETWEEN_REPEATS_MS,
                 "end_of_section": END_OF_SECTION_MS,
             },
             "generated_at": generated_at,
