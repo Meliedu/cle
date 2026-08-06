@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api._helpers import verify_enrollment
+from app.api._helpers import verify_instructor_enrollment
 from app.api.deps import get_db, require_instructor
 from app.models import CanvasIntegration, CanvasSyncEvent, Document
 from app.models.user import User
@@ -47,7 +47,7 @@ async def list_canvas_files(
     user: User = Depends(require_instructor),
 ) -> APIResponse[dict]:
     """Return Canvas files split into available vs already-imported buckets."""
-    await verify_enrollment(db, course_id, user.id)
+    await verify_instructor_enrollment(db, course_id, user.id)
 
     integration = (
         await db.execute(
@@ -104,7 +104,7 @@ async def import_canvas_files_endpoint(
     user: User = Depends(require_instructor),
 ) -> APIResponse[dict]:
     """Import selected Canvas files into Meli — download → R2 → enqueue process."""
-    await verify_enrollment(db, course_id, user.id)
+    await verify_instructor_enrollment(db, course_id, user.id)
 
     integration = (
         await db.execute(
@@ -155,7 +155,7 @@ async def import_canvas_roster_endpoint(
     user: User = Depends(require_instructor),
 ) -> APIResponse[dict]:
     """Reconcile the Meli course roster against its Canvas counterpart."""
-    await verify_enrollment(db, course_id, user.id)
+    await verify_instructor_enrollment(db, course_id, user.id)
 
     integration = (
         await db.execute(
@@ -216,7 +216,7 @@ async def trigger_manual_sync(
     user: User = Depends(require_instructor),
 ) -> APIResponse[dict]:
     """Run a roster diff + file scan immediately for this course's integration."""
-    await verify_enrollment(db, course_id, user.id)
+    await verify_instructor_enrollment(db, course_id, user.id)
 
     integration = (
         await db.execute(
@@ -254,7 +254,7 @@ async def list_sync_events(
     user: User = Depends(require_instructor),
 ) -> APIResponse[list[dict]]:
     """Return the most recent CanvasSyncEvent rows for a course, newest first."""
-    await verify_enrollment(db, course_id, user.id)
+    await verify_instructor_enrollment(db, course_id, user.id)
     limit = max(1, min(limit, 200))
 
     rows = (

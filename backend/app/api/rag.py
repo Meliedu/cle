@@ -4,7 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api._helpers import verify_enrollment as _verify_enrollment
+from app.api._helpers import (
+    verify_enrollment as _verify_enrollment,
+    verify_instructor_enrollment as _verify_instructor_enrollment,
+)
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.models.course import Course
 from app.models.summary import CourseSummary
@@ -174,7 +177,7 @@ async def rag_generate_quiz(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
-    await _verify_enrollment(db, body.course_id, user.id)
+    await _verify_instructor_enrollment(db, body.course_id, user.id)
     await _get_course_language(db, body.course_id)  # validates course exists
 
     task = await _enqueue_generation_job(
@@ -327,7 +330,7 @@ async def rag_generate_pronunciation(
 ):
     # Pronunciation sets are instructor-curated and follow a publish lifecycle,
     # so generation is restricted to instructors (mirrors quiz, not flashcards).
-    await _verify_enrollment(db, body.course_id, user.id)
+    await _verify_instructor_enrollment(db, body.course_id, user.id)
     await _get_course_language(db, body.course_id)
 
     task = await _enqueue_generation_job(

@@ -237,7 +237,7 @@ async def preview_quiz(
             detail="Quiz not found",
         )
 
-    await _verify_enrollment(db, quiz.course_id, user.id)
+    await _verify_instructor_enrollment(db, quiz.course_id, user.id)
 
     question_responses = [
         QuestionWithAnswerResponse(
@@ -291,7 +291,7 @@ async def quiz_active_session(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found"
         )
-    await _verify_enrollment(db, quiz.course_id, user.id)
+    await _verify_instructor_enrollment(db, quiz.course_id, user.id)
 
     session_result = await db.execute(
         select(LiveSession)
@@ -1276,7 +1276,7 @@ async def create_quiz_folder(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
-    await _verify_enrollment(db, course_id, user.id)
+    await _verify_instructor_enrollment(db, course_id, user.id)
 
     if body.purpose not in {"after_class", "live"}:
         raise HTTPException(status_code=400, detail="Invalid purpose")
@@ -1332,7 +1332,7 @@ async def rename_quiz_folder(
     folder = await db.get(QuizFolder, folder_id)
     if folder is None or folder.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Folder not found")
-    await _verify_enrollment(db, folder.course_id, user.id)
+    await _verify_instructor_enrollment(db, folder.course_id, user.id)
 
     new_name = body.name.strip()
     if not new_name:
@@ -1359,7 +1359,7 @@ async def move_quiz_folder(
     preview = await db.get(QuizFolder, folder_id)
     if preview is None or preview.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Folder not found")
-    await _verify_enrollment(db, preview.course_id, user.id)
+    await _verify_instructor_enrollment(db, preview.course_id, user.id)
     await db.rollback()
 
     # Serialize the move under SERIALIZABLE isolation with row-level locks on
@@ -1462,7 +1462,7 @@ async def delete_quiz_folder(
     folder = await db.get(QuizFolder, folder_id)
     if folder is None or folder.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Folder not found")
-    await _verify_enrollment(db, folder.course_id, user.id)
+    await _verify_instructor_enrollment(db, folder.course_id, user.id)
 
     # Reparent to the nearest live ancestor, walking up the chain so children
     # don't end up orphaned under a soft-deleted grandparent.
@@ -1500,7 +1500,7 @@ async def move_quiz_to_folder(
     quiz = await db.get(Quiz, quiz_id)
     if quiz is None or quiz.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Quiz not found")
-    await _verify_enrollment(db, quiz.course_id, user.id)
+    await _verify_instructor_enrollment(db, quiz.course_id, user.id)
 
     if body.folder_id is not None:
         folder = await db.get(QuizFolder, body.folder_id)

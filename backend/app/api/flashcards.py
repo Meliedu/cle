@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 from app.api._helpers import (
     verify_enrollment as _verify_enrollment,
+    verify_instructor_enrollment as _verify_instructor_enrollment,
 )
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.config import settings
@@ -824,7 +825,7 @@ async def create_flashcard_folder(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
-    await _verify_enrollment(db, course_id, user.id)
+    await _verify_instructor_enrollment(db, course_id, user.id)
     if body.parent_id is not None:
         parent = await db.get(FlashcardFolder, body.parent_id)
         if (
@@ -864,7 +865,7 @@ async def rename_flashcard_folder(
     folder = await db.get(FlashcardFolder, folder_id)
     if folder is None or folder.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Folder not found")
-    await _verify_enrollment(db, folder.course_id, user.id)
+    await _verify_instructor_enrollment(db, folder.course_id, user.id)
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Name cannot be empty")
@@ -888,7 +889,7 @@ async def move_flashcard_folder(
     preview = await db.get(FlashcardFolder, folder_id)
     if preview is None or preview.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Folder not found")
-    await _verify_enrollment(db, preview.course_id, user.id)
+    await _verify_instructor_enrollment(db, preview.course_id, user.id)
     await db.rollback()
 
     # Serialize the move under SERIALIZABLE isolation with row-level locks on
@@ -985,7 +986,7 @@ async def delete_flashcard_folder(
     folder = await db.get(FlashcardFolder, folder_id)
     if folder is None or folder.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Folder not found")
-    await _verify_enrollment(db, folder.course_id, user.id)
+    await _verify_instructor_enrollment(db, folder.course_id, user.id)
 
     # Reparent to the nearest live ancestor, walking up the chain so children
     # don't end up orphaned under a soft-deleted grandparent.
@@ -1023,7 +1024,7 @@ async def move_flashcard_set_to_folder(
     fc_set = await db.get(FlashcardSet, set_id)
     if fc_set is None or fc_set.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Flashcard set not found")
-    await _verify_enrollment(db, fc_set.course_id, user.id)
+    await _verify_instructor_enrollment(db, fc_set.course_id, user.id)
     if body.folder_id is not None:
         folder = await db.get(FlashcardFolder, body.folder_id)
         if (

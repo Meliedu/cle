@@ -17,7 +17,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api._helpers import verify_enrollment
+from app.api._helpers import (
+    verify_enrollment,
+    verify_instructor_enrollment,
+)
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.api.ws_auth import authenticate_ws, reject_ws
 from app.database import async_session_factory
@@ -187,7 +190,7 @@ async def create_live_session(
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[LiveSessionResponse]:
     """Create a new live quiz session for an instructor."""
-    await verify_enrollment(db, course_id, user.id)
+    await verify_instructor_enrollment(db, course_id, user.id)
     quiz_result = await db.execute(
         select(Quiz).where(Quiz.id == req.quiz_id, Quiz.course_id == course_id)
     )

@@ -11,7 +11,10 @@ from sqlalchemy.orm import selectinload
 
 logger = logging.getLogger(__name__)
 
-from app.api._helpers import verify_enrollment as _verify_enrollment
+from app.api._helpers import (
+    verify_enrollment as _verify_enrollment,
+    verify_instructor_enrollment as _verify_instructor_enrollment,
+)
 from app.api.deps import get_current_user, get_db, require_instructor
 from app.models.pronunciation import (
     PronunciationFolder,
@@ -635,7 +638,7 @@ async def create_pronunciation_folder(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
-    await _verify_enrollment(db, course_id, user.id)
+    await _verify_instructor_enrollment(db, course_id, user.id)
     if body.parent_id is not None:
         parent = await db.get(PronunciationFolder, body.parent_id)
         if (
@@ -679,7 +682,7 @@ async def rename_pronunciation_folder(
     folder = await db.get(PronunciationFolder, folder_id)
     if folder is None or folder.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Folder not found")
-    await _verify_enrollment(db, folder.course_id, user.id)
+    await _verify_instructor_enrollment(db, folder.course_id, user.id)
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Name cannot be empty")
@@ -704,7 +707,7 @@ async def move_pronunciation_folder(
     preview = await db.get(PronunciationFolder, folder_id)
     if preview is None or preview.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Folder not found")
-    await _verify_enrollment(db, preview.course_id, user.id)
+    await _verify_instructor_enrollment(db, preview.course_id, user.id)
     await db.rollback()
 
     candidate_ids = {folder_id}
@@ -796,7 +799,7 @@ async def delete_pronunciation_folder(
     folder = await db.get(PronunciationFolder, folder_id)
     if folder is None or folder.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Folder not found")
-    await _verify_enrollment(db, folder.course_id, user.id)
+    await _verify_instructor_enrollment(db, folder.course_id, user.id)
 
     new_parent = await _pron_folder_first_live_ancestor(db, folder)
 
@@ -830,7 +833,7 @@ async def move_pronunciation_set_to_folder(
     pron_set = await db.get(PronunciationSet, set_id)
     if pron_set is None or pron_set.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Pronunciation set not found")
-    await _verify_enrollment(db, pron_set.course_id, user.id)
+    await _verify_instructor_enrollment(db, pron_set.course_id, user.id)
     if body.folder_id is not None:
         folder = await db.get(PronunciationFolder, body.folder_id)
         if (
