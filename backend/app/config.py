@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     # Runtime environment (development | production)
     environment: str = "development"
 
+    # IANA zone used to interpret wall-clock times that carry no UTC offset,
+    # in practice, syllabus dates, since a syllabus writes "9:00am" and means
+    # local time. Everything is stored in UTC; this only decides how a naive
+    # instant is read. Defaults to the HKUST pilot's zone.
+    syllabus_timezone: str = "Asia/Hong_Kong"
+
     # Database
     database_url: str = _LOCAL_DB_DEFAULT
 

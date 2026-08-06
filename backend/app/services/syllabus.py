@@ -10,9 +10,10 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -136,6 +137,38 @@ class _SyllabusPayloadV1(BaseModel):
     schema_version: Literal["v1"] = "v1"
 
 
+def _course_timezone() -> ZoneInfo:
+    """The zone naive syllabus datetimes are written in (settings-driven)."""
+    try:
+        return ZoneInfo(settings.syllabus_timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        logger.warning(
+            "Unknown syllabus_timezone %r; falling back to UTC",
+            settings.syllabus_timezone,
+        )
+        return ZoneInfo("UTC")
+
+
+def parse_syllabus_datetime(raw: str) -> datetime:
+    """Parse an ISO 8601 syllabus datetime into an aware UTC instant.
+
+    A syllabus writes wall-clock local time ("Session 3, 12 Mar, 9:00am"), so
+    the LLM legitimately returns a value with no UTC offset. ``fromisoformat``
+    yields a *naive* datetime for those, and asyncpg writes a naive value into
+    a ``timestamptz`` column as though it were already UTC, turning 09:00 HKT
+    into 09:00 UTC, an eight-hour shift. That skew then propagates into every
+    consumer of the timestamp: overdue-submission sweeps, ``end_of_session``
+    checkpoint close rules, and missed-work-item marking.
+
+    Naive input is therefore interpreted in the configured course zone and
+    converted to UTC; aware input is trusted and normalised to UTC.
+    """
+    parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_course_timezone())
+    return parsed.astimezone(timezone.utc)
+
+
 class SyllabusValidationError(ValueError):
     """Raised when LLM output fails strict-schema validation. Callers map
     this to a ``failed`` import status with the error stored on the row."""
@@ -172,6 +205,10 @@ Index rules (they differ, so follow them exactly):
   session number a student would recognise ("Session 1").
 - "meeting_index" on an assignment, and "scope_index" on a "meeting"-scoped
   objective, refer to a meeting's "meeting_index", so they also start at 1.
+
+Datetimes: copy the syllabus's own wall-clock time. Include a UTC offset only
+when the syllabus itself states a timezone; otherwise write the local time with
+no offset (e.g. "2026-03-12T09:00:00") and never convert it yourself.
 
 If a field is missing, omit it. Do not hallucinate dates: when the syllabus
 gives no date for a graded component, set its "due_at" to null and keep the
@@ -365,7 +402,7 @@ async def apply_syllabus_payload(
             logger.warning("Skipping meeting %d with invalid scheduled_at", mi)
             continue
         try:
-            scheduled = datetime.fromisoformat(scheduled_raw.replace("Z", "+00:00"))
+            scheduled = parse_syllabus_datetime(scheduled_raw)
         except (ValueError, AttributeError) as exc:
             logger.warning("Skipping meeting %d with malformed scheduled_at: %s", mi, exc)
             continue
@@ -443,7 +480,7 @@ async def apply_syllabus_payload(
         due: datetime | None = None
         if isinstance(due_raw, str) and due_raw:
             try:
-                due = datetime.fromisoformat(due_raw.replace("Z", "+00:00"))
+                due = parse_syllabus_datetime(due_raw)
             except (ValueError, AttributeError) as exc:
                 logger.warning(
                     "Keeping assignment '%s' undated, malformed due_at: %s",
@@ -464,8 +501,27 @@ async def apply_syllabus_payload(
         ).scalar_one_or_none()
         if existing:
             continue
+        # `Assignment.weight` is Numeric(5, 2), so anything at or past 1000
+        # (which the payload schema's `le=1000` still admits) overflows on
+        # INSERT. `apply_import` catches that DataError generically and marks
+        # the ENTIRE import failed, so one syllabus that weights components in
+        # raw points ("Midterm: 1000 pts") would discard every module, meeting,
+        # objective and assignment alongside it. Drop the unstorable weight and
+        # keep the component, mirroring how a malformed date is handled above:
+        # losing one field beats losing the whole import.
         weight = raw.get("weight")
-        weight_dec = Decimal(str(weight)) if weight is not None else None
+        weight_dec: Decimal | None = None
+        if weight is not None:
+            candidate = Decimal(str(weight)).quantize(Decimal("0.01"))
+            if abs(candidate) >= Decimal("1000"):
+                logger.warning(
+                    "Keeping assignment '%s' unweighted, weight %s exceeds "
+                    "the stored Numeric(5, 2) range",
+                    title,
+                    weight,
+                )
+            else:
+                weight_dec = candidate
         mod_idx = raw.get("module_index")
         mt_idx = raw.get("meeting_index")
         a = Assignment(
