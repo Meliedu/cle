@@ -3580,6 +3580,20 @@
       "consequence": "This action did not complete.",
       "preserved": "Your saved work is intact.",
       "nextAction": "Retry now. If it keeps happening, contact CLE support."
+    },
+    "file_missing": {
+      "titleNamed": "{object} is no longer stored",
+      "title": "This file is no longer stored",
+      "consequence": "Meli cannot read it, so it is not contributing to your course content.",
+      "preserved": "Everything else you have set up is intact.",
+      "nextAction": "Upload the file again."
+    },
+    "provider_unavailable": {
+      "titleNamed": "Meli could not analyse {object} yet",
+      "title": "Meli could not analyse this yet",
+      "consequence": "The service Meli uses for analysis is busy right now.",
+      "preserved": "Your files and every completed step are saved.",
+      "nextAction": "Retry in a few minutes."
     }
   },
   "auth": {

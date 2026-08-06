@@ -16,6 +16,7 @@ import {
   type GenerationJob,
   type GenerationJobKind,
 } from "@/hooks/use-generation-jobs";
+import { generationDestination } from "@/lib/generation-destination";
 
 const KIND_ICON: Record<GenerationJobKind, typeof BookOpen> = {
   generate_quiz: BookOpen,
@@ -208,16 +209,7 @@ function rowSubtitle(job: GenerationJob, kindLabel: string): string {
   return `${kindLabel} · ${job.error ?? "Failed"}`;
 }
 
-function openHrefFor(job: GenerationJob): string | null {
-  if (!job.result) return null;
-  if (job.kind === "generate_quiz" && job.result.quiz_id) {
-    return `/dashboard/courses/${job.courseId}/quizzes/${job.result.quiz_id}`;
-  }
-  if (job.kind === "generate_flashcards" && job.result.flashcard_set_id) {
-    return `/dashboard/courses/${job.courseId}/flashcards/${job.result.flashcard_set_id}`;
-  }
-  if (job.kind === "generate_summary") {
-    return `/dashboard/courses/${job.courseId}`;
-  }
-  return null;
-}
+// Shared with the toast in `use-generation-jobs.tsx`. These were two separate
+// implementations that had already drifted apart (this one silently had no
+// pronunciation case, so that row wasn't a link at all).
+const openHrefFor = generationDestination;

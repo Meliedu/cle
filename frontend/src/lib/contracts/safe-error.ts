@@ -219,6 +219,17 @@ const SAFE_COPY: Record<SafeErrorCode, SafeCopy> = {
 };
 
 /**
+ * Every code, at runtime.
+ *
+ * The `Record<SafeErrorCode, SafeCopy>` above makes it a *type* error to add a
+ * code without English copy, but nothing checked `messages/*.json`, so
+ * `file_missing` and `provider_unavailable` shipped untranslated and rendered
+ * their raw key paths (`safeError.file_missing.titleNamed`) to instructors.
+ * Exporting the list lets a test assert locale parity too.
+ */
+export const SAFE_ERROR_CODES = Object.keys(SAFE_COPY) as SafeErrorCode[];
+
+/**
  * Re-exported so callers of this module get the predicate without reaching for
  * a second import. The implementation lives in `user-safe-text.ts` because
  * `lib/api.ts` needs it too and importing it from here would cycle.

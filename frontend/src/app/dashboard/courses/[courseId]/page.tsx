@@ -343,7 +343,24 @@ function CourseDetailContent({ courseId }: { courseId: string }) {
                         </Badge>
                         {isInstructor && (
                           <button
-                            onClick={() => deleteDocument.mutate(doc.id)}
+                            onClick={() => {
+                              // Deleting a course material is permanent and
+                              // this bare icon button sits directly beside the
+                              // status badge, so a misclick used to destroy an
+                              // upload with no confirmation at all. The current
+                              // (app) tree gates the same action behind
+                              // remove-material-dialog.tsx; this legacy screen
+                              // gets the same protection in the confirm style
+                              // already used elsewhere in this tree.
+                              if (
+                                !window.confirm(
+                                  `Delete "${doc.filename}"? This cannot be undone.`
+                                )
+                              ) {
+                                return;
+                              }
+                              deleteDocument.mutate(doc.id);
+                            }}
                             disabled={deleteDocument.isPending}
                             className="rounded-[var(--radius-sm)] p-1 text-[var(--color-text-muted)] transition-colors duration-[var(--duration-fast)] hover:bg-[oklch(93%_0.05_25)] hover:text-[var(--color-error)]"
                             aria-label={`Delete ${doc.filename}`}

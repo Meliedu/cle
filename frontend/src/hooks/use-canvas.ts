@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { isAuthError } from "@/lib/api";
+import { userSafeOr } from "@/lib/contracts/user-safe-text";
 import {
   disconnectCanvas,
   getCanvasConnection,
@@ -79,6 +81,18 @@ export function useDisconnectCanvas() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["canvas"] });
+    },
+    onError: (error) => {
+      // Without this the caller's bare `await mutateAsync()` surfaces a failed
+      // disconnect as an unhandled promise rejection: the button goes quiet,
+      // Canvas stays connected, and the instructor is given no reason to think
+      // anything went wrong.
+      toast.error(
+        userSafeOr(
+          error.message,
+          "Meli could not disconnect Canvas. Please try again."
+        )
+      );
     },
   });
 }

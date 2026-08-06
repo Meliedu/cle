@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { useSafeError } from "@/hooks/use-safe-error";
 import { userSafeOr } from "@/lib/contracts/user-safe-text";
+import { generationDestination } from "@/lib/generation-destination";
 
 export type GenerationJobKind =
   | "generate_quiz"
@@ -315,32 +316,8 @@ export function GenerationJobsProvider({ children }: { children: ReactNode }) {
 }
 
 function handleOpen(job: GenerationJob) {
-  if (!job.result) return;
-  // encodeURIComponent each id segment so any stray path or query character
-  // in a course/quiz/flashcard id can never break out of the intended
-  // dashboard route.
-  const courseId = encodeURIComponent(job.courseId);
-  if (job.kind === "generate_quiz" && job.result.quiz_id) {
-    const quizId = encodeURIComponent(job.result.quiz_id);
-    window.location.href = `/dashboard/courses/${courseId}/quizzes/${quizId}`;
-    return;
-  }
-  if (job.kind === "generate_flashcards" && job.result.flashcard_set_id) {
-    const setId = encodeURIComponent(job.result.flashcard_set_id);
-    window.location.href = `/dashboard/courses/${courseId}/flashcards/${setId}`;
-    return;
-  }
-  if (
-    job.kind === "generate_pronunciation" &&
-    job.result.pronunciation_set_id
-  ) {
-    const setId = encodeURIComponent(job.result.pronunciation_set_id);
-    window.location.href = `/dashboard/courses/${courseId}/pronunciation/${setId}`;
-    return;
-  }
-  if (job.kind === "generate_summary") {
-    window.location.href = `/dashboard/courses/${courseId}`;
-  }
+  const href = generationDestination(job);
+  if (href) window.location.href = href;
 }
 
 export function useGenerationJobs(): GenerationJobStore {

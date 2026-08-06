@@ -455,7 +455,7 @@ export function FolderBrowser<TItem extends ItemLike>({
           <DialogHeader>
             <DialogTitle>Delete folder?</DialogTitle>
             <DialogDescription>
-              Items inside will move to this folder's parent. The folder itself
+              Items inside will move to this folder&apos;s parent. The folder itself
               is removed.
             </DialogDescription>
           </DialogHeader>

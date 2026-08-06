@@ -170,7 +170,7 @@ export function FlashcardList({ courseId, isInstructor }: FlashcardListProps) {
               No flashcard sets yet
             </h3>
             <p className="mt-1 max-w-sm text-sm text-[var(--color-text-muted)]">
-              Your instructor hasn't published any flashcard sets yet. Check
+              Your instructor hasn&apos;t published any flashcard sets yet. Check
               back later.
             </p>
           </CardContent>

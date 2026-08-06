@@ -831,6 +831,20 @@
       "consequence": "此操作未能完成。",
       "preserved": "你已保存的工作完好無缺。",
       "nextAction": "請立即重試。若持續發生，請聯絡 CLE 支援。"
+    },
+    "file_missing": {
+      "titleNamed": "{object} 已不在儲存空間中",
+      "title": "這個檔案已不在儲存空間中",
+      "consequence": "Meli 無法讀取它，因此它沒有納入你的課程內容。",
+      "preserved": "你設定的其他內容都完好無損。",
+      "nextAction": "請重新上傳這個檔案。"
+    },
+    "provider_unavailable": {
+      "titleNamed": "Meli 尚無法分析 {object}",
+      "title": "Meli 尚無法完成分析",
+      "consequence": "Meli 用於分析的服務目前忙碌中。",
+      "preserved": "你的檔案與已完成的每個步驟都已保存。",
+      "nextAction": "請幾分鐘後重試。"
     }
   },
   "auth": {

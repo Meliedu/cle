@@ -99,7 +99,11 @@ export function ScorePolicyPanel({
         flagged={Boolean(missing?.has("score_category_id"))}
       >
         <Select
-          value={value.score_category_id || undefined}
+          // `null`, not `undefined`: Base UI reads `undefined` as "uncontrolled",
+          // so an empty policy field would mount uncontrolled and then flip to
+          // controlled on the first selection. `null` is Base UI's controlled
+          // "no selection" and keeps the placeholder rendering.
+          value={value.score_category_id || null}
           onValueChange={(v) => set("score_category_id", v ?? "")}
           disabled={disabled}
         >
@@ -144,7 +148,7 @@ export function ScorePolicyPanel({
           flagged={Boolean(missing?.has("grading_mode"))}
         >
           <Select
-            value={value.grading_mode || undefined}
+            value={value.grading_mode || null}
             onValueChange={(v) => set("grading_mode", (v ?? "") as GradingMode)}
             disabled={disabled}
           >
@@ -214,7 +218,7 @@ export function ScorePolicyPanel({
         flagged={false}
       >
         <Select
-          value={value.late_rule || undefined}
+          value={value.late_rule || null}
           onValueChange={(v) => set("late_rule", (v ?? "") as LateRule)}
           disabled={disabled}
         >

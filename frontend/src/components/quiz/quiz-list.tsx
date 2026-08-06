@@ -220,7 +220,7 @@ export function QuizList({ courseId, isInstructor }: QuizListProps) {
               No quizzes yet
             </h3>
             <p className="mt-1 max-w-sm text-sm text-[var(--color-text-muted)]">
-              Your instructor hasn't published any quizzes yet. Check back soon.
+              Your instructor hasn&apos;t published any quizzes yet. Check back soon.
             </p>
           </CardContent>
         </Card>
