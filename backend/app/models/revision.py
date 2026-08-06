@@ -87,7 +87,21 @@ class RevisionAttempt(UUIDPrimaryKeyMixin, Base):
         UUID(as_uuid=True), ForeignKey("revision_sessions.id", ondelete="CASCADE"), nullable=False
     )
     pool_item_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("revision_pool_items.id"), nullable=False
+        UUID(as_uuid=True),
+        # The DB has ON DELETE CASCADE here (see the phase-2 migration). Without
+        # mirroring it, `create_all` gives the test suite a NON-cascading FK, so
+        # tests run against different referential behaviour than production.
+        ForeignKey("revision_pool_items.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # Present in the DB since the phase-2 concept migration but never mapped, so
+    # the ORM and the schema disagreed and `--autogenerate` would offer to drop
+    # it. Mapped (nullable, unused for now) rather than dropped, since dropping
+    # a column is the destructive direction of that disagreement.
+    primary_concept_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("concepts.id", ondelete="SET NULL"),
+        nullable=True,
     )
     content_type: Mapped[str] = mapped_column(String(20), nullable=False)
     difficulty: Mapped[str] = mapped_column(String(10), nullable=False)
