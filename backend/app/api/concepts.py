@@ -224,6 +224,20 @@ async def replay_attempts(
             task_type="replay_attempt_history",
             payload={"course_id": str(course.id), "window_days": 90},
             status="pending",
+            # Never auto-retried. `run_replay_attempt_history` is explicitly
+            # NOT idempotent (its docstring: "evidence accumulates on top of
+            # whatever priors already exist"), and a replay over a real course
+            # can outrun the worker's blanket 10-minute STUCK_TASK_TIMEOUT. At
+            # the default max_attempts=3, `_reset_stuck_tasks` would requeue a
+            # replay that is still running, a second worker would claim it, and
+            # every concept mastery alpha/beta it had already touched would be
+            # incremented again. The 409 guard above only blocks a second
+            # MANUAL trigger, not the worker requeuing its own row.
+            #
+            # With max_attempts=1 the same reset marks it `failed` instead, and
+            # recovery is the documented operator path: wipe ConceptMastery for
+            # the course, then trigger again.
+            max_attempts=1,
         )
     )
     await db.commit()
