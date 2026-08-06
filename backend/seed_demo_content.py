@@ -26,6 +26,7 @@ from app.models.report import Report
 from app.models.score import ScoreCategory
 from app.models.user import User
 from app.models.work_item import WorkItem, WorkItemProgress
+from seed_manifest import write_manifest
 
 NOW = datetime.now(timezone.utc)
 
@@ -381,6 +382,18 @@ async def seed() -> None:
         )
 
         await s.commit()
+
+        write_manifest(
+            {
+                "checkpointClosedId": str(cp_closed.id),
+                "checkpointOpenId": str(cp_open.id),
+                "checkpointDraftId": str(cp_draft.id),
+                "practiceQuizId": str(practice.id),
+                "gradedQuizId": str(graded.id),
+                "activityId": str(activity.id),
+            }
+        )
+
         print("P3–P7 content seeded for LANG1511:")
         print(f"  checkpoints: closed={cp_closed.id} open={cp_open.id} draft={cp_draft.id}")
         print(f"  quizzes: practice={practice.id} graded={graded.id}")

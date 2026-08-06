@@ -19,6 +19,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+import sqlalchemy as sa
 from sqlalchemy import delete, select
 
 from app.config import settings
@@ -28,6 +29,7 @@ from app.models.curriculum import CourseMeeting, LearningObjective
 from app.models.document import Document
 from app.models.score import ScoreCategory
 from app.models.user import User
+from seed_manifest import write_manifest
 
 # --- Fixed demo identity constants (shared with frontend/scripts/seed-auth.mjs) ---
 DEMO_PASSWORD = "MeliDemo2026!"
@@ -106,13 +108,48 @@ FULL_CHECKLIST = {
 
 async def _purge(session) -> None:
     """Delete prior demo courses (cascades enrollments/meetings/docs/scores)
-    and demo users, so re-running produces a clean, deterministic dataset."""
+    and demo users, so re-running produces a clean, deterministic dataset.
+
+    Courses are purged by *owner* as well as by the two fixed demo codes:
+    walking the teacher flow (or an E2E run) creates extra courses under the
+    demo instructor, and ``courses.instructor_id`` is ON DELETE NO ACTION, so
+    leaving them behind makes the later ``DELETE FROM users`` fail with a
+    foreign-key violation: the documented "idempotent" re-run crashes."""
+    demo_user_ids = (
+        await session.execute(select(User.id).where(User.email.in_(DEMO_EMAILS)))
+    ).scalars().all()
+
     course_rows = (
-        await session.execute(select(Course).where(Course.code.in_(DEMO_COURSE_CODES)))
+        await session.execute(
+            select(Course).where(
+                sa.or_(
+                    Course.code.in_(DEMO_COURSE_CODES),
+                    Course.instructor_id.in_(demo_user_ids) if demo_user_ids else sa.false(),
+                )
+            )
+        )
     ).scalars().all()
     for course in course_rows:
         await session.delete(course)  # ORM cascade covers enrollments
     await session.flush()
+
+    # The placement graph hangs off users, not courses, so the course cascade
+    # above never reaches it. Attempts/responses are ON DELETE CASCADE, but the
+    # teacher-side rows (reviews authored, audit events actored) are NO ACTION
+    # and would block the user delete on any DB where the demo teacher has
+    # already reviewed a placement attempt.
+    if demo_user_ids:
+        await session.execute(
+            sa.text(
+                "DELETE FROM placement_reviews WHERE reviewer_id = ANY(:ids)"
+            ).bindparams(ids=list(demo_user_ids))
+        )
+        await session.execute(
+            sa.text(
+                "DELETE FROM placement_audit_events WHERE actor_id = ANY(:ids)"
+            ).bindparams(ids=list(demo_user_ids))
+        )
+        await session.flush()
 
     # Meetings/docs/score categories cascade via FK ON DELETE CASCADE, but the
     # ORM relationship cascade only covers enrollments — clear the rest by course.
@@ -244,6 +281,20 @@ async def seed() -> None:
         )
 
         await session.commit()
+
+        write_manifest(
+            {
+                "publishedCourseId": str(published.id),
+                "publishedCourseCode": published.code,
+                "draftCourseId": str(draft.id),
+                "draftCourseCode": draft.code,
+                "enrollCode": published.enroll_code,
+                "teacherEmail": teacher.email,
+                "studentEmail": student.email,
+                "pendingEmail": pending.email,
+                "password": DEMO_PASSWORD,
+            }
+        )
 
         print("Demo seed complete:")
         print(f"  teacher  {teacher.email}  (course {published.code}, code MELI1511)")

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { seed, signIn, NAV_TIMEOUT, VISIBLE_TIMEOUT } from "./fixtures/seed";
 
 /**
  * End-to-end walk of the CLE "Checkpoint Loop" flow against a LIVE stack
@@ -19,25 +20,17 @@ import { test, expect, type Page } from "@playwright/test";
  * guaranteed to render for an authenticated, enrolled/owning user.
  */
 const LIVE = process.env.MELI_LIVE_STACK === "1";
-const PASSWORD = "MeliDemo2026!";
 
-const TEACHER_EMAIL = "meli.teacher@ust.hk";
-const STUDENT_EMAIL = "meli.student@connect.ust.hk";
+const TEACHER_EMAIL = seed().teacherEmail;
+const STUDENT_EMAIL = seed().studentEmail;
 
-// Seeded LANG1511 course + a published graded quiz on it.
-const COURSE_ID = "86f54703-54df-43ba-ac72-fcdc9db9e4d5";
-const GRADED_QUIZ_ID = "44bfab0b-42ea-468c-9df5-dcf851bc382d";
+// Seeded LANG1511 course + a published graded quiz on it. These come from the
+// seed manifest, never from literals: the seeds recreate every row (and so
+// every id) on each run, and a stale literal id makes shell-level assertions
+// pass against a course that no longer exists.
+const COURSE_ID = seed().publishedCourseId;
+const GRADED_QUIZ_ID = seed().gradedQuizId;
 const COURSE_NAME = /Chinese I for Non-Chinese Speakers/i;
-
-const NAV_TIMEOUT = 45_000;
-const VISIBLE_TIMEOUT = 20_000;
-
-async function signIn(page: Page, email: string): Promise<void> {
-  await page.goto("/sign-in");
-  await page.fill('input[name="email"]', email);
-  await page.fill('input[name="password"]', PASSWORD);
-  await page.click('button[type="submit"]');
-}
 
 /**
  * Sign in and wait for the role-scoped dashboard. After Better Auth issues the
