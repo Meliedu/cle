@@ -68,7 +68,7 @@ async def upsert_work_item(
         return row
 
     # Conflict: the row already exists — re-fetch it (mirror mastery.py).
-    return (
+    existing = (
         await db.execute(
             select(WorkItem).where(
                 WorkItem.course_id == course_id,
@@ -77,6 +77,25 @@ async def upsert_work_item(
             )
         )
     ).scalar_one()
+
+    # The row may be soft-deleted (``remove_work_item`` stamps ``deleted_at``),
+    # and ``uq_work_items_course_source`` is a FULL unique index (it does not
+    # exclude soft-deleted rows), so the insert above conflicted with a tombstone.
+    # Returning it as-is would make a re-publish look like it succeeded while the
+    # item stays invisible to every student, with no error anywhere. Revive it
+    # instead: reusing the same row keeps the students' existing
+    # ``work_item_progress`` rows attached, which inserting a fresh row would
+    # strand.
+    if existing.deleted_at is not None:
+        existing.deleted_at = None
+        existing.title = title
+        existing.required = required
+        existing.score_bearing = score_bearing
+        existing.due_at = due_at
+        existing.close_at = close_at
+        db.add(existing)
+
+    return existing
 
 
 async def upsert_progress(

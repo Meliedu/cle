@@ -908,46 +908,55 @@ async def sweep_stale_attempts(db: AsyncSession) -> dict[str, int]:
 
     for attempt in running:
       try:
-        answered = int(
-            (
-                await db.execute(
-                    select(func.count(PlacementResponse.id)).where(
-                        PlacementResponse.attempt_id == attempt.id,
-                        PlacementResponse.response.isnot(None),
+        # SAVEPOINT per attempt. Catching the exception is not enough on its
+        # own: a DB-level failure (constraint violation, serialization error)
+        # aborts the whole Postgres transaction, so every LATER attempt in this
+        # loop then fails too (each logged as its own unrelated error), and the
+        # caller's final commit degrades to a ROLLBACK that silently discards
+        # every transition the tick had already made. Nesting confines the
+        # damage to the one bad attempt, which is what the comment below has
+        # always claimed.
+        async with db.begin_nested():
+            answered = int(
+                (
+                    await db.execute(
+                        select(func.count(PlacementResponse.id)).where(
+                            PlacementResponse.attempt_id == attempt.id,
+                            PlacementResponse.response.isnot(None),
+                        )
                     )
-                )
-            ).scalar_one()
-        )
-        await record_interruption(
-            db, attempt=attempt, kind="timer_expired",
-            detail=f"{answered} answered when the time limit passed",
-            system=True,
-        )
+                ).scalar_one()
+            )
+            await record_interruption(
+                db, attempt=attempt, kind="timer_expired",
+                detail=f"{answered} answered when the time limit passed",
+                system=True,
+            )
 
-        if attempt.interruptions and len(attempt.interruptions) > 1:
-            attempt.state = "technical_review"
-            counts["technical_review"] += 1
-            await _audit_sweep(db, attempt, "technical_review", answered)
-            continue
+            if attempt.interruptions and len(attempt.interruptions) > 1:
+                attempt.state = "technical_review"
+                counts["technical_review"] += 1
+                await _audit_sweep(db, attempt, "technical_review", answered)
+                continue
 
-        if answered == 0:
-            attempt.state = "expired"
-            counts["expired"] += 1
-            await _audit_sweep(db, attempt, "expired", answered)
-            continue
+            if answered == 0:
+                attempt.state = "expired"
+                counts["expired"] += 1
+                await _audit_sweep(db, attempt, "expired", answered)
+                continue
 
-        # Close it the way the learner would have, so the normal scoring and
-        # review path runs and CLE sees a comparable record.
-        started = _aware(attempt.started_at)
-        expires = _aware(attempt.expires_at)
-        attempt.state = "submitted"
-        attempt.submitted_at = expires
-        if started and expires:
-            attempt.duration_seconds = int((expires - started).total_seconds())
-        await db.flush()
-        await score_attempt(db, attempt=attempt, actor=None)
-        counts["submitted"] += 1
-        await _audit_sweep(db, attempt, "auto_submitted", answered)
+            # Close it the way the learner would have, so the normal scoring and
+            # review path runs and CLE sees a comparable record.
+            started = _aware(attempt.started_at)
+            expires = _aware(attempt.expires_at)
+            attempt.state = "submitted"
+            attempt.submitted_at = expires
+            if started and expires:
+                attempt.duration_seconds = int((expires - started).total_seconds())
+            await db.flush()
+            await score_attempt(db, attempt=attempt, actor=None)
+            counts["submitted"] += 1
+            await _audit_sweep(db, attempt, "auto_submitted", answered)
       except Exception:  # noqa: BLE001
         # One learner's bad row must not void the sweep for everyone else. The
         # cron retries in five minutes; a permanently bad row shows up in the

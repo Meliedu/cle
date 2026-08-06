@@ -122,19 +122,34 @@ async def process_document_pipeline(
         #    worker can populate ``concept_tags`` asynchronously. Only runs
         #    after the chunk commit above succeeded — failed chunk inserts
         #    raise and skip this block via the ``except`` branch.
-        for created_chunk in created_chunks:
-            session.add(
-                Task(
-                    task_type="tag_artifact_concepts",
-                    payload={
-                        "target_kind": "chunk",
-                        "target_id": str(created_chunk.id),
-                        "course_id": str(created_chunk.course_id),
-                    },
-                    status="pending",
+        #    This enqueue is enrichment, and it lands in its OWN transaction
+        #    after the document is already committed `ready`. Letting it reach
+        #    the outer handler would rewrite that committed status back to
+        #    `failed`, telling the instructor a fully-parsed, fully-embedded
+        #    document had failed, and inviting a pointless re-download/re-parse
+        #    /re-embed retry. Concept tags can be rebuilt later; the document
+        #    cannot be un-processed. So this failure is logged, not raised.
+        try:
+            for created_chunk in created_chunks:
+                session.add(
+                    Task(
+                        task_type="tag_artifact_concepts",
+                        payload={
+                            "target_kind": "chunk",
+                            "target_id": str(created_chunk.id),
+                            "course_id": str(created_chunk.course_id),
+                        },
+                        status="pending",
+                    )
                 )
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            logger.exception(
+                "Document %s is ready, but enqueuing concept-tagging tasks "
+                "failed; tags will be missing until a re-tag is run",
+                document_id,
             )
-        await session.commit()
 
         logger.info(f"Document {document_id} processed: {len(chunks)} chunks stored")
         return True
