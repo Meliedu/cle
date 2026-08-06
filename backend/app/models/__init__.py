@@ -30,6 +30,12 @@ from app.models.placement import (
 )
 from app.models.readiness import ReadinessResponse
 from app.models.report import Report
+# Imported here (not only from app/services/canvas_oauth.py) so the table is
+# registered on Base.metadata unconditionally. Without this, `create_all`
+# (which the test suite uses to build its schema) silently omits the table
+# unless something happened to import the service first, and
+# `alembic revision --autogenerate` proposes dropping it as a "removed table".
+from app.models.oauth_nonce import OAuthConsumedNonce
 from app.models.scheduler import SchedulerModel
 from app.models.pronunciation import (
     PronunciationFolder,
@@ -107,6 +113,7 @@ __all__ = [
     "FlashcardFolder",
     "FlashcardSetDocument",
     "FlashcardProgress",
+    "OAuthConsumedNonce",
     "SchedulerModel",
     "PronunciationScore",
     "PronunciationFolder",

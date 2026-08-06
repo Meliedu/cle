@@ -17,6 +17,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -223,7 +224,33 @@ async def delete_better_auth_user(
 
     user_id_str = str(user.id)
     await db.delete(user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # The explicit course/document checks above cover the two cases worth a
+        # tailored message, but roughly thirty MORE foreign keys reference
+        # users.id with ON DELETE NO ACTION/RESTRICT: quiz_attempts,
+        # revision_attempts, flashcard_progress, pronunciation_scores,
+        # api_usage, every *.created_by, and so on. Any learner who has ever
+        # answered a quiz trips one. Enumerating them here would drift out of
+        # date the moment a table is added, so the residue is caught and mapped
+        # to the same 409 the caller already handles, rather than escaping as an
+        # unhandled 500.
+        await db.rollback()
+        logger.info(
+            "users/delete blocked for user_id=%s by a retained-content FK",
+            user_id_str,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "HAS_RETAINED_CONTENT",
+                "message": (
+                    "This account still has course records that must be "
+                    "retained. Contact support to retire the account."
+                ),
+            },
+        )
     logger.info("users/delete completed for user_id=%s", user_id_str)
     return APIResponse(
         success=True,

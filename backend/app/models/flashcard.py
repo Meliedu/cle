@@ -28,7 +28,13 @@ class FlashcardSet(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "flashcard_sets"
 
     course_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("courses.id", ondelete="CASCADE"),
+        nullable=False,
+        # Mirrors ix_flashcard_sets_course_id so `create_all` (used by the test
+        # suite) builds the same index prod has. Otherwise tests run against a
+        # schema that can't reproduce prod's query plans.
+        index=True,
     )
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
